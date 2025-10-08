@@ -4,25 +4,38 @@ import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 
 export default class WorkflowSuggestionModal extends LightningElement {
     @api recordId;
-    @api objectApiName;
-    isVisible = false;
-
-    connectedCallback() {
-        this.checkForSuggestion();
+    
+    _objectApiName;
+    @api 
+    get objectApiName() {
+        return this._objectApiName;
+    }
+    set objectApiName(value) {
+        this._objectApiName = value;
+        if (value) {
+            this.checkForSuggestion();
+        }
     }
 
+    isVisible = false;
+
     async checkForSuggestion() {
+        // No longer need connectedCallback, this runs when objectApiName is set
+        if (!this.recordId || !this._objectApiName) {
+            return; // Exit if required properties aren't set
+        }
+
         try {
             const result = await shouldShowSuggestion({ 
                 recordId: this.recordId, 
-                objectApiName: this.objectApiName || 'Account'
+                objectApiName: this._objectApiName
             });
 
             if (result === true) {
                 this.isVisible = true;
             }
         } catch (error) {
-            console.error('Error checking suggestion:', error);
+            console.error('Error checking for suggestion:', error);
         }
     }
 
@@ -33,13 +46,13 @@ export default class WorkflowSuggestionModal extends LightningElement {
     }
 
     handleRemindLater() {
-        this.showToast('Reminder Set', 'We will remind you later', 'success');
+        this.showToast('Reminder Set', 'We will remind you later.', 'success');
         this.isVisible = false;
     }
 
     handleDismiss() {
         // TODO: Store user preference to never show this again
-        this.showToast('Dismissed', 'You will not see this suggestion again', 'info');
+        this.showToast('Dismissed', 'You will not see this suggestion again.', 'info');
         this.isVisible = false;
     }
 

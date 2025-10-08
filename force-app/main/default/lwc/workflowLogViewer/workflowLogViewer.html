@@ -1,0 +1,46 @@
+<template>
+    <lightning-card title="Workflow Log Details" icon-name="standard:log_a_call">
+        <div class="slds-p-horizontal_small">
+            <template if:true={actionName}>
+                <p><strong>Action:</strong> {actionName}</p>
+                <p><strong>Object:</strong> {objectApiName}</p>
+                <hr/>
+            </template>
+
+            <template if:true={parsedData}>
+                <h3 class="slds-section-title--divider slds-m-top_medium">Behavior Data</h3>
+                <table class="slds-table slds-table_cell-buffer slds-table_bordered slds-table_col-bordered">
+                    <thead>
+                        <tr class="slds-line-height_reset">
+                            <th class="" scope="col">
+                                <div class="slds-truncate" title="Key">Key</div>
+                            </th>
+                            <th class="" scope="col">
+                                <div class="slds-truncate" title="Value">Value</div>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template for:each={parsedData} for:item="item">
+                            <tr key={item.id} class="slds-hint-parent">
+                                <td data-label="Key">
+                                    <div class="slds-truncate" title={item.key}><strong>{item.key}</strong></div>
+                                </td>
+                                <td data-label="Value">
+                                    <!-- Use pre-wrap to respect newlines in pretty-printed JSON -->
+                                    <div style="white-space: pre-wrap; word-break: break-all;">{item.value}</div>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </template>
+
+            <template if:true={error}>
+                <div class="slds-text-color_error slds-m-top_small">
+                    {error}
+                </div>
+            </template>
+        </div>
+    </lightning-card>
+</template>
