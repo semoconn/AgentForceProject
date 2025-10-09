@@ -1,6 +1,6 @@
 /**
- * @description Service class to programmatically create Quick Actions using the Metadata API.
- * VERSION 2.0: Updated to use a Named Credential for secure and reliable authentication.
+ * @description Service class to programmatically create and deploy Quick Actions.
+ * VERSION 3.0: Now automatically adds the created Quick Action to the default page layout.
  */
 public with sharing class QuickActionService {
 
@@ -14,42 +14,43 @@ public with sharing class QuickActionService {
     public static QuickActionResult createSimpleUpdateAction(String objectApiName, String actionLabel) {
         QuickActionResult result = new QuickActionResult();
         String actionName = actionLabel.replaceAll('[^a-zA-Z0-9]', '_');
+        String fullActionName = objectApiName + '.' + actionName;
 
         try {
-            // Step 1: Create the Metadata API service and set the endpoint
-            MetadataService.MetadataPort service = new MetadataService.MetadataPort();
-            // ✅ FIX: Use the Named Credential for the endpoint.
-            // This tells Salesforce to handle authentication automatically and securely.
-            service.endpoint_x = 'callout:AgentForce_Metadata_API';
+            MetadataService.MetadataPort service = createService();
 
-            // Step 2: Create the Quick Action metadata component (same as before)
+            // Step 1: Create the Quick Action metadata component (same as before)
             MetadataService.QuickAction quickAction = new MetadataService.QuickAction();
-            quickAction.fullName = objectApiName + '.' + actionName;
+            quickAction.fullName = fullActionName;
             quickAction.label = actionLabel;
             quickAction.type_x = 'Update';
             quickAction.optionsCreateFeedItem = false;
             
             MetadataService.QuickActionLayout layout = new MetadataService.QuickActionLayout();
             layout.layoutSectionStyle = 'TwoColumnsLeftToRight';
-            layout.quickActionLayoutColumns = new List<MetadataService.QuickActionLayoutColumn>();
-            layout.quickActionLayoutColumns.add(new MetadataService.QuickActionLayoutColumn());
-            layout.quickActionLayoutColumns.get(0).quickActionLayoutItems = new List<MetadataService.QuickActionLayoutItem>();
+            layout.quickActionLayoutColumns = new List<MetadataService.QuickActionLayoutColumn>{ new MetadataService.QuickActionLayoutColumn() };
+            layout.quickActionLayoutColumns[0].quickActionLayoutItems = new List<MetadataService.QuickActionLayoutItem>();
             quickAction.quickActionLayout = layout;
             
-            // Step 3: Deploy the Quick Action (no session header needed)
-            List<MetadataService.SaveResult> results = service.createMetadata(
+            // Step 2: Deploy the Quick Action
+            List<MetadataService.SaveResult> createResults = service.createMetadata(
                 new List<MetadataService.Metadata>{ quickAction }
             );
 
-            // Step 4: Handle the result (same as before)
-            for (MetadataService.SaveResult res : results) {
+            // Step 3: Handle the result and add to layout on success
+            for (MetadataService.SaveResult res : createResults) {
                 if (res.success) {
+                    // --- NEW LOGIC ---
+                    // On success, automatically add the action to the page layout
+                    addQuickActionToLayout(service, objectApiName, actionName);
+                    // --- END NEW LOGIC ---
+
                     result.isSuccess = true;
-                    result.message = 'Quick Action "' + actionLabel + '" created successfully. Please add it to the page layout.';
+                    result.message = 'Quick Action "' + actionLabel + '" was created and added to the page layout successfully!';
                     result.actionName = res.fullName;
                 } else {
                     result.isSuccess = false;
-                    result.message = 'Error: ' + res.errors[0].message;
+                    result.message = 'Error creating Quick Action: ' + res.errors[0].message;
                 }
             }
         } catch (Exception e) {
@@ -59,5 +60,38 @@ public with sharing class QuickActionService {
         }
         return result;
     }
-}
 
+    /**
+     * @description Adds a newly created Quick Action to the default layout for an object.
+     */
+    @TestVisible
+    private static void addQuickActionToLayout(MetadataService.MetadataPort service, String objectApiName, String actionName) {
+        // Assume the default layout name is in the format 'Object-Layout'
+        String layoutName = objectApiName + '-' + objectApiName + ' Layout';
+
+        // 1. Read the existing layout metadata
+        MetadataService.Layout layoutMetadata = (MetadataService.Layout) service.readMetadata('Layout', new String[] { layoutName }).getRecords()[0];
+
+        // 2. Add the new quick action to the list
+        if (layoutMetadata.quickActionList == null) {
+            layoutMetadata.quickActionList = new MetadataService.QuickActionList();
+            layoutMetadata.quickActionList.quickActionListItems = new List<MetadataService.QuickActionListItem>();
+        }
+        
+        MetadataService.QuickActionListItem newActionItem = new MetadataService.QuickActionListItem();
+        newActionItem.quickActionName = objectApiName + '.' + actionName;
+        layoutMetadata.quickActionList.quickActionListItems.add(newActionItem);
+
+        // 3. Update the layout
+        service.updateMetadata(new List<MetadataService.Metadata>{ layoutMetadata });
+    }
+    
+    /**
+     * @description Helper to create and configure the MetadataPort service.
+     */
+    private static MetadataService.MetadataPort createService() {
+        MetadataService.MetadataPort service = new MetadataService.MetadataPort();
+        service.endpoint_x = 'callout:AgentForce_Metadata_API';
+        return service;
+    }
+}

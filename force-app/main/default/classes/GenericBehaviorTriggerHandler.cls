@@ -39,7 +39,6 @@ public with sharing class GenericBehaviorTriggerHandler {
             }
         }
         
-        WorkflowSuggestionController.commitLogs();
     }
     
     private void handleAfterInsert(List<SObject> newRecords) {
@@ -156,27 +155,35 @@ public with sharing class GenericBehaviorTriggerHandler {
         return changes;
     }
     
-    private void logBehaviorEvent(String actionName, String objectType, Id recordId, Map<String, Object> additionalData) {
-        try {
-            String behaviorData = JSON.serialize(new Map<String, Object>{
-                'triggerContext' => true,
-                'timestamp' => DateTime.now(),
-                'userId' => UserInfo.getUserId(),
-                'username' => UserInfo.getUserName(),
-                'additionalData' => additionalData
-            });
-            
-            WorkflowSuggestionController.logWorkflowEvent(
-                String.valueOf(recordId), 
-                objectType, 
-                actionName, 
-                behaviorData
-            );
-            
-        } catch (Exception e) {
-            System.debug('Error creating behavior log event data: ' + e.getMessage());
-        }
+    // In GenericBehaviorTriggerHandler.cls
+
+private void logBehaviorEvent(String actionName, String objectType, Id recordId, Map<String, Object> additionalData) {
+    try {
+        String behaviorData = JSON.serialize(new Map<String, Object>{
+            'triggerContext' => true,
+            'timestamp' => DateTime.now(),
+            'username' => UserInfo.getUserName(),
+            'additionalData' => additionalData
+        });
+
+        // Use the existing Workflow_Behavior_Event__e
+        Workflow_Behavior_Event__e event = new Workflow_Behavior_Event__e(
+            Action__c = actionName,
+            Object_Type__c = objectType,
+            Record_ID__c = String.valueOf(recordId),
+            User_ID__c = UserInfo.getUserId(),
+            Behavior_Data__c = behaviorData // The new field
+        );
+        
+        EventBus.publish(event);
+
+    } catch (Exception e) {
+        System.debug('Error publishing behavior event: ' + e.getMessage());
     }
+}
+
+// Reminder: Make sure to remove the 'WorkflowSuggestionController.commitLogs();'
+// call from the 'run' method in this class.
 
     /**
      * @description Clears the static set of processed record IDs.
