@@ -1,17 +1,11 @@
 /**
- * @description Subscribes to the Workflow_Behavior_Event__e and logs the data.
+ * @description Trigger to process Behavior_Event__e platform events
+ * and create corresponding Behavior_Log__c records.
+ * @version 2.0 - Final version for Sprint 1.
  */
-trigger BehaviorEventTrigger on Workflow_Behavior_Event__e (after insert) {
-    
-    for (Workflow_Behavior_Event__e event : Trigger.New) {
-        WorkflowSuggestionController.logWorkflowEvent(
-            event.Record_ID__c,
-            event.Object_Type__c,
-            event.Action__c,
-            event.Behavior_Data__c
-        );
-    }
-
-    // Commit all the logs that were generated from this batch of events.
-    WorkflowSuggestionController.commitLogs();
+trigger BehaviorEventTrigger on Behavior_Event__e (after insert) {
+    // Process all new events by passing them to the service class.
+    // This trigger acts as the subscriber in our event-driven framework.
+    BehaviorLogService.createLogsFromEvents(Trigger.new);
 }
+

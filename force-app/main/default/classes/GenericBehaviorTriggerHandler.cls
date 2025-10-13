@@ -1,104 +1,57 @@
 /**
- * Generic handler class for behavior tracking on any object.
- * This class is the central entry point for all object triggers.
- * It delegates logging to the WorkflowSuggestionController to ensure
- * DML operations are batched and governor limits are respected.
- * VERSION: 3.1 - Added a test-visible method to clear static variables.
+ * @description Generic handler for behavior tracking on any SObject. Publishes a Behavior_Event__e.
+ * @version 2.3 - Final version with a TestVisible method to clear the recursion guard for proper testing.
  */
 public with sharing class GenericBehaviorTriggerHandler {
     
-    // Use a Set of record IDs to prevent recursion on the same record within a transaction.
     private static Set<Id> processedRecordIds = new Set<Id>();
     private String objectName;
     
-    // ... all of your existing methods (constructor, run, handleAfterInsert, etc.) remain unchanged ...
-    /**
-     * Constructor - pass in the object API name
-     */
     public GenericBehaviorTriggerHandler(String objectApiName) {
         this.objectName = objectApiName;
     }
     
-    /**
-     * Main entry point for trigger execution
-     */
     public void run(TriggerOperation triggerEvent, List<SObject> newRecords, List<SObject> oldRecords, Map<Id, SObject> newMap, Map<Id, SObject> oldMap) {
-        
         switch on triggerEvent {
             when AFTER_INSERT {
-                handleAfterInsert(newRecords);
+                handleAfterDML(newRecords, 'Record_Created', null);
             }
             when AFTER_UPDATE {
-                handleAfterUpdate(newRecords, oldMap);
+                handleAfterDML(newRecords, 'Record_Updated', oldMap);
             }
             when AFTER_DELETE {
-                handleAfterDelete(oldRecords);
+                handleAfterDML(oldRecords, 'Record_Deleted', null);
             }
             when AFTER_UNDELETE {
-                handleAfterUndelete(newRecords);
+                handleAfterDML(newRecords, 'Record_Undeleted', null);
             }
         }
-        
     }
     
-    private void handleAfterInsert(List<SObject> newRecords) {
-        List<SObject> recordsToProcess = filterProcessedRecords(newRecords);
-        if (recordsToProcess.isEmpty()) return;
+    private void handleAfterDML(List<SObject> records, String actionName, Map<Id, SObject> oldMap) {
+        List<SObject> recordsToProcess = filterProcessedRecords(records);
+        if (recordsToProcess.isEmpty()) {
+            return;
+        }
 
+        List<Behavior_Event__e> eventsToPublish = new List<Behavior_Event__e>();
         for (SObject record : recordsToProcess) {
-            Map<String, Object> recordData = getRecordData(record);
-            logBehaviorEvent('Record_Created', objectName, record.Id, recordData);
-        }
-        
-        if (recordsToProcess.size() > 5) {
-            logBehaviorEvent('Bulk_Creation_Detected', objectName, null, new Map<String, Object>{
-                'recordCount' => recordsToProcess.size(),
-                'createdBy' => UserInfo.getUserId()
-            });
-        }
-    }
-    
-    private void handleAfterUpdate(List<SObject> newRecords, Map<Id, SObject> oldMap) {
-        List<SObject> recordsToProcess = filterProcessedRecords(newRecords);
-        if (recordsToProcess.isEmpty()) return;
-        
-        for (SObject newRecord : recordsToProcess) {
-            SObject oldRecord = oldMap.get(newRecord.Id);
-            Map<String, Object> changes = getChangedFields(newRecord, oldRecord);
-            
-            if (!changes.isEmpty()) {
-                logBehaviorEvent('Record_Updated', objectName, newRecord.Id, new Map<String, Object>{
-                    'changedFields' => changes,
-                    'changeCount' => changes.size()
-                });
+            Map<String, Object> behaviorDataMap = new Map<String, Object>();
+            if (actionName == 'Record_Updated' && oldMap != null) {
+                behaviorDataMap.put('changedFields', getChangedFields(record, oldMap.get(record.Id)));
             }
-        }
-        
-        if (recordsToProcess.size() > 10) {
-            logBehaviorEvent('Mass_Update_Detected', objectName, null, new Map<String, Object>{
-                'recordCount' => recordsToProcess.size(),
-                'modifiedBy' => UserInfo.getUserId()
-            });
-        }
-    }
-    
-    private void handleAfterDelete(List<SObject> oldRecords) {
-        List<SObject> recordsToProcess = filterProcessedRecords(oldRecords);
-        if (recordsToProcess.isEmpty()) return;
 
-        for (SObject record : recordsToProcess) {
-            Map<String, Object> recordData = getRecordData(record);
-            logBehaviorEvent('Record_Deleted', objectName, record.Id, recordData);
+            eventsToPublish.add(new Behavior_Event__e(
+                Action_Name__c = actionName,
+                Object_API_Name__c = this.objectName,
+                Record_ID__c = record.Id,
+                User_ID__c = UserInfo.getUserId(),
+                Behavior_Data__c = JSON.serialize(behaviorDataMap)
+            ));
         }
-    }
-    
-    private void handleAfterUndelete(List<SObject> newRecords) {
-        List<SObject> recordsToProcess = filterProcessedRecords(newRecords);
-        if (recordsToProcess.isEmpty()) return;
 
-        for (SObject record : recordsToProcess) {
-            Map<String, Object> recordData = getRecordData(record);
-            logBehaviorEvent('Record_Undeleted', objectName, record.Id, recordData);
+        if (!eventsToPublish.isEmpty()) {
+            EventBus.publish(eventsToPublish);
         }
     }
 
@@ -115,81 +68,22 @@ public with sharing class GenericBehaviorTriggerHandler {
         return recordsToProcess;
     }
     
-    private Map<String, Object> getRecordData(SObject record) {
-        Map<String, Object> data = new Map<String, Object>();
-        Schema.DescribeSObjectResult objectDescribe = record.getSObjectType().getDescribe();
-        Map<String, Schema.SObjectField> fieldMap = objectDescribe.fields.getMap();
-        
-        data.put('objectType', objectDescribe.getName());
-        if (fieldMap.containsKey('Name')) {
-            data.put('name', record.get('Name'));
-        }
-        return data;
-    }
-    
     private Map<String, Object> getChangedFields(SObject newRecord, SObject oldRecord) {
         Map<String, Object> changes = new Map<String, Object>();
         if (oldRecord == null) return changes;
 
-        Schema.DescribeSObjectResult objectDescribe = newRecord.getSObjectType().getDescribe();
-        Map<String, Schema.SObjectField> fieldMap = objectDescribe.fields.getMap();
-        
+        Map<String, Schema.SObjectField> fieldMap = newRecord.getSObjectType().getDescribe().fields.getMap();
         for (String fieldName : fieldMap.keySet()) {
-            Schema.DescribeFieldResult fieldDescribe = fieldMap.get(fieldName).getDescribe();
-            
-            if (fieldDescribe.isUpdateable() && !fieldDescribe.isCalculated()) {
-                try {
-                    Object newValue = newRecord.get(fieldName);
-                    Object oldValue = oldRecord.get(fieldName);
-                    if (newValue != oldValue) {
-                        changes.put(fieldName, new Map<String, Object>{
-                            'oldValue' => oldValue,
-                            'newValue' => newValue
-                        });
-                    }
-                } catch (Exception e) {
-                    System.debug(LoggingLevel.WARN, 'Could not access field ' + fieldName);
-                }
+            if (newRecord.get(fieldName) != oldRecord.get(fieldName)) {
+                changes.put(fieldName, new Map<String, Object>{
+                    'oldValue' => oldRecord.get(fieldName),
+                    'newValue' => newRecord.get(fieldName)
+                });
             }
         }
         return changes;
     }
-    
-    // In GenericBehaviorTriggerHandler.cls
 
-private void logBehaviorEvent(String actionName, String objectType, Id recordId, Map<String, Object> additionalData) {
-    try {
-        String behaviorData = JSON.serialize(new Map<String, Object>{
-            'triggerContext' => true,
-            'timestamp' => DateTime.now(),
-            'username' => UserInfo.getUserName(),
-            'additionalData' => additionalData
-        });
-
-        // Use the existing Workflow_Behavior_Event__e
-        Workflow_Behavior_Event__e event = new Workflow_Behavior_Event__e(
-            Action__c = actionName,
-            Object_Type__c = objectType,
-            Record_ID__c = String.valueOf(recordId),
-            User_ID__c = UserInfo.getUserId(),
-            Behavior_Data__c = behaviorData // The new field
-        );
-        
-        EventBus.publish(event);
-
-    } catch (Exception e) {
-        System.debug('Error publishing behavior event: ' + e.getMessage());
-    }
-}
-
-// Reminder: Make sure to remove the 'WorkflowSuggestionController.commitLogs();'
-// call from the 'run' method in this class.
-
-    /**
-     * @description Clears the static set of processed record IDs.
-     * This method is only visible to test classes and is used to ensure
-     * that each test can simulate a clean, independent transaction.
-     */
     @TestVisible
     private static void clearProcessedIdsForTest() {
         processedRecordIds.clear();
