@@ -143,24 +143,24 @@
     <allowInChatterGroups>false</allowInChatterGroups>
     <compactLayoutAssignment>SYSTEM</compactLayoutAssignment>
     <deploymentStatus>Deployed</deploymentStatus>
-    <description>Represents a pattern of inefficiency discovered by the OrgPulse analysis engine.</description>
+    <description>Stores health and status information for OrgPulse background jobs.</description>
     <enableActivities>false</enableActivities>
     <enableBulkApi>true</enableBulkApi>
     <enableFeeds>false</enableFeeds>
-    <enableHistory>true</enableHistory>
+    <enableHistory>false</enableHistory>
     <enableLicensing>false</enableLicensing>
-    <enableReports>true</enableReports>
+    <enableReports>false</enableReports>
     <enableSearch>false</enableSearch>
     <enableSharing>true</enableSharing>
     <enableStreamingApi>true</enableStreamingApi>
     <externalSharingModel>Private</externalSharingModel>
-    <label>Identified Pain Point</label>
+    <label>System Health Log</label>
     <nameField>
-        <label>Pain Point Name</label>
-        <trackHistory>false</trackHistory>
-        <type>Text</type>
+        <displayFormat>SH-{0000}</displayFormat>
+        <label>System Health Log Name</label>
+        <type>AutoNumber</type>
     </nameField>
-    <pluralLabel>Identified Pain Points</pluralLabel>
+    <pluralLabel>System Health Logs</pluralLabel>
     <searchLayouts></searchLayouts>
     <sharingModel>ReadWrite</sharingModel>
     <visibility>Public</visibility>

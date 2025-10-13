@@ -143,24 +143,23 @@
     <allowInChatterGroups>false</allowInChatterGroups>
     <compactLayoutAssignment>SYSTEM</compactLayoutAssignment>
     <deploymentStatus>Deployed</deploymentStatus>
-    <description>Represents a pattern of inefficiency discovered by the OrgPulse analysis engine.</description>
     <enableActivities>false</enableActivities>
     <enableBulkApi>true</enableBulkApi>
     <enableFeeds>false</enableFeeds>
-    <enableHistory>true</enableHistory>
+    <enableHistory>false</enableHistory>
     <enableLicensing>false</enableLicensing>
     <enableReports>true</enableReports>
     <enableSearch>false</enableSearch>
     <enableSharing>true</enableSharing>
     <enableStreamingApi>true</enableStreamingApi>
     <externalSharingModel>Private</externalSharingModel>
-    <label>Identified Pain Point</label>
+    <label>Suggestion Dismissal</label>
     <nameField>
-        <label>Pain Point Name</label>
-        <trackHistory>false</trackHistory>
-        <type>Text</type>
+        <displayFormat>SD-{0000}</displayFormat>
+        <label>Dismissal Name</label>
+        <type>AutoNumber</type>
     </nameField>
-    <pluralLabel>Identified Pain Points</pluralLabel>
+    <pluralLabel>Suggestion Dismissals</pluralLabel>
     <searchLayouts></searchLayouts>
     <sharingModel>ReadWrite</sharingModel>
     <visibility>Public</visibility>
