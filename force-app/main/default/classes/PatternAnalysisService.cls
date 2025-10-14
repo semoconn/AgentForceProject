@@ -1,7 +1,7 @@
 /**
  * @description Scheduled + Batchable job for analyzing Behavior Logs, detecting workflow inefficiencies,
- *               cleaning old data, and logging system health for OrgPulse.
- * @version 3.1 - Apex-compliant enterprise version (replaced putIfAbsent with standard pattern).
+ * cleaning old data, and logging system health for OrgPulse.
+ * @version 3.2 - Corrected SOQL date literal from LAST_N_DAYS:1 to TODAY to ensure current day's logs are processed.
  */
 public class PatternAnalysisService implements Database.Batchable<sObject>, Schedulable {
 
@@ -17,10 +17,11 @@ public class PatternAnalysisService implements Database.Batchable<sObject>, Sche
 
     // === Batchable start ===
     public Database.QueryLocator start(Database.BatchableContext bc) {
+        // CORRECTED QUERY: Changed LAST_N_DAYS:1 to TODAY
         return Database.getQueryLocator([
             SELECT Id, Action_Name__c, Object_API_Name__c, Record_ID__c, User__c, CreatedDate
             FROM Behavior_Log__c
-            WHERE CreatedDate = LAST_N_DAYS:1
+            WHERE CreatedDate = TODAY
             AND Action_Name__c = 'Record_Created'
             AND Object_API_Name__c IN ('Contact', 'Task')
             ORDER BY User__c, CreatedDate ASC
