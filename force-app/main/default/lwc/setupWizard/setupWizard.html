@@ -1,0 +1,104 @@
+<!--
+  @description       : A multi-step setup wizard for configuring OrgPulse for the first time.
+  @author            : Gemini
+  @group             : OrgPulse
+  @last modified on  : 10-13-2025
+  @last modified by  : Gemini
+-->
+<template>
+    <lightning-card title="OrgPulse Setup Wizard" icon-name="standard:settings">
+        <div class="slds-p-around_medium">
+            <lightning-progress-bar value={progress} size="large"></lightning-progress-bar>
+            
+            <div class="slds-m-vertical_large slds-p-horizontal_large">
+                <!-- Step 1: Welcome -->
+                <template if:true={isStep1}>
+                    <div class="slds-text-longform">
+                        <h2 class="slds-text-heading_large slds-m-bottom_medium">Welcome to OrgPulse!</h2>
+                        <p class="slds-text-heading_small">Let's get you set up to start monitoring your org's health.</p>
+                        <p class="slds-m-top_medium">This quick setup wizard will guide you through:</p>
+                        <ul>
+                            <li>Selecting which objects you want to monitor.</li>
+                            <li>Assigning the necessary user permissions.</li>
+                            <li>Scheduling the nightly analysis job.</li>
+                        </ul>
+                        <p class="slds-m-top_medium">This should only take a couple of minutes.</p>
+                    </div>
+                </template>
+
+                <!-- Step 2: Object Configuration -->
+                <template if:true={isStep2}>
+                     <h2 class="slds-text-heading_large slds-m-bottom_medium">Configure Object Tracking</h2>
+                     <p class="slds-m-bottom_medium">Select the objects you want OrgPulse to monitor for user activity. We recommend starting with core objects like Account, Contact, Lead, Opportunity, and Case.</p>
+                     <template if:true={objectOptions}>
+                         <lightning-checkbox-group
+                            name="ObjectSelection"
+                            label="Select Objects to Monitor"
+                            options={objectOptions}
+                            value={selectedObjects}
+                            onchange={handleObjectSelection}
+                            required>
+                        </lightning-checkbox-group>
+                     </template>
+                     <template if:true={wiredObjects.error}>
+                         <div class="slds-text-color_error">Could not load available objects. Please ensure you have the correct permissions.</div>
+                     </template>
+                </template>
+
+                <!-- Step 3: Permissions -->
+                <template if:true={isStep3}>
+                    <h2 class="slds-text-heading_large slds-m-bottom_medium">Assign Permissions</h2>
+                    <p class="slds-m-bottom_medium">To allow your users to be monitored by OrgPulse, assign them the **OrgPulse User** permission set.</p>
+                    <p>Admins who will manage OrgPulse settings and view the dashboard need the **OrgPulse Admin** permission set.</p>
+                    <div class="slds-box slds-m-top_medium slds-theme_shade">
+                        <p><strong>Next Step:</strong> After completing this wizard, navigate to **Setup > Permission Sets** to assign these to your users and admins.</p>
+                    </div>
+                </template>
+
+                <!-- Step 4: Scheduling -->
+                <template if:true={isStep4}>
+                     <h2 class="slds-text-heading_large slds-m-bottom_medium">Schedule Nightly Analysis</h2>
+                     <p class="slds-m-bottom_medium">OrgPulse analyzes user activity once a day to find new pain points. Click the button below to schedule this job to run automatically every night.</p>
+                     <div class="slds-text-align_center slds-m-top_large">
+                         <lightning-button variant="brand" label="Schedule Nightly Job" onclick={handleScheduleJob} disabled={isJobScheduled}></lightning-button>
+                         <template if:true={isJobScheduled}>
+                            <div class="slds-m-top_medium slds-text-color_success">
+                                <lightning-icon icon-name="utility:success" size="small" variant="success"></lightning-icon>
+                                Job has been scheduled successfully!
+                            </div>
+                         </template>
+                     </div>
+                </template>
+
+                <!-- Step 5: Finish -->
+                <template if:true={isStep5}>
+                     <div class="slds-text-align_center">
+                        <lightning-icon icon-name="utility:success" alternative-text="Success!" variant="success" size="large"></lightning-icon>
+                        <h2 class="slds-text-heading_large slds-m-top_medium">Setup Complete!</h2>
+                        <p class="slds-m-top_medium">OrgPulse is now configured and the analysis job is scheduled to run nightly.</p>
+                        <p class="slds-m-top_small">You can view the results on the **OrgPulse Dashboard** tomorrow.</p>
+                     </div>
+                </template>
+            </div>
+        </div>
+
+        <footer class="slds-card__footer">
+             <template if:false={isStep5}>
+                <div class="slds-grid slds-grid_align-spread">
+                    <div>
+                        <lightning-button label="Previous" onclick={handlePrevious} disabled={isStep1}></lightning-button>
+                    </div>
+                    <div>
+                        <lightning-button variant="brand" label="Next" onclick={handleNext}></lightning-button>
+                    </div>
+                </div>
+             </template>
+             <template if:true={isStep5}>
+                  <div class="slds-grid slds-grid_align-end">
+                    <lightning-button variant="brand" label="Finish" onclick={handleFinish}></lightning-button>
+                  </div>
+             </template>
+        </footer>
+    </lightning-card>
+</template>
+

@@ -1,0 +1,71 @@
+<!--
+  @description       : The main dashboard for the OrgPulse application.
+  @author            : Gemini
+  @group             : OrgPulse
+  @last modified on  : 10-13-2025
+  @last modified by  : Gemini
+-->
+<template>
+    <lightning-card title="OrgPulse Health Dashboard" icon-name="standard:dashboard">
+        <div class="slds-p-around_medium">
+
+            <!-- Header Stats Section -->
+            <template if:true={stats.data}>
+                <div class="slds-grid slds-wrap slds-gutters slds-m-bottom_large">
+                    <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-3 slds-p-bottom_small">
+                        <div class="stat-card">
+                            <div class="stat-number">{stats.data.totalLogs}</div>
+                            <div class="stat-label">Total Events Tracked</div>
+                        </div>
+                    </div>
+                    <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-3 slds-p-bottom_small">
+                        <div class="stat-card">
+                            <div class="stat-number">{stats.data.uniqueUsers}</div>
+                            <div class="stat-label">Active Users This Month</div>
+                        </div>
+                    </div>
+                    <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-3 slds-p-bottom_small">
+                        <div class="stat-card">
+                            <div class="stat-number">{stats.data.objectsTracked}</div>
+                            <div class="stat-label">Objects Monitored</div>
+                        </div>
+                    </div>
+                </div>
+            </template>
+            <template if:true={stats.error}>
+                 <div class="slds-text-color_error">Error loading statistics: {stats.error}</div>
+            </template>
+
+            <!-- Identified Pain Points Section -->
+            <h2 class="slds-text-heading_medium slds-m-bottom_medium">Prioritized Pain Points</h2>
+
+            <template if:true={isLoading}>
+                <lightning-spinner alternative-text="Loading Pain Points..." size="medium"></lightning-spinner>
+            </template>
+            
+            <template if:false={isLoading}>
+                <template if:true={painPoints.data}>
+                    <template if:false={hasPainPoints}>
+                        <div class="slds-box slds-theme_shade slds-text-align_center">
+                             <div class="slds-text-heading_small">No Pain Points Detected!</div>
+                             <p class="slds-m-top_small">OrgPulse is monitoring user activity. Check back later to see if any workflow inefficiencies are found.</p>
+                        </div>
+                    </template>
+                    <template if:true={hasPainPoints}>
+                         <lightning-datatable
+                            key-field="Id"
+                            data={painPoints.data}
+                            columns={columns}
+                            hide-checkbox-column="true"
+                            show-row-number-column="false">
+                        </lightning-datatable>
+                    </template>
+                </template>
+                <template if:true={painPoints.error}>
+                    <div class="slds-text-color_error">Error loading pain points: {painPoints.error}</div>
+                </template>
+            </template>
+
+        </div>
+    </lightning-card>
+</template>
