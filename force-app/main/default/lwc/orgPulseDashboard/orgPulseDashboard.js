@@ -2,14 +2,14 @@
  * @description       : Main dashboard LWC for OrgPulse. Displays high-level stats and a prioritized list of identified pain points.
  * @author            : Gemini
  * @group             : OrgPulse
- * @last modified on  : 10-14-2025
+ * @last modified on  : 10-15-2025
  * @last modified by  : Gemini
 **/
 import { LightningElement, wire, track } from 'lwc';
 import getWorkflowStats from '@salesforce/apex/WorkflowAnalyticsController.getWorkflowStats';
 import getPainPoints from '@salesforce/apex/PainPointController.getPainPoints';
+import getSolutionGuide from '@salesforce/apex/SolutionGuideController.getSolutionGuide';
 
-// Define the columns for the datatable, including the new 'action' column
 const columns = [
     { label: 'Pain Point', fieldName: 'Name', type: 'text', wrapText: true },
     { label: 'Description', fieldName: 'Description__c', type: 'text', wrapText: true },
@@ -39,43 +39,62 @@ export default class OrgPulseDashboard extends LightningElement {
     @track error;
     @track isLoading = true;
 
-    // Properties for the modal
-    @track isModalOpen = false;
+    // Properties for the details modal
+    @track isDetailModalOpen = false;
     @track selectedPainPoint = {};
 
-    // Wired properties for stats
+    // Properties for the solution modal
+    @track isSolutionModalOpen = false;
+    @track solutionGuide = {};
+
     @wire(getWorkflowStats) stats;
 
-    // Consolidate the pain points wire into a single function to handle data, errors, and loading state
     @wire(getPainPoints)
     wiredPainPoints({ error, data }) {
         if (data) {
-            this.painPointsData = data;
+            // The pain point object from Apex already contains the Unique_Key__c.
+            this.painPointsData = data; 
             this.error = undefined;
         } else if (error) {
             this.error = error;
             this.painPointsData = [];
         }
-        this.isLoading = false; // <-- This now correctly handles loading state
+        this.isLoading = false;
     }
     
     get hasPainPoints() {
         return this.painPointsData && this.painPointsData.length > 0;
     }
 
-    // Handle the 'View Details' action from the datatable
     handleRowAction(event) {
         const actionName = event.detail.action.name;
         const row = event.detail.row;
         if (actionName === 'view_details') {
             this.selectedPainPoint = row;
-            this.isModalOpen = true;
+            this.isDetailModalOpen = true;
         }
     }
 
-    // Close the modal
+    handleViewSolution() {
+        if (this.selectedPainPoint && this.selectedPainPoint.Unique_Key__c) {
+            getSolutionGuide({ painPointKey: this.selectedPainPoint.Unique_Key__c })
+                .then(result => {
+                    this.solutionGuide = result;
+                    this.isDetailModalOpen = false; // Hide details modal
+                    this.isSolutionModalOpen = true; // Show solution modal
+                })
+                .catch(error => {
+                    this.error = error;
+                    this.solutionGuide = { title: 'Error', steps: ['Could not load the solution guide.']};
+                    this.isDetailModalOpen = false;
+                    this.isSolutionModalOpen = true;
+                });
+        }
+    }
+
     closeModal() {
-        this.isModalOpen = false;
-        this.selectedPainPoint = {};
+        this.isDetailModalOpen = false;
+        this.isSolutionModalOpen = false;
+        this.selectedPainPoint = {}; // Clear selection on close
     }
 }

@@ -2,7 +2,7 @@
  * @description       : Securely queries Identified_Pain_Point__c records for the OrgPulse Dashboard.
  * @author            : Gemini
  * @group             : OrgPulse
- * @last modified on  : 10-14-2025
+ * @last modified on  : 10-15-2025
  * @last modified by  : Gemini
 **/
 public with sharing class PainPointController {
@@ -25,7 +25,8 @@ public with sharing class PainPointController {
                     Impact_Score__c, 
                     Status__c, 
                     Last_Detected__c,
-                    Example_Records__c // <-- ADDED THIS FIELD FOR THE MODAL
+                    Example_Records__c,
+                    Unique_Key__c // <-- RE-ADDING THE MISSING FIELD
                 FROM Identified_Pain_Point__c
                 WITH SECURITY_ENFORCED
                 ORDER BY Impact_Score__c DESC
