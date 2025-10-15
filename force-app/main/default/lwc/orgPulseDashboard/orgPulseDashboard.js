@@ -2,13 +2,14 @@
  * @description       : Main dashboard LWC for OrgPulse. Displays high-level stats and a prioritized list of identified pain points.
  * @author            : Gemini
  * @group             : OrgPulse
- * @last modified on  : 10-13-2025
+ * @last modified on  : 10-14-2025
  * @last modified by  : Gemini
 **/
 import { LightningElement, wire, track } from 'lwc';
 import getWorkflowStats from '@salesforce/apex/WorkflowAnalyticsController.getWorkflowStats';
 import getPainPoints from '@salesforce/apex/PainPointController.getPainPoints';
 
+// Define the columns for the datatable, including the new 'action' column
 const columns = [
     { label: 'Pain Point', fieldName: 'Name', type: 'text', wrapText: true },
     { label: 'Description', fieldName: 'Description__c', type: 'text', wrapText: true },
@@ -25,31 +26,56 @@ const columns = [
         initialWidth: 140
     },
     { label: 'Status', fieldName: 'Status__c', type: 'text', initialWidth: 100 },
-    { label: 'Last Detected', fieldName: 'Last_Detected__c', type: 'date', initialWidth: 150 }
+    { label: 'Last Detected', fieldName: 'Last_Detected__c', type: 'date', initialWidth: 150 },
+    {
+        type: 'action',
+        typeAttributes: { rowActions: [{ label: 'View Details', name: 'view_details' }] },
+    }
 ];
 
 export default class OrgPulseDashboard extends LightningElement {
     @track columns = columns;
+    @track painPointsData = [];
+    @track error;
     @track isLoading = true;
 
-    // Wired properties to hold data from Apex controllers
+    // Properties for the modal
+    @track isModalOpen = false;
+    @track selectedPainPoint = {};
+
+    // Wired properties for stats
     @wire(getWorkflowStats) stats;
-    @wire(getPainPoints) painPoints;
 
-    /**
-     * @description Getter to determine if pain points were found.
-     */
-    get hasPainPoints() {
-        return this.painPoints && this.painPoints.data && this.painPoints.data.length > 0;
-    }
-
-    /**
-     * @description Stop the loading spinner once the pain points data has been returned from Apex.
-     */
+    // Consolidate the pain points wire into a single function to handle data, errors, and loading state
     @wire(getPainPoints)
     wiredPainPoints({ error, data }) {
-        if (data || error) {
-            this.isLoading = false;
+        if (data) {
+            this.painPointsData = data;
+            this.error = undefined;
+        } else if (error) {
+            this.error = error;
+            this.painPointsData = [];
         }
+        this.isLoading = false; // <-- This now correctly handles loading state
+    }
+    
+    get hasPainPoints() {
+        return this.painPointsData && this.painPointsData.length > 0;
+    }
+
+    // Handle the 'View Details' action from the datatable
+    handleRowAction(event) {
+        const actionName = event.detail.action.name;
+        const row = event.detail.row;
+        if (actionName === 'view_details') {
+            this.selectedPainPoint = row;
+            this.isModalOpen = true;
+        }
+    }
+
+    // Close the modal
+    closeModal() {
+        this.isModalOpen = false;
+        this.selectedPainPoint = {};
     }
 }

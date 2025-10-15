@@ -1,15 +1,7 @@
-<!--
-  @description       : The main dashboard for the OrgPulse application.
-  @author            : Gemini
-  @group             : OrgPulse
-  @last modified on  : 10-13-2025
-  @last modified by  : Gemini
--->
 <template>
     <lightning-card title="OrgPulse Health Dashboard" icon-name="standard:dashboard">
         <div class="slds-p-around_medium">
 
-            <!-- Header Stats Section -->
             <template if:true={stats.data}>
                 <div class="slds-grid slds-wrap slds-gutters slds-m-bottom_large">
                     <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-3 slds-p-bottom_small">
@@ -33,10 +25,9 @@
                 </div>
             </template>
             <template if:true={stats.error}>
-                 <div class="slds-text-color_error">Error loading statistics: {stats.error}</div>
+                 <div class="slds-text-color_error">Error loading statistics.</div>
             </template>
 
-            <!-- Identified Pain Points Section -->
             <h2 class="slds-text-heading_medium slds-m-bottom_medium">Prioritized Pain Points</h2>
 
             <template if:true={isLoading}>
@@ -44,28 +35,54 @@
             </template>
             
             <template if:false={isLoading}>
-                <template if:true={painPoints.data}>
-                    <template if:false={hasPainPoints}>
-                        <div class="slds-box slds-theme_shade slds-text-align_center">
-                             <div class="slds-text-heading_small">No Pain Points Detected!</div>
-                             <p class="slds-m-top_small">OrgPulse is monitoring user activity. Check back later to see if any workflow inefficiencies are found.</p>
-                        </div>
-                    </template>
-                    <template if:true={hasPainPoints}>
-                         <lightning-datatable
-                            key-field="Id"
-                            data={painPoints.data}
-                            columns={columns}
-                            hide-checkbox-column="true"
-                            show-row-number-column="false">
-                        </lightning-datatable>
-                    </template>
+                <template if:false={hasPainPoints}>
+                    <div class="slds-box slds-theme_shade slds-text-align_center">
+                         <div class="slds-text-heading_small">No Pain Points Detected!</div>
+                         <p class="slds-m-top_small">OrgPulse is monitoring user activity. Check back later to see if any workflow inefficiencies are found.</p>
+                    </div>
                 </template>
-                <template if:true={painPoints.error}>
-                    <div class="slds-text-color_error">Error loading pain points: {painPoints.error}</div>
+                <template if:true={hasPainPoints}>
+                     <lightning-datatable
+                        key-field="Id"
+                        data={painPointsData}
+                        columns={columns}
+                        onrowaction={handleRowAction}
+                        hide-checkbox-column="true"
+                        show-row-number-column="false">
+                    </lightning-datatable>
+                </template>
+                <template if:true={error}>
+                    <div class="slds-text-color_error">An error occurred while loading pain points.</div>
                 </template>
             </template>
 
         </div>
     </lightning-card>
+
+    <template if:true={isModalOpen}>
+        <section role="dialog" tabindex="-1" class="slds-modal slds-fade-in-open">
+            <div class="slds-modal__container">
+                <header class="slds-modal__header">
+                    <button class="slds-button slds-button_icon slds-modal__close slds-button_icon-inverse" title="Close" onclick={closeModal}>
+                        <lightning-icon icon-name="utility:close" alternative-text="close" variant="inverse" size="small"></lightning-icon>
+                        <span class="slds-assistive-text">Close</span>
+                    </button>
+                    <h2 class="slds-text-heading_medium slds-hyphenate">{selectedPainPoint.Name}</h2>
+                </header>
+                <div class="slds-modal__content slds-p-around_medium">
+                    <p><strong>Description:</strong></p>
+                    <p class="slds-m-bottom_medium">{selectedPainPoint.Description__c}</p>
+                    
+                    <p><strong>Example Records (IDs):</strong></p>
+                    <div class="slds-box slds-theme_shade">
+                        <pre>{selectedPainPoint.Example_Records__c}</pre>
+                    </div>
+                </div>
+                <footer class="slds-modal__footer">
+                    <button class="slds-button slds-button_neutral" onclick={closeModal}>Close</button>
+                </footer>
+            </div>
+        </section>
+        <div class="slds-backdrop slds-backdrop_open"></div>
+    </template>
 </template>

@@ -3,17 +3,17 @@ private class WorkflowAnalyticsControllerTest {
 
     @TestSetup
     static void makeData() {
-        // Create user logs
-        List<Workflow_Log__c> logs = new List<Workflow_Log__c>();
+        // CORRECTED: Create Behavior_Log__c records for testing
+        List<Behavior_Log__c> logs = new List<Behavior_Log__c>();
         for (Integer i = 0; i < 5; i++) {
-            logs.add(new Workflow_Log__c(
+            logs.add(new Behavior_Log__c(
                 Action_Name__c = 'Record_Created',
                 Object_API_Name__c = 'Contact',
                 User__c = UserInfo.getUserId()
             ));
         }
         for (Integer i = 0; i < 3; i++) {
-            logs.add(new Workflow_Log__c(
+            logs.add(new Behavior_Log__c(
                 Action_Name__c = 'Record_Updated',
                 Object_API_Name__c = 'Account',
                 User__c = UserInfo.getUserId()

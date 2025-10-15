@@ -1,6 +1,7 @@
 /**
- * @description Provides data for the AgentForce analytics dashboard.
- * This class uses aggregate queries to efficiently summarize workflow log data.
+ * @description Provides data for the OrgPulse analytics dashboard.
+ * This class uses aggregate queries to efficiently summarize behavior log data.
+ * @last modified on  : 10-14-2025
  */
 public with sharing class WorkflowAnalyticsController {
     
@@ -23,12 +24,13 @@ public with sharing class WorkflowAnalyticsController {
         Map<String, Integer> stats = new Map<String, Integer>();
         
         try {
-            stats.put('totalLogs', [SELECT COUNT() FROM Workflow_Log__c]);
+            // CORRECTED: Pointing to Behavior_Log__c instead of Workflow_Log__c
+            stats.put('totalLogs', [SELECT COUNT() FROM Behavior_Log__c]);
 
-            AggregateResult[] uniqueUsers = [SELECT COUNT_DISTINCT(User__c) userCount FROM Workflow_Log__c];
+            AggregateResult[] uniqueUsers = [SELECT COUNT_DISTINCT(User__c) userCount FROM Behavior_Log__c];
             stats.put('uniqueUsers', uniqueUsers.isEmpty() ? 0 : (Integer)uniqueUsers[0].get('userCount'));
             
-            AggregateResult[] objectsTracked = [SELECT COUNT_DISTINCT(Object_API_Name__c) objectCount FROM Workflow_Log__c];
+            AggregateResult[] objectsTracked = [SELECT COUNT_DISTINCT(Object_API_Name__c) objectCount FROM Behavior_Log__c];
             stats.put('objectsTracked', objectsTracked.isEmpty() ? 0 : (Integer)objectsTracked[0].get('objectCount'));
             
         } catch (Exception e) {
@@ -46,9 +48,10 @@ public with sharing class WorkflowAnalyticsController {
     public static List<TopAction> getTopActions() {
         List<TopAction> topActions = new List<TopAction>();
         try {
+            // CORRECTED: Pointing to Behavior_Log__c instead of Workflow_Log__c
             List<AggregateResult> results = [
                 SELECT Action_Name__c actionName, Object_API_Name__c objectName, COUNT(Id) actionCount
-                FROM Workflow_Log__c
+                FROM Behavior_Log__c
                 WHERE CreatedDate = LAST_N_DAYS:30
                 AND Action_Name__c != 'INSIGHT_GENERATED'
                 GROUP BY Action_Name__c, Object_API_Name__c
