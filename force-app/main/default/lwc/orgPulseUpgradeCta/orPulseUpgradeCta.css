@@ -1,0 +1,15 @@
+.upgrade-card {
+    border: 2px solid #005290; /* Salesforce Blue */
+    border-radius: .25rem;
+    background-color: #f3f9ff;
+}
+
+.slds-text-heading_large {
+    color: #005290;
+}
+
+.premium-features {
+    display: inline-block;
+    text-align: left;
+    max-width: 450px;
+}
