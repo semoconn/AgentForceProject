@@ -2,7 +2,7 @@
  * @description       : Controls the multi-step setup wizard for OrgPulse.
  * @author            : Gemini
  * @group             : OrgPulse
- * @last modified on  : 10-13-2025
+ * @last modified on  : 10-15-2025
  * @last modified by  : Gemini
 **/
 import { LightningElement, track, wire } from 'lwc';
@@ -42,7 +42,6 @@ export default class SetupWizard extends LightningElement {
     get isStep5() { return this.currentStep === '5'; }
 
     async handleNext() {
-        // Validation for Step 2
         if (this.currentStep === '2') {
             if (this.selectedObjects.length === 0) {
                 this.showToast('Error', 'Please select at least one object to monitor.', 'error');
@@ -50,13 +49,11 @@ export default class SetupWizard extends LightningElement {
             }
         }
 
-        // Validation for Step 4
         if (this.currentStep === '4') {
              if (!this.isJobScheduled) {
                 this.showToast('Information', 'Please schedule the nightly job to continue.', 'info');
                 return;
             }
-            // This is the final step before the summary, so we save the settings
             await this.saveSettings();
         }
         
@@ -74,10 +71,11 @@ export default class SetupWizard extends LightningElement {
     }
 
     handleFinish() {
-        this.showToast('Success', 'Configuration saved!', 'success');
-        // This would typically navigate the user to the dashboard or another page.
-        // For now, we'll just log it.
-        console.log('Wizard finished and settings are saved.');
+        this.showToast('Success', 'Configuration saved! You will now be taken to the dashboard.', 'success');
+        
+        // Dispatch a custom event to notify the parent container that setup is complete.
+        const completeEvent = new CustomEvent('setupcomplete');
+        this.dispatchEvent(completeEvent);
     }
 
     handleObjectSelection(event) {
@@ -101,7 +99,6 @@ export default class SetupWizard extends LightningElement {
             console.log('Settings saved successfully.');
         } catch (error) {
             this.showToast('Error', 'Could not save monitoring settings. ' + error.body.message, 'error');
-            // Prevent moving to the next step if saving fails
             throw new Error('Save failed');
         }
     }
@@ -111,4 +108,3 @@ export default class SetupWizard extends LightningElement {
         this.dispatchEvent(event);
     }
 }
-

@@ -3,12 +3,12 @@
  * @author            : Gemini
  * @group             : OrgPulse
  * @last modified on  : 10-15-2025
- * @last modified by  : GPT-5 (enterprise optimization, test-context fix)
+ * @last modified by  : Gemini (Final Sprint 4 Feature)
 **/
 public with sharing class SetupWizardController {
 
     private static final String SCHEDULE_JOB_NAME = 'OrgPulse Nightly Analysis';
-    @TestVisible private static Boolean testHook_simulateDuplicateJob = false; // test hook
+    @TestVisible private static Boolean testHook_simulateDuplicateJob = false;
 
     public class TrackableObject implements Comparable {
         @AuraEnabled public String label { get; set; }
@@ -32,8 +32,7 @@ public with sharing class SetupWizardController {
         for (ApexTrigger t : [
             SELECT TableEnumOrId
             FROM ApexTrigger 
-            WHERE Name LIKE '%BehaviorTrigger' 
-            AND TableEnumOrId != NULL
+            WHERE Name LIKE '%BehaviorTrigger' AND TableEnumOrId != NULL
             WITH SECURITY_ENFORCED
         ]) {
             supportedObjects.add(t.TableEnumOrId);
@@ -50,19 +49,17 @@ public with sharing class SetupWizardController {
                 objects.add(new TrackableObject(describeResult.getLabel(), describeResult.getName()));
             }
         }
-
+        
         objects.sort();
         return objects;
     }
 
     @AuraEnabled
     public static String scheduleAnalysisJob() {
-        // Special case: allow tests to simulate a duplicate job
         if (Test.isRunningTest() && testHook_simulateDuplicateJob) {
-            throw new AuraHandledException('The analysis job is already scheduled (simulated).');
+            throw new AuraHandledException('The analysis job is already scheduled.');
         }
 
-        // Prevent duplicate jobs from being scheduled (production path)
         List<CronTrigger> existingJobs = [
             SELECT Id 
             FROM CronTrigger 
@@ -93,5 +90,16 @@ public with sharing class SetupWizardController {
         } catch (Exception e) {
             throw new AuraHandledException('Failed to save settings: ' + e.getMessage());
         }
+    }
+    
+    /**
+     * @description Checks if the OrgPulse initial setup has been completed.
+     * @return      Boolean true if the configuration setting exists, false otherwise.
+    **/
+    @AuraEnabled(cacheable=true)
+    public static Boolean isSetupComplete() {
+        // The existence of the org-level custom setting is our flag for setup completion.
+        OrgPulse_Configuration__c settings = OrgPulse_Configuration__c.getOrgDefaults();
+        return (settings != null && String.isNotBlank(settings.Monitored_Objects__c));
     }
 }

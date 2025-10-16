@@ -1,0 +1,18 @@
+<template>
+    <!-- Show a spinner while we check the setup status -->
+    <template if:true={isLoading}>
+        <div class="spinner-container">
+            <lightning-spinner alternative-text="Loading..." size="medium"></lightning-spinner>
+        </div>
+    </template>
+
+    <!-- Once loading is complete, show the correct component -->
+    <template if:false={isLoading}>
+        <template if:true={isSetupComplete}>
+            <c-org-pulse-dashboard></c-org-pulse-dashboard>
+        </template>
+        <template if:false={isSetupComplete}>
+            <c-setup-wizard onsetupcomplete={handleSetupComplete}></c-setup-wizard>
+        </template>
+    </template>
+</template>
