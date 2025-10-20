@@ -1,54 +1,63 @@
 <template>
     <lightning-card title="OrgPulse Health Dashboard" icon-name="standard:dashboard">
-        <div class="slds-p-around_medium">
+        <!-- NEW: Refresh button in the actions slot -->
+        <lightning-button-icon icon-name="utility:refresh" slot="actions" alternative-text="Refresh"
+            onclick={handleRefresh}></lightning-button-icon>
 
-            <template if:true={stats.data}>
+        <div class="slds-p-around_medium">
+            <template if:true={stats}>
                 <div class="slds-grid slds-wrap slds-gutters slds-m-bottom_large">
                     <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-3 slds-p-bottom_small">
                         <div class="stat-card">
-                            <div class="stat-number">{stats.data.totalLogs}</div>
+                            <div class="stat-number">{stats.totalLogs}</div>
                             <div class="stat-label">Total Events Tracked</div>
                         </div>
                     </div>
                     <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-3 slds-p-bottom_small">
                         <div class="stat-card">
-                            <div class="stat-number">{stats.data.uniqueUsers}</div>
+                            <div class="stat-number">{stats.uniqueUsers}</div>
                             <div class="stat-label">Active Users This Month</div>
                         </div>
                     </div>
                     <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-3 slds-p-bottom_small">
                         <div class="stat-card">
-                            <div class="stat-number">{stats.data.objectsTracked}</div>
+                            <div class="stat-number">{stats.objectsTracked}</div>
                             <div class="stat-label">Objects Monitored</div>
                         </div>
                     </div>
                 </div>
             </template>
-            <template if:true={stats.error}>
-                 <div class="slds-text-color_error">Error loading statistics.</div>
+            <template if:true={error}>
+                <div class="slds-text-color_error">Error loading statistics.</div>
             </template>
 
-            <h2 class="slds-text-heading_medium slds-m-bottom_medium">Prioritized Pain Points</h2>
+            <!-- Corrected reference to the system health component -->
+            <c-org-pulse-system-health></c-org-pulse-system-health>
+
+            <div class="slds-grid slds-grid_align-spread slds-m-vertical_medium">
+                <h2 class="slds-text-heading_medium">Prioritized Pain Points</h2>
+                <div>
+                    <lightning-radio-group name="statusFilter" label="Filter by Status" options={filterOptions}
+                        value={statusFilter} type="button" onchange={handleFilterChange}>
+                    </lightning-radio-group>
+                </div>
+            </div>
 
             <template if:true={isLoading}>
-                <lightning-spinner alternative-text="Loading Pain Points..." size="medium"></lightning-spinner>
+                <lightning-spinner alternative-text="Loading..." size="medium"></lightning-spinner>
             </template>
-            
+
             <template if:false={isLoading}>
                 <template if:false={hasPainPoints}>
                     <div class="slds-box slds-theme_shade slds-text-align_center">
-                         <div class="slds-text-heading_small">No Pain Points Detected!</div>
-                         <p class="slds-m-top_small">OrgPulse is monitoring user activity. Check back later to see if any workflow inefficiencies are found.</p>
+                        <div class="slds-text-heading_small">No '{statusFilter}' Pain Points Detected!</div>
+                        <p class="slds-m-top_small">OrgPulse is monitoring user activity. Check back later or adjust
+                            the filter.</p>
                     </div>
                 </template>
                 <template if:true={hasPainPoints}>
-                     <lightning-datatable
-                        key-field="Id"
-                        data={painPointsData}
-                        columns={columns}
-                        onrowaction={handleRowAction}
-                        hide-checkbox-column="true"
-                        show-row-number-column="false">
+                    <lightning-datatable key-field="Id" data={filteredPainPoints} columns={columns}
+                        onrowaction={handleRowAction} hide-checkbox-column="true">
                     </lightning-datatable>
                 </template>
                 <template if:true={error}>
@@ -57,16 +66,19 @@
             </template>
 
             <c-org-pulse-upgrade-cta></c-org-pulse-upgrade-cta>
-
         </div>
     </lightning-card>
 
+    <!-- Modals (no changes) -->
     <template if:true={isDetailModalOpen}>
+        <!-- Detail Modal Markup -->
         <section role="dialog" tabindex="-1" class="slds-modal slds-fade-in-open">
             <div class="slds-modal__container">
                 <header class="slds-modal__header">
-                    <button class="slds-button slds-button_icon slds-modal__close slds-button_icon-inverse" title="Close" onclick={closeModal}>
-                        <lightning-icon icon-name="utility:close" alternative-text="close" variant="inverse" size="small"></lightning-icon>
+                    <button class="slds-button slds-button_icon slds-modal__close slds-button_icon-inverse"
+                        title="Close" onclick={closeModal}>
+                        <lightning-icon icon-name="utility:close" alternative-text="close" variant="inverse"
+                            size="small"></lightning-icon>
                         <span class="slds-assistive-text">Close</span>
                     </button>
                     <h2 class="slds-text-heading_medium slds-hyphenate">{selectedPainPoint.Name}</h2>
@@ -74,7 +86,7 @@
                 <div class="slds-modal__content slds-p-around_medium">
                     <p><strong>Description:</strong></p>
                     <p class="slds-m-bottom_medium">{selectedPainPoint.Description__c}</p>
-                    
+
                     <p><strong>Example Records (IDs):</strong></p>
                     <div class="slds-box slds-theme_shade">
                         <pre>{selectedPainPoint.Example_Records__c}</pre>
@@ -82,7 +94,8 @@
                 </div>
                 <footer class="slds-modal__footer">
                     <button class="slds-button slds-button_neutral" onclick={closeModal}>Close</button>
-                    <button class="slds-button slds-button_brand" onclick={handleViewSolution}>View Solution Guide (Lite)</button>
+                    <button class="slds-button slds-button_brand" onclick={handleViewSolution}>View Solution Guide
+                        (Lite)</button>
                 </footer>
             </div>
         </section>
@@ -90,11 +103,14 @@
     </template>
 
     <template if:true={isSolutionModalOpen}>
+        <!-- Solution Modal Markup -->
         <section role="dialog" tabindex="-1" class="slds-modal slds-fade-in-open">
             <div class="slds-modal__container">
                 <header class="slds-modal__header">
-                    <button class="slds-button slds-button_icon slds-modal__close slds-button_icon-inverse" title="Close" onclick={closeModal}>
-                        <lightning-icon icon-name="utility:close" alternative-text="close" variant="inverse" size="small"></lightning-icon>
+                    <button class="slds-button slds-button_icon slds-modal__close slds-button_icon-inverse"
+                        title="Close" onclick={closeModal}>
+                        <lightning-icon icon-name="utility:close" alternative-text="close" variant="inverse"
+                            size="small"></lightning-icon>
                         <span class="slds-assistive-text">Close</span>
                     </button>
                     <h2 class="slds-text-heading_medium slds-hyphenate">{solutionGuide.title}</h2>
@@ -113,5 +129,5 @@
         </section>
         <div class="slds-backdrop slds-backdrop_open"></div>
     </template>
-    
 </template>
+

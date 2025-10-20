@@ -1,13 +1,18 @@
 <!--
   @description       : A multi-step setup wizard for configuring OrgPulse for the first time.
-  @author            : Gemini
-  @group             : OrgPulse
-  @last modified on  : 10-13-2025
-  @last modified by  : Gemini
+  @version           : 2.0 - Added step counter and updated progress bar UI
 -->
 <template>
-    <lightning-card title="OrgPulse Setup Wizard" icon-name="standard:settings">
+    <lightning-card icon-name="standard:settings">
         <div class="slds-p-around_medium">
+            
+            <!-- NEW: Header with title and step counter -->
+            <div class="slds-grid slds-grid_align-spread slds-m-bottom_small">
+                <h2 class="slds-text-heading_medium slds-align-middle">OrgPulse Setup</h2>
+                <span class="slds-text-body_small slds-align-middle">{stepCounter}</span>
+            </div>
+            
+            <!-- Progress bar will now correctly start at 0 -->
             <lightning-progress-bar value={progress} size="large"></lightning-progress-bar>
             
             <div class="slds-m-vertical_large slds-p-horizontal_large">
@@ -29,7 +34,7 @@
                 <!-- Step 2: Object Configuration -->
                 <template if:true={isStep2}>
                      <h2 class="slds-text-heading_large slds-m-bottom_medium">Configure Object Tracking</h2>
-                     <p class="slds-m-bottom_medium">Select the objects you want OrgPulse to monitor for user activity. We recommend starting with core objects like Account, Contact, Lead, Opportunity, and Case.</p>
+                     <p class="slds-m-bottom_medium">Select the objects you want OrgPulse to monitor for user activity. We recommend starting with core objects like Account, Contact, Lead, Opportunity, Case, and Task.</p>
                      <template if:true={objectOptions}>
                          <lightning-checkbox-group
                             name="ObjectSelection"
@@ -101,4 +106,3 @@
         </footer>
     </lightning-card>
 </template>
-

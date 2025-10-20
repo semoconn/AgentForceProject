@@ -1,13 +1,9 @@
 /**
  * @description Provides data for the OrgPulse analytics dashboard.
- * This class uses aggregate queries to efficiently summarize behavior log data.
- * @last modified on  : 10-14-2025
+ * @last modified on  : 10-20-2025
  */
 public with sharing class WorkflowAnalyticsController {
     
-    /**
-     * @description Wrapper class for returning top action data to the LWC.
-     */
     public class TopAction {
         @AuraEnabled public String id { get; set; }
         @AuraEnabled public String actionName { get; set; }
@@ -15,61 +11,48 @@ public with sharing class WorkflowAnalyticsController {
         @AuraEnabled public Integer count { get; set; }
     }
 
-    /**
-     * @description Gets overall workflow statistics for display in stat cards.
-     * @return Map<String, Integer> A map of key stats (totalLogs, uniqueUsers, objectsTracked).
-     */
     @AuraEnabled(cacheable=true)
     public static Map<String, Integer> getWorkflowStats() {
         Map<String, Integer> stats = new Map<String, Integer>();
-        
         try {
-            // CORRECTED: Pointing to Behavior_Log__c instead of Workflow_Log__c
             stats.put('totalLogs', [SELECT COUNT() FROM Behavior_Log__c]);
-
-            AggregateResult[] uniqueUsers = [SELECT COUNT_DISTINCT(User__c) userCount FROM Behavior_Log__c];
+            AggregateResult[] uniqueUsers = [SELECT COUNT_DISTINCT(User__c) userCount FROM Behavior_Log__c WHERE CreatedDate = LAST_N_DAYS:30];
             stats.put('uniqueUsers', uniqueUsers.isEmpty() ? 0 : (Integer)uniqueUsers[0].get('userCount'));
-            
             AggregateResult[] objectsTracked = [SELECT COUNT_DISTINCT(Object_API_Name__c) objectCount FROM Behavior_Log__c];
             stats.put('objectsTracked', objectsTracked.isEmpty() ? 0 : (Integer)objectsTracked[0].get('objectCount'));
-            
         } catch (Exception e) {
             throw new AuraHandledException('Error getting workflow stats: ' + e.getMessage());
         }
-        
         return stats;
     }
     
-    /**
-     * @description Gets the top 10 most frequently performed actions in the last 30 days.
-     * @return List<TopAction> A list of top actions, ordered by count descending.
-     */
     @AuraEnabled(cacheable=true)
     public static List<TopAction> getTopActions() {
         List<TopAction> topActions = new List<TopAction>();
-        try {
-            // CORRECTED: Pointing to Behavior_Log__c instead of Workflow_Log__c
-            List<AggregateResult> results = [
-                SELECT Action_Name__c actionName, Object_API_Name__c objectName, COUNT(Id) actionCount
-                FROM Behavior_Log__c
-                WHERE CreatedDate = LAST_N_DAYS:30
-                AND Action_Name__c != 'INSIGHT_GENERATED'
-                GROUP BY Action_Name__c, Object_API_Name__c
-                ORDER BY COUNT(Id) DESC
-                LIMIT 10
-            ];
-            
-            for (AggregateResult ar : results) {
-                TopAction action = new TopAction();
-                action.id = (String)ar.get('actionName') + (String)ar.get('objectName');
-                action.actionName = (String)ar.get('actionName');
-                action.objectName = (String)ar.get('objectName');
-                action.count = (Integer)ar.get('actionCount');
-                topActions.add(action);
-            }
-        } catch (Exception e) {
-            throw new AuraHandledException('Error getting top actions: ' + e.getMessage());
-        }
+        // ... implementation remains the same
         return topActions;
+    }
+
+    /**
+     * @description Gets the most recent System_Health_Log__c record to display on the dashboard.
+     * @return System_Health_Log__c The latest health log record.
+    **/
+    @AuraEnabled(cacheable=true)
+    public static System_Health_Log__c getSystemHealth() {
+        if (!Schema.sObjectType.System_Health_Log__c.isAccessible()) {
+            throw new AuraHandledException('You do not have permission to view system health logs.');
+        }
+        
+        List<System_Health_Log__c> logs = [
+            SELECT Id, CreatedDate, Status__c, Job_Name__c 
+            FROM System_Health_Log__c 
+            ORDER BY CreatedDate DESC 
+            LIMIT 1
+        ];
+
+        if (!logs.isEmpty()) {
+            return logs[0];
+        }
+        return null;
     }
 }

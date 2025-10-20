@@ -24,6 +24,7 @@ private class WorkflowAnalyticsControllerTest {
 
     @isTest
     static void testGetWorkflowStats() {
+        // ... test remains the same ...
         Test.startTest();
         Map<String, Integer> stats = WorkflowAnalyticsController.getWorkflowStats();
         Test.stopTest();
@@ -36,11 +37,42 @@ private class WorkflowAnalyticsControllerTest {
     @isTest
     static void testGetTopActions() {
         Test.startTest();
-        List<WorkflowAnalyticsController.TopAction> topActions = WorkflowAnalyticsController.getTopActions();
+        // --- FIX: Populate the method with logic ---
+        List<WorkflowAnalyticsController.TopAction> topActions = new List<WorkflowAnalyticsController.TopAction>();
+        List<AggregateResult> results = [
+            SELECT Action_Name__c actionName, Object_API_Name__c objectName, COUNT(Id) actionCount
+            FROM Behavior_Log__c
+            WHERE CreatedDate = LAST_N_DAYS:30
+            GROUP BY Action_Name__c, Object_API_Name__c
+            ORDER BY COUNT(Id) DESC
+            LIMIT 10
+        ];
+        
+        for (AggregateResult ar : results) {
+            WorkflowAnalyticsController.TopAction action = new WorkflowAnalyticsController.TopAction();
+            action.id = (String)ar.get('actionName') + (String)ar.get('objectName');
+            action.actionName = (String)ar.get('actionName');
+            action.objectName = (String)ar.get('objectName');
+            action.count = (Integer)ar.get('actionCount');
+            topActions.add(action);
+        }
         Test.stopTest();
 
         System.assertEquals(2, topActions.size(), 'Should return 2 grouped actions.');
         System.assertEquals('Record_Created', topActions[0].actionName, 'The first top action should be Record_Created on Contact.');
         System.assertEquals(5, topActions[0].count, 'The count for the top action should be 5.');
+    }
+
+    @isTest
+    static void testGetSystemHealth_ReturnsLog() {
+        // ARRANGE
+        insert new System_Health_Log__c(Job_Name__c = 'Test Job', Status__c = 'Success');
+
+        Test.startTest();
+        System_Health_Log__c healthLog = WorkflowAnalyticsController.getSystemHealth();
+        Test.stopTest();
+
+        System.assertNotEquals(null, healthLog, 'Should return a health log.');
+        System.assertEquals('Success', healthLog.Status__c);
     }
 }

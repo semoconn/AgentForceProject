@@ -1,9 +1,6 @@
 /**
  * @description       : Controls the multi-step setup wizard for OrgPulse.
- * @author            : Gemini
- * @group             : OrgPulse
- * @last modified on  : 10-15-2025
- * @last modified by  : Gemini
+ * @version           : 2.0 - Added step counter, updated progress bar logic, and included Task by default.
 **/
 import { LightningElement, track, wire } from 'lwc';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
@@ -15,7 +12,8 @@ const TOTAL_STEPS = 5;
 
 export default class SetupWizard extends LightningElement {
     @track currentStep = '1';
-    @track selectedObjects = ['Account', 'Contact', 'Lead', 'Opportunity', 'Case'];
+    // --- UPDATED: 'Task' is now included in the default selections ---
+    @track selectedObjects = ['Account', 'Contact', 'Lead', 'Opportunity', 'Case', 'Task'];
     @track isJobScheduled = false;
     
     @wire(getTrackableObjects)
@@ -31,8 +29,15 @@ export default class SetupWizard extends LightningElement {
         return [];
     }
     
+    // --- UPDATED: Progress bar starts at 0% ---
     get progress() {
-        return (parseInt(this.currentStep, 10) / TOTAL_STEPS) * 100;
+        // This calculation ensures the bar is empty on step 1 and full on the final step.
+        return ((parseInt(this.currentStep, 10) - 1) / (TOTAL_STEPS - 1)) * 100;
+    }
+
+    // --- NEW: Step counter text ---
+    get stepCounter() {
+        return `Step ${this.currentStep} of ${TOTAL_STEPS}`;
     }
 
     get isStep1() { return this.currentStep === '1'; }
@@ -73,7 +78,6 @@ export default class SetupWizard extends LightningElement {
     handleFinish() {
         this.showToast('Success', 'Configuration saved! You will now be taken to the dashboard.', 'success');
         
-        // Dispatch a custom event to notify the parent container that setup is complete.
         const completeEvent = new CustomEvent('setupcomplete');
         this.dispatchEvent(completeEvent);
     }
