@@ -89,4 +89,3 @@ public with sharing class GenericBehaviorTriggerHandler {
         processedRecordIds.clear();
     }
 }
-

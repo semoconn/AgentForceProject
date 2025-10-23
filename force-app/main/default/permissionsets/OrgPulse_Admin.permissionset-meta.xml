@@ -1,10 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
-    <label>OrgPulse Admin</label>
-    <description>Grants administrative access to the OrgPulse application, including setup and dashboards.</description>
-    <hasActivationRequired>false</hasActivationRequired>
-    
-    <!-- Apex Class Access -->
     <classAccesses>
         <apexClass>PainPointController</apexClass>
         <enabled>true</enabled>
@@ -17,8 +12,22 @@
         <apexClass>WorkflowAnalyticsController</apexClass>
         <enabled>true</enabled>
     </classAccesses>
-
-    <!-- Custom Object and Field Permissions -->
+    <customSettingAccesses>
+        <enabled>true</enabled>
+        <name>OrgPulse_Configuration__c</name>
+    </customSettingAccesses>
+    <description>Grants administrative access to the OrgPulse application, including setup and dashboards.</description>
+    <hasActivationRequired>false</hasActivationRequired>
+    <label>OrgPulse Admin</label>
+    <objectPermissions>
+        <allowCreate>false</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>false</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Behavior_Log__c</object>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
     <objectPermissions>
         <allowCreate>true</allowCreate>
         <allowDelete>true</allowDelete>
@@ -34,34 +43,9 @@
         <allowEdit>false</allowEdit>
         <allowRead>true</allowRead>
         <modifyAllRecords>false</modifyAllRecords>
-        <object>Behavior_Log__c</object>
-        <viewAllRecords>true</viewAllRecords>
-    </objectPermissions>
-    <objectPermissions>
-        <allowCreate>false</allowCreate>
-        <allowDelete>false</allowDelete>
-        <allowEdit>false</allowEdit>
-        <allowRead>true</allowRead>
-        <modifyAllRecords>false</modifyAllRecords>
         <object>System_Health_Log__c</object>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
-
-    <!-- Custom Setting Access -->
-    <customSettingAccesses>
-        <enabled>true</enabled>
-        <name>OrgPulse_Configuration__c</name>
-    </customSettingAccesses>
-
-    <!-- System Permissions for Setup -->
-    <userPermissions>
-        <enabled>true</enabled>
-        <name>ViewSetup</name>
-    </userPermissions>
-    <userPermissions>
-        <enabled>true</enabled>
-        <name>ViewRoles</name>
-    </userPermissions>
     <userPermissions>
         <enabled>true</enabled>
         <name>CustomizeApplication</name>
@@ -73,5 +57,13 @@
     <userPermissions>
         <enabled>true</enabled>
         <name>ManageTranslation</name>
+    </userPermissions>
+    <userPermissions>
+        <enabled>true</enabled>
+        <name>ViewRoles</name>
+    </userPermissions>
+    <userPermissions>
+        <enabled>true</enabled>
+        <name>ViewSetup</name>
     </userPermissions>
 </PermissionSet>

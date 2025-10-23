@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomPermission xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Users with this permission gain access to the Workflow Log Custom Object</description>
+    <isLicensed>false</isLicensed>
+    <label>Workflow Log</label>
+</CustomPermission>

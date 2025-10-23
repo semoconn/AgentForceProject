@@ -8,4 +8,3 @@ trigger BehaviorEventTrigger on Behavior_Event__e (after insert) {
     // This trigger acts as the subscriber in our event-driven framework.
     BehaviorLogService.createLogsFromEvents(Trigger.new);
 }
-

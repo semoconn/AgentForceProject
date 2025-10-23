@@ -1,6 +1,6 @@
 /**
  * @description       : Provides the content for the Solution Guide modal in the OrgPulse dashboard.
- * @version           : 2.0 - Demo Ready: Includes three distinct solution guides.
+ * @version           : 3.0 - FEATURE: Added solution guide for Stale Cases pattern.
 **/
 public with sharing class SolutionGuideController {
 
@@ -43,6 +43,19 @@ public with sharing class SolutionGuideController {
                 'Ensure the "Active" checkbox is checked on the main rule page to enable it.',
                 'Now, new leads matching your criteria will be automatically routed to the correct person or team.'
             });
+        // --- NEW SOLUTION GUIDE ---
+        } else if (painPointKey == 'Stale_High_Priority_Case') {
+            solution.put('title', 'Solution: Use Escalation Rules for Stale Cases');
+            solution.put('steps', new List<String>{
+                'Navigate to Setup > Feature Settings > Service > Escalation Rules.',
+                'Click "New Escalation Rule". Give it a name like "High Priority Case Escalation" and make it Active.',
+                'Click on the rule name to create "Rule Entries".',
+                'Set the criteria for the entry, for example: "Case: Priority equals High" and "Case: Status not equal to Closed".',
+                'Define your business hours if applicable.',
+                'Under "Escalation Actions", specify the time criteria (e.g., escalate after 7 days of no modification).',
+                'Add an Escalation Action, such as "Assign to" a Tier 2 support queue and "Notify" the support manager.',
+                'Save and activate the rule. The system will now automatically escalate critical cases that are not being addressed.'
+            });
         } else {
             solution.put('title', 'Solution Not Available');
             solution.put('steps', new List<String>{'A detailed solution guide for this pain point is not yet available.'});
@@ -51,4 +64,3 @@ public with sharing class SolutionGuideController {
         return solution;
     }
 }
-

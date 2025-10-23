@@ -84,4 +84,3 @@ private class GenericBehaviorTriggerHandlerTest {
         System.assertEquals(1, logs.size(), 'A log should be created on Case undelete.');
     }
 }
-

@@ -81,4 +81,3 @@ private class PainPointControllerTest {
             'A user without access should not receive any pain point records.');
     }
 }
-
