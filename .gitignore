@@ -43,3 +43,8 @@ $RECYCLE.BIN/
 **/__pycache__/
 **/.venv/
 **/venv/
+jest.config.js
+package.json
+.gitignore
+.github/copilot-instructions.md
+.husky/pre-commit
