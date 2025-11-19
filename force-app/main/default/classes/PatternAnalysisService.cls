@@ -1,6 +1,6 @@
 /**
  * @description Scheduled + Batchable job for analyzing Behavior Logs.
- * @version 13.2 - FIX: Added security check for Health Log creation to satisfy negative tests.
+ * @version 14.0 - Phase 2: Implemented Dynamic Thresholds via Behavior_Setting__mdt.
  */
 public with sharing class PatternAnalysisService implements Database.Batchable<sObject>, Schedulable {
 
@@ -10,20 +10,27 @@ public with sharing class PatternAnalysisService implements Database.Batchable<s
     public static final String UNASSIGNED_LEAD_PATTERN = 'Unassigned_Lead_Created';
     public static final String STALE_CASE_PATTERN = 'Stale_High_Priority_Case';
 
-    // Thresholds
-    private static final Integer SEQUENTIAL_THRESHOLD = 5;
+    // Hardcoded Fallbacks (Safety Net)
+    private static final Integer DEFAULT_SEQUENTIAL_THRESHOLD = 5;
+    private static final Integer DEFAULT_STALE_OPP_DAYS = 30;
+    private static final Integer DEFAULT_LEAD_AGE_HOURS = 24;
+    
+    // Other Constants
     private static final Long FIVE_MINUTES_MS = 5 * 60 * 1000;
-    private static final Integer STALE_OPP_THRESHOLD = 3;
     private static final Decimal STALE_OPP_AMOUNT = 100000;
-    private static final Integer UNASSIGNED_LEAD_THRESHOLD = 5;
-    private static final Integer STALE_CASE_THRESHOLD = 3;
+    private static final Integer STALE_OPP_THRESHOLD = 3; // Count threshold
+    private static final Integer UNASSIGNED_LEAD_THRESHOLD = 5; // Count threshold
+    private static final Integer STALE_CASE_THRESHOLD = 3; // Count threshold
 
     // Configuration
     public static final Integer DEFAULT_RETENTION_DAYS = 90;
     private static final String JOB_NAME = 'Pattern Analysis Service';
+    
+    // Kept as static for testability until moved to MDT in future stories
+    public static Integer STALE_CASE_DAYS = 7; 
 
-    public static Integer STALE_CASE_DAYS = 7;
-    public static Integer STALE_OPP_DAYS = 30;
+    // Allow tests to inject mock metadata
+    @TestVisible private static Behavior_Setting__mdt mockSettings;
 
     private Set<String> dismissedPainPointKeys;
 
@@ -48,6 +55,37 @@ public with sharing class PatternAnalysisService implements Database.Batchable<s
         }
     }
 
+    /**
+     * @description Retrieves settings from Custom Metadata or falls back to defaults.
+     */
+    private Behavior_Setting__mdt getSettings() {
+        if (mockSettings != null) return mockSettings;
+
+        Behavior_Setting__mdt settings;
+        try {
+            // NOTE: Metadata queries do not count against SOQL limits in most contexts
+             settings = [
+                SELECT Sequential_Action_Threshold__c, Stale_Opportunity_Days__c, Unassigned_Lead_Age_Hours__c
+                FROM Behavior_Setting__mdt
+                WHERE DeveloperName = 'Default'
+                WITH SECURITY_ENFORCED
+                LIMIT 1
+            ];
+        } catch (Exception e) {
+            System.debug(LoggingLevel.INFO, 'Behavior_Setting__mdt "Default" record not found. Using hardcoded defaults.');
+        }
+
+        if (settings == null) {
+            // Create in-memory default record if query fails or returns nothing
+            settings = new Behavior_Setting__mdt(
+                Sequential_Action_Threshold__c = DEFAULT_SEQUENTIAL_THRESHOLD,
+                Stale_Opportunity_Days__c = DEFAULT_STALE_OPP_DAYS,
+                Unassigned_Lead_Age_Hours__c = DEFAULT_LEAD_AGE_HOURS
+            );
+        }
+        return settings;
+    }
+
     public void execute(SchedulableContext sc) {
         Database.executeBatch(new PatternAnalysisService(), 200);
     }
@@ -70,16 +108,19 @@ public with sharing class PatternAnalysisService implements Database.Batchable<s
             logsByUser.get(log.User__c).add(log);
         }
 
+        Behavior_Setting__mdt settings = getSettings();
         for (Id userId : logsByUser.keySet()) {
-            analyzeContactTaskPattern(userId, logsByUser.get(userId));
+            analyzeContactTaskPattern(userId, logsByUser.get(userId), settings);
         }
     }
     
-    private void analyzeContactTaskPattern(Id userId, List<Behavior_Log__c> logs) {
+    private void analyzeContactTaskPattern(Id userId, List<Behavior_Log__c> logs, Behavior_Setting__mdt settings) {
         if (logs.size() < 2) return;
 
         Integer sequentialCount = 0;
         List<String> exampleIds = new List<String>();
+        Integer threshold = (settings.Sequential_Action_Threshold__c != null) ? 
+                            settings.Sequential_Action_Threshold__c.intValue() : DEFAULT_SEQUENTIAL_THRESHOLD;
 
         for (Integer i = 0; i < logs.size() - 1; i++) {
             Behavior_Log__c currentLog = logs[i];
@@ -97,7 +138,7 @@ public with sharing class PatternAnalysisService implements Database.Batchable<s
             }
         }
 
-        if (sequentialCount >= SEQUENTIAL_THRESHOLD) {
+        if (sequentialCount >= threshold) {
             upsertPainPoint(
                 SEQUENTIAL_ACTION_PATTERN, 'Sequential Task Creation After Contact',
                 'Users frequently create Tasks within 5 minutes of creating Contacts.',
@@ -106,8 +147,12 @@ public with sharing class PatternAnalysisService implements Database.Batchable<s
         }
     }
 
-    private void analyzeStaleOpportunities() {
-        Date staleDate = (STALE_OPP_DAYS == 0) ? Date.today() : Date.today().addDays(-STALE_OPP_DAYS);
+    private void analyzeStaleOpportunities(Behavior_Setting__mdt settings) {
+        Integer days = (settings.Stale_Opportunity_Days__c != null) ? 
+                       settings.Stale_Opportunity_Days__c.intValue() : DEFAULT_STALE_OPP_DAYS;
+        
+        Date staleDate = (days == 0) ? Date.today() : Date.today().addDays(-days);
+        
         List<Opportunity> queriedOpps = new List<Opportunity>();
         try {
             if(Schema.sObjectType.Opportunity.isAccessible()) {
@@ -126,12 +171,12 @@ public with sharing class PatternAnalysisService implements Database.Batchable<s
             for(Integer i = 0; i < Math.min(queriedOpps.size(), 5); i++) exampleIds.add(queriedOpps[i].Id);
             
             upsertPainPoint(STALE_OPPORTUNITY_PATTERN, 'Stale High-Value Opportunities',
-                'High-value opportunities have not been updated recently.',
+                'High-value opportunities have not been updated recently (' + days + ' days).',
                 'Opportunity', queriedOpps.size(), JSON.serialize(exampleIds));
         }
     }
 
-    private void analyzeUnassignedLeads() {
+    private void analyzeUnassignedLeads(Behavior_Setting__mdt settings) {
         Id queueId;
         try {
              queueId = [SELECT Id FROM Group WHERE Type = 'Queue' AND Name = 'Unassigned Leads Queue' WITH SECURITY_ENFORCED LIMIT 1]?.Id;
@@ -139,10 +184,23 @@ public with sharing class PatternAnalysisService implements Database.Batchable<s
 
         if(queueId == null) return;
 
+        // Calculate threshold time based on hours
+        Integer hours = (settings.Unassigned_Lead_Age_Hours__c != null) ? 
+                        settings.Unassigned_Lead_Age_Hours__c.intValue() : DEFAULT_LEAD_AGE_HOURS;
+        
+        // Use System.now() for hour precision
+        Datetime timeThreshold = System.now().addHours(-hours);
+
         List<Lead> unassignedLeads = new List<Lead>();
         try {
             if(Schema.sObjectType.Lead.isAccessible()) {
-                unassignedLeads = [SELECT Id FROM Lead WHERE OwnerId = :queueId WITH SECURITY_ENFORCED];
+                unassignedLeads = [
+                    SELECT Id 
+                    FROM Lead 
+                    WHERE OwnerId = :queueId 
+                    AND CreatedDate <= :timeThreshold
+                    WITH SECURITY_ENFORCED
+                ];
             }
         } catch (Exception e) { System.debug(LoggingLevel.ERROR, 'Error querying leads: ' + e.getMessage()); }
 
@@ -151,12 +209,13 @@ public with sharing class PatternAnalysisService implements Database.Batchable<s
              for(Integer i = 0; i < Math.min(unassignedLeads.size(), 5); i++) exampleIds.add(unassignedLeads[i].Id);
 
             upsertPainPoint(UNASSIGNED_LEAD_PATTERN, 'Leads Not Being Assigned',
-                'Leads are sitting in the queue unassigned.',
+                'Leads have been sitting in the queue unassigned for over ' + hours + ' hours.',
                 'Lead', unassignedLeads.size(), JSON.serialize(exampleIds));
         }
     }
 
     private void analyzeStaleCases() {
+        // Keeping this as-is (using static variable) per instructions to only refactor the 3 MDT fields
         Date staleDate = (STALE_CASE_DAYS == 0) ? Date.today() : Date.today().addDays(-STALE_CASE_DAYS);
         List<Case> queriedCases = new List<Case>();
         try {
@@ -182,8 +241,10 @@ public with sharing class PatternAnalysisService implements Database.Batchable<s
     }
 
     public void finish(Database.BatchableContext bc) {
-        try { analyzeStaleOpportunities(); } catch (Exception e) {}
-        try { analyzeUnassignedLeads(); } catch (Exception e) {}
+        Behavior_Setting__mdt settings = getSettings();
+        
+        try { analyzeStaleOpportunities(settings); } catch (Exception e) {}
+        try { analyzeUnassignedLeads(settings); } catch (Exception e) {}
         try { analyzeStaleCases(); } catch (Exception e) {}
 
         logJobStatus(bc);
@@ -225,8 +286,6 @@ public with sharing class PatternAnalysisService implements Database.Batchable<s
     private void logJobStatus(Database.BatchableContext bc) { logJobStatus(bc, null); }
 
     private void logJobStatus(Database.BatchableContext bc, Exception finishException) {
-        // FIX: Respect the current user's FLS/CRUD. 
-        // If they can't create logs (e.g. negative test user), exit gracefully.
         if (!Schema.sObjectType.System_Health_Log__c.isCreateable()) {
             System.debug(LoggingLevel.INFO, 'Skipping health log creation: User lacks Create permission.');
             return;

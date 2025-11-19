@@ -75,28 +75,22 @@ private class PatternAnalysisServiceTest {
         insert new PermissionSetAssignment(AssigneeId = noDeleteUser.Id, PermissionSetId = psReadOnly.Id);
     }
 
-    // Helper to handle Queue creation safely
     private static void createPatternData(User testUser) {
         Id queueId;
         
-        // FIX: Run Queue creation as the actual System/Setup user, NOT the testUser.
         System.runAs(new User(Id = UserInfo.getUserId())) {
             List<Group> existingQueues = [SELECT Id FROM Group WHERE Type = 'Queue' AND Name = 'Unassigned Leads Queue' LIMIT 1];
             if (existingQueues.isEmpty()) {
                 Group queueGroup = new Group(Name = 'Unassigned Leads Queue', Type = 'Queue');
                 insert queueGroup;
-                
-                // Link Queue to Lead object
                 QueueSObject qso = new QueueSObject(QueueId = queueGroup.Id, SobjectType = 'Lead');
                 insert qso;
-                
                 queueId = queueGroup.Id;
             } else {
                 queueId = existingQueues[0].Id;
             }
         }
 
-        // Run the rest of the data creation as the specific testUser
         System.runAs(testUser) {
             List<Opportunity> tempOpps = new List<Opportunity>();
             for (Integer i = 0; i < 5; i++) {
@@ -130,8 +124,18 @@ private class PatternAnalysisServiceTest {
     @isTest
     static void testAllPatterns_And_HealthLogging() {
         User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+        
+        // INJECT MOCK METADATA
+        // We set values to 0 so that 'today's' data is considered stale/old enough to trigger the patterns
+        PatternAnalysisService.mockSettings = new Behavior_Setting__mdt(
+            DeveloperName = 'Default',
+            Unassigned_Lead_Age_Hours__c = 0,
+            Stale_Opportunity_Days__c = 0,
+            Sequential_Action_Threshold__c = 5
+        );
+        
+        // Keep static override for the property not yet in MDT
         PatternAnalysisService.STALE_CASE_DAYS = 0;
-        PatternAnalysisService.STALE_OPP_DAYS = 0;
 
         createPatternData(testUser);
 
@@ -142,7 +146,9 @@ private class PatternAnalysisServiceTest {
         Test.stopTest();
 
         List<Identified_Pain_Point__c> finalPainPoints = [SELECT Unique_Key__c FROM Identified_Pain_Point__c];
-        System.assertEquals(4, finalPainPoints.size(), 'Should find 4 pain points.');
+        // Expect 4: Sequential, Stale Opps, Unassigned Leads, Stale Cases
+        System.assertEquals(4, finalPainPoints.size(), 'Should find 4 pain points using mock metadata settings.');
+        
         System.assertEquals(1, [SELECT COUNT() FROM System_Health_Log__c WHERE Status__c = 'Success'], 'Health log should be success.');
     }
 
