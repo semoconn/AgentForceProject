@@ -6,14 +6,14 @@ import saveMonitoringSettings from '@salesforce/apex/SetupWizardController.saveM
 
 export default class SetupWizard extends LightningElement {
     @track step = 1;
-    @track selectedObjects = ['Account', 'Opportunity', 'Case', 'Lead']; // Defaults
+    // FIX: Added 'Contact' and 'Task' to the default selection list
+    @track selectedObjects = ['Account', 'Opportunity', 'Case', 'Lead', 'Contact', 'Task']; 
     @track objectOptions = [];
     @track isLoading = false;
 
     get isStepOne() { return this.step === 1; }
     get isStepTwo() { return this.step === 2; }
     
-    // NEW: Helper for the progress indicator
     get currentStepValue() { return this.step.toString(); }
 
     get isNextDisabled() { return this.selectedObjects.length === 0; }
@@ -42,16 +42,10 @@ export default class SetupWizard extends LightningElement {
     async handleFinishSetup() {
         this.isLoading = true;
         try {
-            // 1. Save Settings
             await saveMonitoringSettings({ monitoredObjects: this.selectedObjects });
-            
-            // 2. Schedule Job
             await scheduleAnalysisJob();
 
-            // 3. Notify Success
             this.showToast('Success', 'BehaviorIQ is now configured and running!', 'success');
-            
-            // 4. Fire Event to Parent to switch view
             this.dispatchEvent(new CustomEvent('setupcomplete'));
 
         } catch (error) {

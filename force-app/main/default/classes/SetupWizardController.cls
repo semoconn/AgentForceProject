@@ -2,8 +2,8 @@
  * @description       : Apex controller to support the BehaviorIQ setup wizard LWC.
  * @author            : Gemini
  * @group             : BehaviorIQ
- * @last modified on  : 11-18-2025
- * @last modified by  : Gemini (Rebranding Refactor)
+ * @last modified on  : 11-19-2025
+ * @last modified by  : Gemini
 **/
 public with sharing class SetupWizardController {
 
@@ -40,8 +40,10 @@ public with sharing class SetupWizardController {
             supportedObjects.add(t.TableEnumOrId);
         }
 
+        // Fallback if no triggers are found (e.g., fresh install or triggers not yet deployed)
         if (supportedObjects.isEmpty()) {
-            supportedObjects.addAll(new List<String>{'Account', 'Contact', 'Lead', 'Opportunity', 'Case'});
+            // FIX: Added 'Task' to this list for consistency
+            supportedObjects.addAll(new List<String>{'Account', 'Contact', 'Lead', 'Opportunity', 'Case', 'Task'});
         }
 
         Map<String, Schema.SObjectType> schemaMap = Schema.getGlobalDescribe();
