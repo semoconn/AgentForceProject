@@ -1,0 +1,159 @@
+<template>
+    <lightning-card>
+        <div slot="title">
+            <div class="slds-media slds-media_center">
+                <div class="slds-media__figure">
+                    <lightning-icon icon-name="standard:custom_notification" size="medium"></lightning-icon>
+                </div>
+                <div class="slds-media__body">
+                    <h2 class="slds-card__header-title">
+                        <span class="slds-text-heading_small">Analysis Thresholds</span>
+                    </h2>
+                    <p class="slds-text-body_small slds-text-color_weak">
+                        Configure the sensitivity of the BehaviorIQ detection engine.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="slds-p-horizontal_medium slds-p-bottom_medium">
+            <template if:true={isLoading}>
+                <div class="slds-is-relative" style="height: 200px;">
+                    <lightning-spinner alternative-text="Loading..." size="medium" variant="brand"></lightning-spinner>
+                </div>
+            </template>
+            
+            <template if:false={isLoading}>
+                <!-- Grid Layout -->
+                <div class="slds-grid slds-gutters slds-wrap">
+                    
+                    <!-- 1. Stale Opportunity Settings -->
+                    <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
+                        <div class="slds-box slds-box_x-small slds-theme_shade slds-m-bottom_small setting-box">
+                            <div class="slds-media slds-media_center slds-m-bottom_x-small">
+                                <div class="slds-media__figure">
+                                    <lightning-icon icon-name="utility:clock" size="small" class="slds-icon-text-light"></lightning-icon>
+                                </div>
+                                <div class="slds-media__body">
+                                    <strong class="slds-text-title_caps">Opportunity Health</strong>
+                                </div>
+                            </div>
+                            <lightning-input 
+                                type="number" 
+                                name="staleDays" 
+                                label="Stale Threshold (Days)" 
+                                value={staleDays} 
+                                onchange={handleInputChange}
+                                min="1"
+                                step="1"
+                                variant="label-stacked">
+                            </lightning-input>
+                            <p class="slds-text-body_small slds-text-color_weak slds-m-top_x-small">
+                                Opportunities inactive for this long are flagged as "At Risk."
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- 2. Unassigned Lead Settings -->
+                    <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
+                        <div class="slds-box slds-box_x-small slds-theme_shade slds-m-bottom_small setting-box">
+                            <div class="slds-media slds-media_center slds-m-bottom_x-small">
+                                <div class="slds-media__figure">
+                                    <lightning-icon icon-name="utility:warning" size="small" class="slds-icon-text-light"></lightning-icon>
+                                </div>
+                                <div class="slds-media__body">
+                                    <strong class="slds-text-title_caps">Lead Response</strong>
+                                </div>
+                            </div>
+                            <lightning-input 
+                                type="number" 
+                                name="leadHours" 
+                                label="Neglect Threshold (Hours)" 
+                                value={leadHours} 
+                                onchange={handleInputChange}
+                                min="1"
+                                step="1"
+                                variant="label-stacked">
+                            </lightning-input>
+                            <p class="slds-text-body_small slds-text-color_weak slds-m-top_x-small">
+                                'New' Leads untouched for this duration trigger an alert.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- 3. Case Velocity Settings (NEW 4TH BOX) -->
+                    <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
+                        <div class="slds-box slds-box_x-small slds-theme_shade slds-m-bottom_small setting-box">
+                            <div class="slds-media slds-media_center slds-m-bottom_x-small">
+                                <div class="slds-media__figure">
+                                    <lightning-icon icon-name="utility:case" size="small" class="slds-icon-text-light"></lightning-icon>
+                                </div>
+                                <div class="slds-media__body">
+                                    <strong class="slds-text-title_caps">Case Velocity</strong>
+                                </div>
+                            </div>
+                            <lightning-input 
+                                type="number" 
+                                name="caseDays" 
+                                label="Stagnant Threshold (Days)" 
+                                value={caseDays} 
+                                onchange={handleInputChange}
+                                min="1"
+                                step="1"
+                                variant="label-stacked">
+                            </lightning-input>
+                            <p class="slds-text-body_small slds-text-color_weak slds-m-top_x-small">
+                                Open Cases with no status change for this long trigger an alert.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- 4. High Volume Activity Settings -->
+                    <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
+                        <div class="slds-box slds-box_x-small slds-theme_shade slds-m-bottom_small setting-box">
+                            <div class="slds-media slds-media_center slds-m-bottom_x-small">
+                                <div class="slds-media__figure">
+                                    <lightning-icon icon-name="utility:shield" size="small" class="slds-icon-text-light"></lightning-icon>
+                                </div>
+                                <div class="slds-media__body">
+                                    <strong class="slds-text-title_caps">Bot Detection</strong>
+                                </div>
+                            </div>
+                            <lightning-input 
+                                type="number" 
+                                name="seqThreshold" 
+                                label="Actions per Minute" 
+                                value={seqThreshold} 
+                                onchange={handleInputChange}
+                                min="1"
+                                step="1"
+                                variant="label-stacked">
+                            </lightning-input>
+                            <p class="slds-text-body_small slds-text-color_weak slds-m-top_x-small">
+                                Users exceeding this rate are flagged for potential automation.
+                            </p>
+                        </div>
+                    </div>
+
+                </div>
+                
+                <!-- Footer Actions -->
+                <div class="slds-grid slds-grid_align-spread slds-m-top_medium slds-p-top_small slds-border_top">
+                    <lightning-button 
+                        label="Restore Defaults" 
+                        title="Reset all values to factory recommendations"
+                        icon-name="utility:undo"
+                        onclick={handleReset}>
+                    </lightning-button>
+
+                    <lightning-button 
+                        variant="brand" 
+                        label="Save Configuration" 
+                        icon-name="utility:save"
+                        onclick={handleSave}>
+                    </lightning-button>
+                </div>
+            </template>
+        </div>
+    </lightning-card>
+</template>

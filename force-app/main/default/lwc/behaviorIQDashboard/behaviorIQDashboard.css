@@ -1,15 +1,116 @@
-.stat-tile {
-    transition: all 0.2s ease-in-out;
-    border: 1px solid #dddbda;
+/* Main Container */
+.dashboard-container {
+    background-color: #f3f2f2;
+    padding: 1rem;
+    min-height: calc(100vh - 100px); 
+    display: flex;
+    flex-direction: column;
 }
 
-.stat-tile:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 8px 0 rgba(0,0,0,0.1);
-    border-color: #b0adab;
+/* --- HEADER & METRICS --- */
+.header-section {
+    background: linear-gradient(135deg, #0b5cab 0%, #009cc8 100%);
+    border-radius: 0.5rem;
+    padding: 1.5rem;
+    box-shadow: 0 4px 10px rgba(11, 92, 171, 0.3);
+    color: white;
 }
 
-.stat-number {
-    font-weight: 300;
-    color: #0070d2; /* Salesforce Blue */
+.brand-icon-container {
+    background-color: rgba(255, 255, 255, 0.2);
+    padding: 0.5rem;
+    border-radius: 0.5rem;
+}
+
+.slds-text-color_inverse-weak {
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.premium-btn {
+    background-color: rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    color: white;
+    padding: 6px 12px;
+    border-radius: 1rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.premium-btn:hover {
+    background-color: white;
+    color: #0b5cab;
+}
+
+.metric-card {
+    background-color: white;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    display: flex;
+    align-items: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    border: 1px solid #e5e5e5;
+}
+
+.metric-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 1rem;
+}
+
+.event-icon { background-color: #e0e5f8; }
+.user-icon { background-color: #e3f8e0; }
+.object-icon { background-color: #f8e0e0; }
+.time-icon { background-color: #fdf2d0; }
+
+.metric-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1;
+    color: #080707;
+}
+
+.text-small { font-size: 1rem; }
+
+.metric-label {
+    font-size: 0.75rem;
+    color: #706e6b;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 0.25rem;
+}
+
+/* --- MAIN CARD --- */
+.main-card {
+    border: none;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+    border-radius: 0.5rem;
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Force wrapper to inherit width properly */
+.datatable-wrapper {
+    height: 100%;
+    width: 100%;
+    display: block; 
+    overflow-x: hidden; /* Prevent scroll unless needed */
+}
+
+.filter-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    /* Added border-bottom logic here to separate filters from table */
+    border-bottom: 1px solid #dddbda;
+}
+
+.slds-list_ordered li {
+    margin-left: 1.5rem;
+    padding-left: 0.5rem;
 }
