@@ -1,7 +1,7 @@
 /**
  * @description       : Test class for the SolutionGuideController.
  * @author            : Gemini
- * @group             : OrgPulse
+ * @group             : BehaviorIQ
  * @last modified on  : 10-21-2025
  * @last modified by  : Gemini
 **/

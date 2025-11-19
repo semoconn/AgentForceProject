@@ -1,7 +1,7 @@
 import { LightningElement, wire, track } from 'lwc';
 import isSetupComplete from '@salesforce/apex/SetupWizardController.isSetupComplete';
 
-export default class OrgPulseContainer extends LightningElement {
+export default class BehaviorIQContainer extends LightningElement {
     @track isSetupComplete = false;
     @track isLoading = true;
 

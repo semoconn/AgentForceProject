@@ -1,5 +1,5 @@
 /**
- * @description       : Provides the content for the Solution Guide modal in the OrgPulse dashboard.
+ * @description       : Provides the content for the Solution Guide modal in the BehaviorIQ dashboard.
  * @version           : 3.0 - FEATURE: Added solution guide for Stale Cases pattern.
 **/
 public with sharing class SolutionGuideController {

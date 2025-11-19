@@ -1,108 +1,106 @@
-<!--
-  @description       : A multi-step setup wizard for configuring OrgPulse for the first time.
-  @version           : 2.0 - Added step counter and updated progress bar UI
--->
 <template>
-    <lightning-card icon-name="standard:settings">
-        <div class="slds-p-around_medium">
-            
-            <!-- NEW: Header with title and step counter -->
-            <div class="slds-grid slds-grid_align-spread slds-m-bottom_small">
-                <h2 class="slds-text-heading_medium slds-align-middle">OrgPulse Setup</h2>
-                <span class="slds-text-body_small slds-align-middle">{stepCounter}</span>
-            </div>
-            
-            <!-- Progress bar will now correctly start at 0 -->
-            <lightning-progress-bar value={progress} size="large"></lightning-progress-bar>
-            
-            <div class="slds-m-vertical_large slds-p-horizontal_large">
-                <!-- Step 1: Welcome -->
-                <template if:true={isStep1}>
-                    <div class="slds-text-longform">
-                        <h2 class="slds-text-heading_large slds-m-bottom_medium">Welcome to OrgPulse!</h2>
-                        <p class="slds-text-heading_small">Let's get you set up to start monitoring your org's health.</p>
-                        <p class="slds-m-top_medium">This quick setup wizard will guide you through:</p>
-                        <ul>
-                            <li>Selecting which objects you want to monitor.</li>
-                            <li>Assigning the necessary user permissions.</li>
-                            <li>Scheduling the nightly analysis job.</li>
-                        </ul>
-                        <p class="slds-m-top_medium">This should only take a couple of minutes.</p>
-                    </div>
-                </template>
+    <lightning-card icon-name="standard:setup">
+        <h1 slot="title">BehaviorIQ Setup Wizard</h1>
+        
+        <!-- Visual Progress Indicator -->
+        <div class="slds-p-horizontal_large slds-p-bottom_medium">
+            <lightning-progress-indicator current-step={currentStepValue} type="path" variant="base">
+                <lightning-progress-step label="Select Objects" value="1"></lightning-progress-step>
+                <lightning-progress-step label="Activate Analysis" value="2"></lightning-progress-step>
+                <lightning-progress-step label="Complete" value="3"></lightning-progress-step>
+            </lightning-progress-indicator>
+        </div>
 
-                <!-- Step 2: Object Configuration -->
-                <template if:true={isStep2}>
-                     <h2 class="slds-text-heading_large slds-m-bottom_medium">Configure Object Tracking</h2>
-                     <p class="slds-m-bottom_medium">Select the objects you want OrgPulse to monitor for user activity. We recommend starting with core objects like Account, Contact, Lead, Opportunity, Case, and Task.</p>
-                     <template if:true={objectOptions}>
-                         <lightning-checkbox-group
-                            name="ObjectSelection"
-                            label="Select Objects to Monitor"
-                            options={objectOptions}
-                            value={selectedObjects}
-                            onchange={handleObjectSelection}
-                            required>
-                        </lightning-checkbox-group>
-                     </template>
-                     <template if:true={wiredObjects.error}>
-                         <div class="slds-text-color_error">Could not load available objects. Please ensure you have the correct permissions.</div>
-                     </template>
-                </template>
+        <div class="slds-p-horizontal_large slds-p-bottom_large">
+            
+            <!-- Loading Spinner -->
+            <template if:true={isLoading}>
+                <div class="slds-is-relative" style="height: 200px;">
+                    <lightning-spinner alternative-text="Processing..." size="medium" variant="brand"></lightning-spinner>
+                </div>
+            </template>
 
-                <!-- Step 3: Permissions -->
-                <template if:true={isStep3}>
-                    <h2 class="slds-text-heading_large slds-m-bottom_medium">Assign Permissions</h2>
-                    <p class="slds-m-bottom_medium">To allow your users to be monitored by OrgPulse, assign them the **OrgPulse User** permission set.</p>
-                    <p>Admins who will manage OrgPulse settings and view the dashboard need the **OrgPulse Admin** permission set.</p>
-                    <div class="slds-box slds-m-top_medium slds-theme_shade">
-                        <p><strong>Next Step:</strong> After completing this wizard, navigate to **Setup > Permission Sets** to assign these to your users and admins.</p>
-                    </div>
-                </template>
-
-                <!-- Step 4: Scheduling -->
-                <template if:true={isStep4}>
-                     <h2 class="slds-text-heading_large slds-m-bottom_medium">Schedule Nightly Analysis</h2>
-                     <p class="slds-m-bottom_medium">OrgPulse analyzes user activity once a day to find new pain points. Click the button below to schedule this job to run automatically every night.</p>
-                     <div class="slds-text-align_center slds-m-top_large">
-                         <lightning-button variant="brand" label="Schedule Nightly Job" onclick={handleScheduleJob} disabled={isJobScheduled}></lightning-button>
-                         <template if:true={isJobScheduled}>
-                            <div class="slds-m-top_medium slds-text-color_success">
-                                <lightning-icon icon-name="utility:success" size="small" variant="success"></lightning-icon>
-                                Job has been scheduled successfully!
+            <!-- Main Content Area -->
+            <template if:false={isLoading}>
+                
+                <!-- Step 1: Select Objects -->
+                <template if:true={isStepOne}>
+                    <div class="slds-grid slds-gutters">
+                        <!-- Left: Instructions & Illustration -->
+                        <div class="slds-col slds-size_1-of-3 slds-border_right">
+                            <div class="slds-text-align_center slds-m-bottom_medium">
+                                <div class="slds-illustration slds-illustration_small">
+                                    <img src="/img/chatter/Desert.svg" class="slds-illustration__svg" alt=""/>
+                                    <div class="slds-text-color_weak">
+                                        <h3 class="slds-text-heading_small">Monitor Your Org</h3>
+                                    </div>
+                                </div>
+                                <p class="slds-text-body_small slds-p-top_small">
+                                    Select the objects where you want to detect stale records, unassigned leads, and bottlenecks.
+                                </p>
                             </div>
-                         </template>
-                     </div>
+                        </div>
+                        
+                        <!-- Right: Selection Form -->
+                        <div class="slds-col slds-size_2-of-3 slds-p-left_large">
+                            <div class="slds-form-element">
+                                <lightning-checkbox-group name="monitoredObjects"
+                                    label="Available Objects"
+                                    options={objectOptions}
+                                    value={selectedObjects}
+                                    onchange={handleObjectChange}
+                                    variant="label-hidden">
+                                </lightning-checkbox-group>
+                            </div>
+                            <div class="slds-box slds-theme_shade slds-m-top_medium">
+                                <lightning-icon icon-name="utility:info" size="x-small" class="slds-m-right_x-small"></lightning-icon>
+                                <span class="slds-text-body_small">BehaviorIQ will only analyze records for the objects selected above.</span>
+                            </div>
+                        </div>
+                    </div>
                 </template>
 
-                <!-- Step 5: Finish -->
-                <template if:true={isStep5}>
-                     <div class="slds-text-align_center">
-                        <lightning-icon icon-name="utility:success" alternative-text="Success!" variant="success" size="large"></lightning-icon>
-                        <h2 class="slds-text-heading_large slds-m-top_medium">Setup Complete!</h2>
-                        <p class="slds-m-top_medium">OrgPulse is now configured and the analysis job is scheduled to run nightly.</p>
-                        <p class="slds-m-top_small">You can view the results on the **OrgPulse Dashboard** tomorrow.</p>
-                     </div>
+                <!-- Step 2: Schedule Job -->
+                <template if:true={isStepTwo}>
+                    <div class="slds-text-align_center slds-m-vertical_large">
+                        <lightning-icon icon-name="action:change_record_type" size="large" class="slds-m-bottom_medium"></lightning-icon>
+                        <h2 class="slds-text-heading_medium">Ready to Activate?</h2>
+                        <p class="slds-text-body_regular slds-m-top_small slds-m-bottom_large">
+                            We will schedule the <strong>BehaviorIQ Nightly Analysis</strong> job to run daily at 2:00 AM.
+                        </p>
+                        
+                        <div class="slds-box slds-box_small slds-theme_shade slds-size_1-of-2 slds-align_absolute-center slds-text-align_left">
+                            <dl class="slds-list_horizontal slds-wrap">
+                                <dt class="slds-item_label slds-text-color_weak slds-truncate" title="Job Name">Job Name:</dt>
+                                <dd class="slds-item_detail slds-truncate" title="BehaviorIQ Nightly Analysis">BehaviorIQ Nightly Analysis</dd>
+                                <dt class="slds-item_label slds-text-color_weak slds-truncate" title="Frequency">Frequency:</dt>
+                                <dd class="slds-item_detail slds-truncate" title="Daily">Daily</dd>
+                                <dt class="slds-item_label slds-text-color_weak slds-truncate" title="Time">Time:</dt>
+                                <dd class="slds-item_detail slds-truncate" title="02:00 AM">02:00 AM (System Time)</dd>
+                            </dl>
+                        </div>
+                    </div>
+                </template>
+            </template>
+        </div>
+
+        <!-- Footer Actions -->
+        <div slot="footer">
+            <div class="slds-grid slds-grid_align-spread">
+                <template if:true={isStepTwo}>
+                    <lightning-button label="Back" onclick={goToStepOne}></lightning-button>
+                </template>
+                <template if:false={isStepTwo}>
+                    <div></div> <!-- Spacer to push Next button to right -->
+                </template>
+
+                <template if:true={isStepOne}>
+                    <lightning-button variant="brand" label="Next" onclick={goToStepTwo} disabled={isNextDisabled}></lightning-button>
+                </template>
+                <template if:true={isStepTwo}>
+                    <lightning-button variant="brand" label="Finish & Activate" onclick={handleFinishSetup} disabled={isLoading}></lightning-button>
                 </template>
             </div>
         </div>
-
-        <footer class="slds-card__footer">
-             <template if:false={isStep5}>
-                <div class="slds-grid slds-grid_align-spread">
-                    <div>
-                        <lightning-button label="Previous" onclick={handlePrevious} disabled={isStep1}></lightning-button>
-                    </div>
-                    <div>
-                        <lightning-button variant="brand" label="Next" onclick={handleNext}></lightning-button>
-                    </div>
-                </div>
-             </template>
-             <template if:true={isStep5}>
-                  <div class="slds-grid slds-grid_align-end">
-                    <lightning-button variant="brand" label="Finish" onclick={handleFinish}></lightning-button>
-                  </div>
-             </template>
-        </footer>
     </lightning-card>
 </template>

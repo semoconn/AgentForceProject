@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
-    <description>Assign to users whose activity should be monitored by OrgPulse. Grants no special permissions.</description>
-    <hasActivationRequired>false</hasActivationRequired>
-    <label>OrgPulse User</label>
-</PermissionSet>

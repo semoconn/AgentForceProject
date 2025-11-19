@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomTab xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Main Dashboard for BehaviorIQ</description>
+    <!-- REBRAND UPDATE: Points to the renamed Flexipage -->
+    <flexiPage>BehaviorIQ_Dashboard</flexiPage>
+    <label>BehaviorIQ</label>
+    <motif>Custom31: Car</motif>
+</CustomTab>

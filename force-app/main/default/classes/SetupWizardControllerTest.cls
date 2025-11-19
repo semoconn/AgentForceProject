@@ -1,6 +1,6 @@
 /**
  * @description Test class for SetupWizardController.
- * @version 3.0 - Added cleanup for scheduled jobs to ensure test isolation.
+ * @version 3.0 - Updated for BehaviorIQ rebranding and Custom Object configuration.
  */
 @isTest
 private class SetupWizardControllerTest {
@@ -17,7 +17,8 @@ private class SetupWizardControllerTest {
     @isTest
     static void testScheduleAnalysisJob_Success() {
         // --- NEW: Clean up any existing jobs from other tests ---
-        for (CronTrigger ct : [SELECT Id FROM CronTrigger WHERE CronJobDetail.Name = 'OrgPulse Nightly Analysis']) {
+        // REBRAND UPDATE: Use the new job name 'BehaviorIQ Nightly Analysis'
+        for (CronTrigger ct : [SELECT Id FROM CronTrigger WHERE CronJobDetail.Name = 'BehaviorIQ Nightly Analysis']) {
             System.abortJob(ct.Id);
         }
 
@@ -49,11 +50,19 @@ private class SetupWizardControllerTest {
     static void testSaveMonitoringSettings_Success() {
         // ... test remains the same ...
         List<String> objectsToMonitor = new List<String>{'Account', 'Opportunity'};
+        
         Test.startTest();
         SetupWizardController.saveMonitoringSettings(objectsToMonitor);
         Test.stopTest();
-        OrgPulse_Configuration__c settings = OrgPulse_Configuration__c.getOrgDefaults();
-        System.assertNotEquals(null, settings, 'Settings record should exist.');
-        System.assertEquals('Account,Opportunity', settings.Monitored_Objects__c);
+
+        // REFACTOR: Query Custom Object instead of Custom Setting
+        List<BehaviorIQ_Configuration__c> configs = [
+            SELECT Monitored_Objects__c 
+            FROM BehaviorIQ_Configuration__c 
+            LIMIT 1
+        ];
+        
+        System.assert(!configs.isEmpty(), 'Settings record should exist.');
+        System.assertEquals('Account,Opportunity', configs[0].Monitored_Objects__c);
     }
 }

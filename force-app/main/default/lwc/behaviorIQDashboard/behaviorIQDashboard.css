@@ -1,0 +1,15 @@
+.stat-tile {
+    transition: all 0.2s ease-in-out;
+    border: 1px solid #dddbda;
+}
+
+.stat-tile:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px 0 rgba(0,0,0,0.1);
+    border-color: #b0adab;
+}
+
+.stat-number {
+    font-weight: 300;
+    color: #0070d2; /* Salesforce Blue */
+}

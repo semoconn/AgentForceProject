@@ -1,0 +1,161 @@
+<template>
+    <!-- MOTIF UPDATE: Changed icon to 'standard:insights' for an AI/Intelligence feel -->
+    <lightning-card title="BehaviorIQ Insights" icon-name="standard:insights">
+        
+        <lightning-button-icon icon-name="utility:refresh" slot="actions" alternative-text="Refresh"
+            onclick={handleRefresh}></lightning-button-icon>
+
+        <div class="slds-p-around_medium">
+            <!-- Stats Grid with Icons -->
+            <template if:true={stats}>
+                <div class="slds-grid slds-wrap slds-gutters slds-m-bottom_large">
+                    
+                    <!-- Stat 1: Events Analyzed -->
+                    <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-3 slds-p-bottom_small">
+                        <div class="slds-box slds-box_x-small slds-theme_shade slds-text-align_center stat-tile">
+                            <lightning-icon icon-name="utility:database" size="medium" class="slds-m-bottom_xx-small slds-text-color_default"></lightning-icon>
+                            <div class="stat-number slds-text-heading_large slds-var-p-top_x-small">
+                                {stats.totalLogs}
+                            </div>
+                            <div class="stat-label slds-text-title_caps slds-text-color_weak">Events Analyzed</div>
+                        </div>
+                    </div>
+
+                    <!-- Stat 2: Active Users -->
+                    <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-3 slds-p-bottom_small">
+                        <div class="slds-box slds-box_x-small slds-theme_shade slds-text-align_center stat-tile">
+                            <lightning-icon icon-name="utility:people" size="medium" class="slds-m-bottom_xx-small slds-text-color_default"></lightning-icon>
+                            <div class="stat-number slds-text-heading_large slds-var-p-top_x-small">
+                                {stats.uniqueUsers}
+                            </div>
+                            <div class="stat-label slds-text-title_caps slds-text-color_weak">Active Users</div>
+                        </div>
+                    </div>
+
+                    <!-- Stat 3: Objects Monitored -->
+                    <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-3 slds-p-bottom_small">
+                        <div class="slds-box slds-box_x-small slds-theme_shade slds-text-align_center stat-tile">
+                            <lightning-icon icon-name="utility:sobject_collection" size="medium" class="slds-m-bottom_xx-small slds-text-color_default"></lightning-icon>
+                            <div class="stat-number slds-text-heading_large slds-var-p-top_x-small">
+                                {stats.objectsTracked}
+                            </div>
+                            <div class="stat-label slds-text-title_caps slds-text-color_weak">Objects Monitored</div>
+                        </div>
+                    </div>
+                </div>
+            </template>
+
+            <template if:true={error}>
+                <div class="slds-text-color_error">Error loading statistics.</div>
+            </template>
+
+            <!-- Sidebar Components -->
+             <div class="slds-grid slds-gutters">
+                <div class="slds-col slds-size_2-of-3">
+                     <!-- Pain Points Table -->
+                    <div class="slds-grid slds-grid_align-spread slds-m-vertical_medium">
+                        <h2 class="slds-text-heading_medium">
+                            <lightning-icon icon-name="utility:warning" size="small" class="slds-m-right_small"></lightning-icon>
+                            Prioritized Pain Points
+                        </h2>
+                        <div>
+                            <lightning-radio-group name="statusFilter" label="Filter by Status" options={filterOptions}
+                                value={statusFilter} type="button" onchange={handleFilterChange}>
+                            </lightning-radio-group>
+                        </div>
+                    </div>
+
+                    <template if:true={isLoading}>
+                        <lightning-spinner alternative-text="Loading..." size="medium"></lightning-spinner>
+                    </template>
+
+                    <template if:false={isLoading}>
+                        <template if:false={hasPainPoints}>
+                            <div class="slds-box slds-theme_shade slds-text-align_center slds-m-top_medium">
+                                <div class="slds-text-heading_small">No '{statusFilter}' Pain Points Detected</div>
+                                <p class="slds-m-top_small">BehaviorIQ is analyzing user activity. Efficiency looks good!</p>
+                            </div>
+                        </template>
+                        <template if:true={hasPainPoints}>
+                            <div style="height: 300px;">
+                                <lightning-datatable key-field="Id" data={filteredPainPoints} columns={columns}
+                                    onrowaction={handleRowAction} hide-checkbox-column="true">
+                                </lightning-datatable>
+                            </div>
+                        </template>
+                        <template if:true={error}>
+                            <div class="slds-text-color_error">An error occurred while loading pain points.</div>
+                        </template>
+                    </template>
+                </div>
+                
+                <!-- Right Sidebar -->
+                <div class="slds-col slds-size_1-of-3">
+                    <div class="slds-m-bottom_medium">
+                        <c-behavior-i-q-system-health></c-behavior-i-q-system-health>
+                    </div>
+                    <c-behavior-i-q-upgrade-cta></c-behavior-i-q-upgrade-cta>
+                </div>
+            </div>
+        </div>
+    </lightning-card>
+
+    <!-- Modals (Unchanged Logic, just styling if needed) -->
+    <template if:true={isDetailModalOpen}>
+        <section role="dialog" tabindex="-1" class="slds-modal slds-fade-in-open">
+            <div class="slds-modal__container">
+                <header class="slds-modal__header">
+                    <button class="slds-button slds-button_icon slds-modal__close slds-button_icon-inverse"
+                        title="Close" onclick={closeModal}>
+                        <lightning-icon icon-name="utility:close" alternative-text="close" variant="inverse"
+                            size="small"></lightning-icon>
+                        <span class="slds-assistive-text">Close</span>
+                    </button>
+                    <h2 class="slds-text-heading_medium slds-hyphenate">{selectedPainPoint.Name}</h2>
+                </header>
+                <div class="slds-modal__content slds-p-around_medium">
+                    <p><strong>Description:</strong></p>
+                    <p class="slds-m-bottom_medium">{selectedPainPoint.Description__c}</p>
+
+                    <p><strong>Example Records (IDs):</strong></p>
+                    <div class="slds-box slds-theme_shade">
+                        <pre>{selectedPainPoint.Example_Records__c}</pre>
+                    </div>
+                </div>
+                <footer class="slds-modal__footer">
+                    <button class="slds-button slds-button_neutral" onclick={closeModal}>Close</button>
+                    <button class="slds-button slds-button_brand" onclick={handleViewSolution}>View Solution Guide
+                        (Lite)</button>
+                </footer>
+            </div>
+        </section>
+        <div class="slds-backdrop slds-backdrop_open"></div>
+    </template>
+
+    <template if:true={isSolutionModalOpen}>
+        <section role="dialog" tabindex="-1" class="slds-modal slds-fade-in-open">
+            <div class="slds-modal__container">
+                <header class="slds-modal__header">
+                    <button class="slds-button slds-button_icon slds-modal__close slds-button_icon-inverse"
+                        title="Close" onclick={closeModal}>
+                        <lightning-icon icon-name="utility:close" alternative-text="close" variant="inverse"
+                            size="small"></lightning-icon>
+                        <span class="slds-assistive-text">Close</span>
+                    </button>
+                    <h2 class="slds-text-heading_medium slds-hyphenate">{solutionGuide.title}</h2>
+                </header>
+                <div class="slds-modal__content slds-p-around_medium">
+                    <ol class="slds-list_ordered">
+                        <template for:each={solutionGuide.steps} for:item="step">
+                            <li key={step}>{step}</li>
+                        </template>
+                    </ol>
+                </div>
+                <footer class="slds-modal__footer">
+                    <button class="slds-button slds-button_neutral" onclick={closeModal}>Close</button>
+                </footer>
+            </div>
+        </section>
+        <div class="slds-backdrop slds-backdrop_open"></div>
+    </template>
+</template>

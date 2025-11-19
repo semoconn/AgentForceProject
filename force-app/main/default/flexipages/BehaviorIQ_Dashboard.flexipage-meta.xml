@@ -3,8 +3,8 @@
     <flexiPageRegions>
         <itemInstances>
             <componentInstance>
-                <componentName>orgPulseContainer</componentName>
-                <identifier>c_orgPulseContainer</identifier>
+                <componentName>behaviorIQContainer</componentName>
+                <identifier>behaviorIQContainer</identifier>
             </componentInstance>
         </itemInstances>
         <name>region1</name>
@@ -18,7 +18,7 @@
         <name>region3</name>
         <type>Region</type>
     </flexiPageRegions>
-    <masterLabel>OrgPulse</masterLabel>
+    <masterLabel>BehaviorIQ Dashboard</masterLabel>
     <template>
         <name>flexipage:appHomeTemplateHeaderTwoColumnsLeftSidebar</name>
     </template>

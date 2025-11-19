@@ -1,5 +1,5 @@
 /**
- * @description Provides data for the OrgPulse analytics dashboard.
+ * @description Provides data for the BehaviorIQ analytics dashboard.
  * @version 2.0 - DEMO FIX: Added better error handling and null checks
  * @last modified on  : 11-05-2025
  */

@@ -1,5 +1,5 @@
 /**
- * @description Securely queries and manages Identified_Pain_Point__c records for the OrgPulse Dashboard.
+ * @description Securely queries and manages Identified_Pain_Point__c records for the BehaviorIQ Dashboard.
  * @version 2.1 - Added missing methods for Dashboard analytics and dismissal logic
  */
 public with sharing class PainPointController {

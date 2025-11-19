@@ -1,13 +1,14 @@
 /**
- * @description       : Apex controller to support the OrgPulse setup wizard LWC.
+ * @description       : Apex controller to support the BehaviorIQ setup wizard LWC.
  * @author            : Gemini
- * @group             : OrgPulse
- * @last modified on  : 10-15-2025
- * @last modified by  : Gemini (Final Sprint 4 Feature)
+ * @group             : BehaviorIQ
+ * @last modified on  : 11-18-2025
+ * @last modified by  : Gemini (Rebranding Refactor)
 **/
 public with sharing class SetupWizardController {
 
-    private static final String SCHEDULE_JOB_NAME = 'OrgPulse Nightly Analysis';
+    // REBRAND UPDATE: Updated Job Name
+    private static final String SCHEDULE_JOB_NAME = 'BehaviorIQ Nightly Analysis';
     @TestVisible private static Boolean testHook_simulateDuplicateJob = false;
 
     public class TrackableObject implements Comparable {
@@ -29,6 +30,7 @@ public with sharing class SetupWizardController {
         List<TrackableObject> objects = new List<TrackableObject>();
         Set<String> supportedObjects = new Set<String>();
 
+        // Logic preserved: Dynamically find objects with BehaviorTriggers
         for (ApexTrigger t : [
             SELECT TableEnumOrId
             FROM ApexTrigger 
@@ -81,10 +83,22 @@ public with sharing class SetupWizardController {
     @AuraEnabled
     public static void saveMonitoringSettings(List<String> monitoredObjects) {
         try {
-            OrgPulse_Configuration__c settings = OrgPulse_Configuration__c.getOrgDefaults();
-            if (settings == null) {
-                settings = new OrgPulse_Configuration__c();
+            // REFACTOR: Switched from Custom Setting (.getOrgDefaults) to Custom Object (SOQL)
+            BehaviorIQ_Configuration__c settings;
+            
+            List<BehaviorIQ_Configuration__c> configs = [
+                SELECT Id, Monitored_Objects__c 
+                FROM BehaviorIQ_Configuration__c 
+                LIMIT 1
+            ];
+
+            if (configs.isEmpty()) {
+                // Create new if none exists
+                settings = new BehaviorIQ_Configuration__c(Name = 'Default Configuration');
+            } else {
+                settings = configs[0];
             }
+
             settings.Monitored_Objects__c = String.join(monitoredObjects, ',');
             upsert settings;
         } catch (Exception e) {
@@ -93,13 +107,22 @@ public with sharing class SetupWizardController {
     }
     
     /**
-     * @description Checks if the OrgPulse initial setup has been completed.
-     * @return      Boolean true if the configuration setting exists, false otherwise.
+     * @description Checks if the BehaviorIQ initial setup has been completed.
+     * @return      Boolean true if the configuration record exists, false otherwise.
     **/
     @AuraEnabled(cacheable=true)
     public static Boolean isSetupComplete() {
-        // The existence of the org-level custom setting is our flag for setup completion.
-        OrgPulse_Configuration__c settings = OrgPulse_Configuration__c.getOrgDefaults();
-        return (settings != null && String.isNotBlank(settings.Monitored_Objects__c));
+        // REFACTOR: Switched from Custom Setting (.getOrgDefaults) to Custom Object (SOQL)
+        List<BehaviorIQ_Configuration__c> configs = [
+            SELECT Monitored_Objects__c 
+            FROM BehaviorIQ_Configuration__c 
+            LIMIT 1
+        ];
+        
+        if (configs.isEmpty()) {
+            return false;
+        }
+        
+        return String.isNotBlank(configs[0].Monitored_Objects__c);
     }
 }

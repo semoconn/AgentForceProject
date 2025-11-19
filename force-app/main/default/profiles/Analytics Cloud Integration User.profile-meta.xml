@@ -1023,7 +1023,7 @@
         <visibility>Hidden</visibility>
     </tabVisibilities>
     <tabVisibilities>
-        <tab>OrgPulse</tab>
+        <tab>BehaviorIQ</tab>
         <visibility>DefaultOff</visibility>
     </tabVisibilities>
     <userLicense>Analytics Cloud Integration User</userLicense>

@@ -8,7 +8,7 @@
     <label>Sales Console</label>
     <navType>Console</navType>
     <tabs>standard-home</tabs>
-    <tabs>OrgPulse</tabs>
+    <tabs>BehaviorIQ</tabs>
     <tabs>standard-Lead</tabs>
     <tabs>standard-Account</tabs>
     <tabs>standard-Contact</tabs>
@@ -29,7 +29,7 @@
             <tab>Behavior_Log__c</tab>
         </mappings>
         <mappings>
-            <tab>OrgPulse</tab>
+            <tab>BehaviorIQ</tab>
         </mappings>
         <mappings>
             <tab>standard-Account</tab>

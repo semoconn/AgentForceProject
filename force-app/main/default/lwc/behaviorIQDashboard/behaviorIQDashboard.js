@@ -1,5 +1,5 @@
 /**
- * @description       : Main dashboard LWC for OrgPulse. Displays high-level stats and a prioritized list of identified pain points.
+ * @description       : Main dashboard LWC for BehaviorIQ. Displays high-level stats and a prioritized list of identified pain points.
  * @version           : 4.0 - Final MVP version with Dismissed filter.
 **/
 import { LightningElement, wire, track } from 'lwc';
@@ -33,7 +33,7 @@ const columns = [
     }
 ];
 
-export default class OrgPulseDashboard extends LightningElement {
+export default class BehaviorIQDashboard extends LightningElement {
     @track columns = columns;
     @track painPointsData = [];
     @track filteredPainPoints = [];

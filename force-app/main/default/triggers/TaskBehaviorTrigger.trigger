@@ -1,7 +1,7 @@
 /**
  * Task Behavior Tracking Trigger
  * File: TaskBehaviorTrigger.trigger
- * Description: Captures DML events on the Task object to be processed by the OrgPulse engine.
+ * Description: Captures DML events on the Task object to be processed by the BehaviorIQ engine.
  */
 trigger TaskBehaviorTrigger on Task (after insert, after update, after delete, after undelete) {
     GenericBehaviorTriggerHandler handler = new GenericBehaviorTriggerHandler('Task');

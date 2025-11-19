@@ -9,7 +9,8 @@
     <!-- Once loading is complete, show the correct component -->
     <template if:false={isLoading}>
         <template if:true={isSetupComplete}>
-            <c-org-pulse-dashboard></c-org-pulse-dashboard>
+            <!-- UPDATED: Renamed from c-org-pulse-dashboard to c-behavior-i-q-dashboard -->
+            <c-behavior-i-q-dashboard></c-behavior-i-q-dashboard>
         </template>
         <template if:false={isSetupComplete}>
             <c-setup-wizard onsetupcomplete={handleSetupComplete}></c-setup-wizard>

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Grants full access to BehaviorIQ configuration, logs, and settings.</description>
+    <hasActivationRequired>false</hasActivationRequired>
+    <label>BehaviorIQ Admin</label>
+    
+    <!-- Access to the renamed Configuration Object -->
+    <objectPermissions>
+        <allowCreate>true</allowCreate>
+        <allowDelete>true</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>true</modifyAllRecords>
+        <object>BehaviorIQ_Configuration__c</object>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+
+    <!-- Access to Logs (Name unchanged, but essential for Admin) -->
+    <objectPermissions>
+        <allowCreate>true</allowCreate>
+        <allowDelete>true</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>true</modifyAllRecords>
+        <object>Behavior_Log__c</object>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+
+    <!-- Access to Pain Points (Name unchanged) -->
+    <objectPermissions>
+        <allowCreate>true</allowCreate>
+        <allowDelete>true</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>true</modifyAllRecords>
+        <object>Identified_Pain_Point__c</object>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+
+    <!-- Access to the renamed Tab -->
+    <tabSettings>
+        <tab>BehaviorIQ</tab>
+        <visibility>Visible</visibility>
+    </tabSettings>
+    
+    <!-- Access to Log Tabs if you have them -->
+    <tabSettings>
+        <tab>Behavior_Log__c</tab>
+        <visibility>Visible</visibility>
+    </tabSettings>
+    <tabSettings>
+        <tab>Identified_Pain_Point__c</tab>
+        <visibility>Visible</visibility>
+    </tabSettings>
+</PermissionSet>
