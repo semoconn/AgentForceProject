@@ -106,11 +106,41 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    /* Added border-bottom logic here to separate filters from table */
     border-bottom: 1px solid #dddbda;
 }
 
 .slds-list_ordered li {
     margin-left: 1.5rem;
     padding-left: 0.5rem;
+}
+
+/* --- NEW GATING STYLES (Enhanced Visibility) --- */
+
+.btn-premium-locked {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px; /* Slightly tighter padding */
+    border-radius: 1rem;
+    font-weight: 700; /* Bold text */
+    font-size: 0.65rem; /* Smaller but punchy */
+    vertical-align: middle;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1); /* Lift it off background */
+    letter-spacing: 0.5px;
+}
+
+.status-badge.premium {
+    background-color: rgba(255,255,255,0.2);
+    color: white;
+    border: 1px solid rgba(255,255,255,0.4);
+}
+
+.status-badge.free {
+    background-color: #ff9a3c; /* Brighter Orange */
+    color: #1a1a1a; /* Dark Text for Contrast */
+    border: 1px solid #d37c26;
 }

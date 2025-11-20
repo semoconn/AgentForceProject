@@ -1,7 +1,7 @@
 <template>
     <div class="dashboard-container">
         
-        <!-- HEADER & METRICS (Unchanged) -->
+        <!-- HEADER & METRICS -->
         <div class="slds-grid slds-wrap slds-m-bottom_medium header-section">
             <div class="slds-col slds-size_1-of-1 slds-large-size_8-of-12 header-content">
                 <div class="slds-media slds-media_center">
@@ -11,17 +11,36 @@
                         </div>
                     </div>
                     <div class="slds-media__body">
-                        <h1 class="slds-text-heading_medium slds-text-color_inverse">BehaviorIQ Monitor</h1>
+                        <!-- FIX: Added grid to align Title and Badge side-by-side -->
+                        <div class="slds-grid slds-grid_vertical-align-center">
+                            <h1 class="slds-text-heading_medium slds-text-color_inverse slds-m-right_small">BehaviorIQ Monitor</h1>
+                            
+                            <!-- GATING BADGE (Moved Here) -->
+                            <template if:false={isPremium}>
+                                <div class="status-badge free">FREE PLAN</div>
+                            </template>
+                            <template if:true={isPremium}>
+                                <div class="status-badge premium">
+                                    <lightning-icon icon-name="utility:check" size="xx-small" variant="inverse" class="slds-m-right_xx-small"></lightning-icon>
+                                    PREMIUM
+                                </div>
+                            </template>
+                        </div>
                         <p class="slds-text-color_inverse-weak">Real-time behavioral analysis and anomaly detection.</p>
                     </div>
                 </div>
             </div>
             <div class="slds-col slds-size_1-of-1 slds-large-size_4-of-12 header-actions">
                 <div class="slds-grid slds-grid_align-end slds-grid_vertical-align-center">
-                    <button class="premium-btn slds-m-right_small" onclick={openAdminModal} data-tab="licensing">
-                        <lightning-icon icon-name="utility:diamond" size="x-small" class="slds-m-right_xx-small"></lightning-icon>
-                        Get Premium
-                    </button>
+                    
+                    <!-- ACTION BUTTONS -->
+                    <template if:false={isPremium}>
+                        <button class="premium-btn slds-m-right_small" onclick={openAdminModal} data-tab="licensing">
+                            <lightning-icon icon-name="utility:diamond" size="x-small" class="slds-m-right_xx-small"></lightning-icon>
+                            Get Premium
+                        </button>
+                    </template>
+                    
                     <lightning-button label="Admin Console" icon-name="utility:settings" variant="neutral" class="slds-m-right_xx-small" onclick={openAdminModal}></lightning-button>
                     <lightning-button-icon icon-name="utility:refresh" variant="border-filled" onclick={handleRefresh} alternative-text="Refresh Analysis"></lightning-button-icon>
                 </div>
@@ -58,7 +77,7 @@
 
         <!-- MAIN ANALYSIS CARD -->
         <lightning-card class="main-card full-height-card">
-            <!-- Container for Filters (Still has padding) -->
+            <!-- Container for Filters -->
             <div class="slds-p-horizontal_medium slds-p-vertical_small filter-container">
                 <div class="slds-grid slds-grid_vertical-align-center">
                     <span class="slds-text-title_caps slds-m-right_small">Filter:</span>
@@ -73,7 +92,7 @@
                 </div>
             </div>
 
-            <!-- Data Table (Padding REMOVED to force edge-to-edge width) -->
+            <!-- Data Table -->
             <template if:true={hasPainPoints}>
                 <div class="datatable-wrapper">
                     <lightning-datatable
@@ -98,7 +117,7 @@
             </template>
         </lightning-card>
 
-        <!-- ADMIN & SOLUTION MODALS (Unchanged) -->
+        <!-- ADMIN MODAL -->
         <template if:true={isModalOpen}>
             <section role="dialog" tabindex="-1" aria-modal="true" class="slds-modal slds-fade-in-open slds-modal_medium">
                 <div class="slds-modal__container">
@@ -127,6 +146,7 @@
             <div class="slds-backdrop slds-backdrop_open"></div>
         </template>
 
+        <!-- SOLUTION GUIDE MODAL -->
         <template if:true={isSolutionModalOpen}>
             <section role="dialog" tabindex="-1" aria-modal="true" class="slds-modal slds-fade-in-open">
                 <div class="slds-modal__container">
@@ -156,7 +176,15 @@
                     
                     <footer class="slds-modal__footer slds-grid slds-grid_align-spread">
                         <lightning-button label="Close" onclick={closeSolutionModal}></lightning-button>
-                        <lightning-button variant="brand" label="Auto-Fix (Premium)" icon-name="utility:lock" onclick={handlePremiumClick} title="Upgrade to unlock one-click remediation"></lightning-button>
+                        
+                        <!-- GATING LOGIC -->
+                        <template if:true={isPremium}>
+                            <lightning-button variant="brand" label="Run Auto-Fix" icon-name="utility:magicwand" onclick={handleAutoFix} title="Resolve this issue automatically"></lightning-button>
+                        </template>
+                        <template if:false={isPremium}>
+                            <lightning-button variant="neutral" label="Auto-Fix (Premium)" icon-name="utility:lock" onclick={handlePremiumClick} class="btn-premium-locked" title="Upgrade to unlock one-click remediation"></lightning-button>
+                        </template>
+
                     </footer>
                 </div>
             </section>

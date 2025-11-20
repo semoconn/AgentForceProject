@@ -1,109 +1,167 @@
 /**
- * @description Provides data for the BehaviorIQ analytics dashboard.
- * @version 2.0 - DEMO FIX: Added better error handling and null checks
- * @last modified on  : 11-05-2025
+ * @description Controller for the BehaviorIQ Dashboard.
+ * Aggregates behavioral data and injects License status for UI gating.
+ * Contains legacy analytics methods (WorkflowStats, TopActions) and new DashboardWrapper logic.
  */
 public with sharing class WorkflowAnalyticsController {
-    
-    public class TopAction {
-        @AuraEnabled public String id { get; set; }
-        @AuraEnabled public String actionName { get; set; }
-        @AuraEnabled public String objectName { get; set; }
-        @AuraEnabled public Integer count { get; set; }
+
+    // --- NEW: Dashboard & Gating Structures ---
+
+    public class DashboardDataWrapper {
+        @AuraEnabled public Boolean isPremium { get; set; }
+        @AuraEnabled public List<MetricWrapper> metrics { get; set; }
+        @AuraEnabled public List<Behavior_Log__c> recentLogs { get; set; }
+        
+        public DashboardDataWrapper() {
+            this.isPremium = false;
+            this.metrics = new List<MetricWrapper>();
+            this.recentLogs = new List<Behavior_Log__c>();
+        }
     }
+
+    public class MetricWrapper {
+        @AuraEnabled public String label { get; set; }
+        @AuraEnabled public Integer count { get; set; }
+        @AuraEnabled public String trend { get; set; } 
+        @AuraEnabled public String type { get; set; } // 'alert', 'success', 'warning'
+        @AuraEnabled public String key { get; set; }
+        
+        public MetricWrapper(String label, Integer count, String trend, String type, String key) {
+            this.label = label;
+            this.count = count;
+            this.trend = trend;
+            this.type = type;
+            this.key = key;
+        }
+    }
+    
+    // --- ORIGINAL: Analytics Structures ---
+
+    public class TopAction {
+        @AuraEnabled public String id;
+        @AuraEnabled public String actionName;
+        @AuraEnabled public String objectName;
+        @AuraEnabled public Integer count;
+    }
+
+    // --- NEW: Dashboard Initialization Method ---
+
+    @AuraEnabled(cacheable=true)
+    public static DashboardDataWrapper getDashboardData() {
+        DashboardDataWrapper data = new DashboardDataWrapper();
+        
+        // 1. Inject License Status (The Gate)
+        data.isPremium = LicenseService.isPremium();
+        
+        // 2. Fetch Metrics (Aggregated from Pain Points)
+        data.metrics = getMetrics();
+
+        // 3. Fetch Recent Logs 
+        // FIX: Used CreatedDate instead of Timestamp__c (which doesn't exist on Behavior_Log__c)
+        data.recentLogs = [
+            SELECT Id, Action_Name__c, User__r.Name, CreatedDate, Object_API_Name__c 
+            FROM Behavior_Log__c 
+            WITH SECURITY_ENFORCED
+            ORDER BY CreatedDate DESC 
+            LIMIT 10 
+        ];
+
+        return data;
+    }
+
+    private static List<MetricWrapper> getMetrics() {
+        List<MetricWrapper> metrics = new List<MetricWrapper>();
+        
+        // Aggregate from Identified_Pain_Point__c
+        for (AggregateResult ar : [
+            SELECT Status__c, Count(Id) cnt 
+            FROM Identified_Pain_Point__c 
+            WITH SECURITY_ENFORCED 
+            GROUP BY Status__c
+        ]) {
+            String status = (String)ar.get('Status__c');
+            Integer count = (Integer)ar.get('cnt');
+            
+            if (status == 'Active') {
+                metrics.add(new MetricWrapper('Active Anomalies', count, '+2%', 'alert', 'active_anomalies'));
+            } else if (status == 'Dismissed') {
+                metrics.add(new MetricWrapper('Dismissed', count, '0%', 'success', 'dismissed_anomalies'));
+            }
+        }
+        
+        // If no data, add a placeholder or default metric
+        if (metrics.isEmpty()) {
+             Integer staleOppCount = [SELECT Count() FROM Opportunity WHERE LastStageChangeDate < LAST_N_DAYS:30 AND IsClosed = false WITH SECURITY_ENFORCED];
+             metrics.add(new MetricWrapper('Stale Opportunities', staleOppCount, 'Live', 'warning', 'stale_opps'));
+        }
+
+        return metrics;
+    }
+
+    // --- NEW: Premium Action ---
+
+    @AuraEnabled
+    public static void runAutoFix(List<Id> recordIds) {
+        // CRITICAL: Server-side Gate
+        LicenseService.enforcePremiumGate();
+        
+        // Logic would go here. For MVP, we just validate the gate allows entry.
+    }
+
+    // --- ORIGINAL: Restored Analytics Methods ---
 
     @AuraEnabled(cacheable=true)
     public static Map<String, Integer> getWorkflowStats() {
         Map<String, Integer> stats = new Map<String, Integer>();
-        try {
-            // Total logs count
-            stats.put('totalLogs', [SELECT COUNT() FROM Behavior_Log__c]);
-            
-            // Unique users in last 30 days
-            AggregateResult[] uniqueUsers = [
-                SELECT COUNT_DISTINCT(User__c) userCount 
-                FROM Behavior_Log__c 
-                WHERE CreatedDate = LAST_N_DAYS:30
-            ];
-            stats.put('uniqueUsers', uniqueUsers.isEmpty() ? 0 : (Integer)uniqueUsers[0].get('userCount'));
-            
-            // Distinct objects tracked
-            AggregateResult[] objectsTracked = [
-                SELECT COUNT_DISTINCT(Object_API_Name__c) objectCount 
-                FROM Behavior_Log__c
-            ];
-            stats.put('objectsTracked', objectsTracked.isEmpty() ? 0 : (Integer)objectsTracked[0].get('objectCount'));
-            
-            System.debug('Workflow Stats: ' + stats);
-        } catch (Exception e) {
-            System.debug(LoggingLevel.ERROR, 'Error getting workflow stats: ' + e.getMessage());
-            // Return zeros instead of throwing error
-            stats.put('totalLogs', 0);
-            stats.put('uniqueUsers', 0);
-            stats.put('objectsTracked', 0);
-        }
+        
+        stats.put('totalLogs', [SELECT Count() FROM Behavior_Log__c WITH SECURITY_ENFORCED]);
+        
+        // FIX: Correct way to count distinct groups in SOQL
+        // We select the grouping field, then count the number of rows returned by the aggregate query
+        AggregateResult[] userResults = [SELECT User__c FROM Behavior_Log__c WITH SECURITY_ENFORCED GROUP BY User__c];
+        stats.put('uniqueUsers', userResults.size());
+        
+        AggregateResult[] objectResults = [SELECT Object_API_Name__c FROM Behavior_Log__c WITH SECURITY_ENFORCED GROUP BY Object_API_Name__c];
+        stats.put('objectsTracked', objectResults.size());
+        
         return stats;
     }
-    
+
     @AuraEnabled(cacheable=true)
     public static List<TopAction> getTopActions() {
-        List<TopAction> topActions = new List<TopAction>();
-        try {
-            List<AggregateResult> results = [
-                SELECT Action_Name__c actionName, Object_API_Name__c objectName, COUNT(Id) actionCount
-                FROM Behavior_Log__c
-                WHERE CreatedDate = LAST_N_DAYS:30
-                GROUP BY Action_Name__c, Object_API_Name__c
-                ORDER BY COUNT(Id) DESC
-                LIMIT 10
-            ];
-            
-            for (AggregateResult ar : results) {
-                TopAction action = new TopAction();
-                action.id = (String)ar.get('actionName') + (String)ar.get('objectName');
-                action.actionName = (String)ar.get('actionName');
-                action.objectName = (String)ar.get('objectName');
-                action.count = (Integer)ar.get('actionCount');
-                topActions.add(action);
-            }
-            
-            System.debug('Top Actions: ' + topActions.size() + ' records');
-        } catch (Exception e) {
-            System.debug(LoggingLevel.ERROR, 'Error getting top actions: ' + e.getMessage());
-            // Return empty list instead of throwing error
+        List<TopAction> actions = new List<TopAction>();
+        
+        List<AggregateResult> results = [
+            SELECT Action_Name__c actionName, Object_API_Name__c objectName, COUNT(Id) actionCount
+            FROM Behavior_Log__c
+            WHERE CreatedDate = LAST_N_DAYS:30
+            WITH SECURITY_ENFORCED
+            GROUP BY Action_Name__c, Object_API_Name__c
+            ORDER BY COUNT(Id) DESC
+            LIMIT 10
+        ];
+        
+        for (AggregateResult ar : results) {
+            TopAction action = new TopAction();
+            action.actionName = (String)ar.get('actionName');
+            action.objectName = (String)ar.get('objectName');
+            action.count = (Integer)ar.get('actionCount');
+            action.id = action.actionName + action.objectName;
+            actions.add(action);
         }
-        return topActions;
+        return actions;
     }
 
-    /**
-     * @description Gets the most recent System_Health_Log__c record to display on the dashboard.
-     * @return System_Health_Log__c The latest health log record, or null if none exists.
-    **/
     @AuraEnabled(cacheable=true)
     public static System_Health_Log__c getSystemHealth() {
-        try {
-            if (!Schema.sObjectType.System_Health_Log__c.isAccessible()) {
-                System.debug(LoggingLevel.WARN, 'User does not have permission to view system health logs.');
-                return null;
-            }
-            
-            List<System_Health_Log__c> logs = [
-                SELECT Id, CreatedDate, Status__c, Job_Name__c, Error_Count__c
-                FROM System_Health_Log__c 
-                ORDER BY CreatedDate DESC 
-                LIMIT 1
-            ];
-
-            if (!logs.isEmpty()) {
-                System.debug('System Health Log found: ' + logs[0].Status__c);
-                return logs[0];
-            } else {
-                System.debug('No System Health Log records found.');
-                return null;
-            }
-        } catch (Exception e) {
-            System.debug(LoggingLevel.ERROR, 'Error getting system health: ' + e.getMessage());
-            return null;
-        }
+        // FIX: Used CreatedDate instead of Timestamp__c
+        List<System_Health_Log__c> logs = [
+            SELECT Id, Job_Name__c, Status__c, CreatedDate 
+            FROM System_Health_Log__c 
+            WITH SECURITY_ENFORCED
+            ORDER BY CreatedDate DESC 
+            LIMIT 1 
+        ];
+        return logs.isEmpty() ? null : logs[0];
     }
 }
