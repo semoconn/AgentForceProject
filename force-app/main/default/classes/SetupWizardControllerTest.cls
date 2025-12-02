@@ -1,68 +1,176 @@
 /**
  * @description Test class for SetupWizardController.
- * @version 3.0 - Updated for BehaviorIQ rebranding and Custom Object configuration.
+ * Updated to properly handle Security checks and Permission Sets in Test Context.
  */
-@isTest
-private class SetupWizardControllerTest {
+@IsTest
+public class SetupWizardControllerTest {
 
-    @isTest
-    static void testGetTrackableObjects_ReturnsObjects() {
-        // ... test remains the same ...
-        Test.startTest();
-        List<SetupWizardController.TrackableObject> results = SetupWizardController.getTrackableObjects();
-        Test.stopTest();
-        System.assertNotEquals(0, results.size(), 'Should return a list of trackable objects.');
+    @TestSetup
+    static void makeData() {
+        // Create a standard test user
+        Profile p = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
+        User u = new User(
+            Alias = 'standt', Email = 'standarduser@testorg.com',
+            EmailEncodingKey = 'UTF-8', LastName = 'Testing', LanguageLocaleKey = 'en_US',
+            LocaleSidKey = 'en_US', ProfileId = p.Id,
+            TimeZoneSidKey = 'America/Los_Angeles', UserName = 'behavioriq_test_user@testorg.com'
+        );
+        insert u;
+
+        // Create a custom Permission Set for testing
+        PermissionSet ps = new PermissionSet(Label = 'Test Perm Set', Name = 'TestPermSet');
+        insert ps;
+
+        // Assign the Permission Set to the user
+        insert new PermissionSetAssignment(AssigneeId = u.Id, PermissionSetId = ps.Id);
+        
+        // --- 1. GRANT OBJECT PERMISSIONS ---
+        // We must explicitely grant Create/Read/Edit/Delete in test context
+        List<ObjectPermissions> objPerms = new List<ObjectPermissions>();
+        objPerms.add(createObjPerm(ps.Id, 'BehaviorIQ_Configuration__c'));
+        objPerms.add(createObjPerm(ps.Id, 'Behavior_Log__c'));
+        objPerms.add(createObjPerm(ps.Id, 'Identified_Pain_Point__c'));
+        objPerms.add(createObjPerm(ps.Id, 'Suggestion_Dismissal__c'));
+        insert objPerms;
+
+        // --- 2. GRANT FIELD PERMISSIONS ---
+        // Vital for FLS checks (Schema...fields...isCreateable)
+        List<FieldPermissions> fieldPerms = new List<FieldPermissions>();
+        
+        // Config Fields
+        fieldPerms.add(createFieldPerm(ps.Id, 'BehaviorIQ_Configuration__c', 'Monitored_Objects__c'));
+        
+        // Behavior Log Fields (Required for PatternAnalysisService query)
+        fieldPerms.add(createFieldPerm(ps.Id, 'Behavior_Log__c', 'Action_Name__c'));
+        fieldPerms.add(createFieldPerm(ps.Id, 'Behavior_Log__c', 'Object_API_Name__c'));
+        fieldPerms.add(createFieldPerm(ps.Id, 'Behavior_Log__c', 'Record_ID__c'));
+        fieldPerms.add(createFieldPerm(ps.Id, 'Behavior_Log__c', 'User__c'));
+        fieldPerms.add(createFieldPerm(ps.Id, 'Behavior_Log__c', 'Behavior_Data__c'));
+        
+        // Pain Point Fields
+        fieldPerms.add(createFieldPerm(ps.Id, 'Identified_Pain_Point__c', 'Status__c'));
+        // REMOVED: Unique_Key__c - This is a restricted picklist and cannot have edit permissions granted
+        fieldPerms.add(createFieldPerm(ps.Id, 'Identified_Pain_Point__c', 'Occurrences__c'));
+        fieldPerms.add(createFieldPerm(ps.Id, 'Identified_Pain_Point__c', 'Impact_Score__c'));
+        fieldPerms.add(createFieldPerm(ps.Id, 'Identified_Pain_Point__c', 'Description__c'));
+        fieldPerms.add(createFieldPerm(ps.Id, 'Identified_Pain_Point__c', 'Example_Records__c'));
+        fieldPerms.add(createFieldPerm(ps.Id, 'Identified_Pain_Point__c', 'Object_API_Name__c'));
+        fieldPerms.add(createFieldPerm(ps.Id, 'Identified_Pain_Point__c', 'Last_Detected__c'));
+
+        // Dismissal Fields
+        // REMOVED: Dismissal_Key__c - This is a restricted picklist and cannot have edit permissions granted
+        fieldPerms.add(createFieldPerm(ps.Id, 'Suggestion_Dismissal__c', 'Action_Name__c'));
+        
+        insert fieldPerms;
+    }
+    
+    // Helper to create Object Permissions
+    private static ObjectPermissions createObjPerm(Id psId, String objName) {
+        return new ObjectPermissions(
+            ParentId = psId,
+            SobjectType = objName,
+            PermissionsCreate = true,
+            PermissionsRead = true,
+            PermissionsEdit = true,
+            PermissionsDelete = true
+        );
     }
 
-    @isTest
+    // Helper to create Field Permissions
+    private static FieldPermissions createFieldPerm(Id psId, String obj, String field) {
+        return new FieldPermissions(
+            ParentId = psId,
+            SobjectType = obj,
+            Field = obj + '.' + field,
+            PermissionsRead = true,
+            PermissionsEdit = true
+        );
+    }
+
+    @IsTest
+    static void testGetTrackableObjects() {
+        User testUser = [SELECT Id FROM User WHERE UserName = 'behavioriq_test_user@testorg.com' LIMIT 1];
+        
+        System.runAs(testUser) {
+            Test.startTest();
+            List<SetupWizardController.TrackableObject> result = SetupWizardController.getTrackableObjects();
+            Test.stopTest();
+
+            Assert.isNotNull(result, 'Result should not be null');
+            Assert.isTrue(result.size() >= 5, 'Should return default objects'); 
+        }
+    }
+
+    @IsTest
     static void testScheduleAnalysisJob_Success() {
-        // --- NEW: Clean up any existing jobs from other tests ---
-        // REBRAND UPDATE: Use the new job name 'BehaviorIQ Nightly Analysis'
-        for (CronTrigger ct : [SELECT Id FROM CronTrigger WHERE CronJobDetail.Name = 'BehaviorIQ Nightly Analysis']) {
-            System.abortJob(ct.Id);
+        User testUser = [SELECT Id FROM User WHERE UserName = 'behavioriq_test_user@testorg.com' LIMIT 1];
+        
+        System.runAs(testUser) {
+            Test.startTest();
+            String jobId = SetupWizardController.scheduleAnalysisJob();
+            Test.stopTest();
+
+            Assert.isNotNull(jobId, 'Job ID should be returned');
+            
+            List<CronTrigger> jobs = [SELECT Id, CronJobDetail.Name FROM CronTrigger WHERE Id = :jobId];
+            Assert.areEqual(1, jobs.size(), 'Job should be scheduled');
+            Assert.areEqual('BehaviorIQ Nightly Analysis', jobs[0].CronJobDetail.Name, 'Job name should match');
         }
-
-        Test.startTest();
-        String jobId = SetupWizardController.scheduleAnalysisJob();
-        Test.stopTest();
-
-        System.assertNotEquals(null, jobId, 'A job ID should be returned.');
-        List<CronTrigger> scheduledJobs = [SELECT Id FROM CronTrigger WHERE Id = :jobId];
-        System.assertEquals(1, scheduledJobs.size(), 'One job should be scheduled.');
     }
 
-    @isTest
-    static void testScheduleAnalysisJob_PreventsDuplicates() {
-        // ... test remains the same ...
-        SetupWizardController.testHook_simulateDuplicateJob = true;
-        Boolean exceptionThrown = false;
-        Test.startTest();
-        try {
+    @IsTest
+    static void testScheduleAnalysisJob_Duplicate() {
+        User testUser = [SELECT Id FROM User WHERE UserName = 'behavioriq_test_user@testorg.com' LIMIT 1];
+        
+        System.runAs(testUser) {
+            // Schedule it once
             SetupWizardController.scheduleAnalysisJob();
-        } catch (AuraHandledException e) {
-            exceptionThrown = true;
+
+            // Try to schedule again
+            Test.startTest();
+            try {
+                SetupWizardController.scheduleAnalysisJob();
+                Assert.fail('Should have thrown an exception for duplicate job');
+            } catch (AuraHandledException e) {
+                // Just assert that we caught the exception.
+                Assert.isNotNull(e); 
+            }
+            Test.stopTest();
         }
-        Test.stopTest();
-        System.assert(exceptionThrown, 'An AuraHandledException should have been thrown to prevent a duplicate job.');
     }
 
-    @isTest
+    @IsTest
     static void testSaveMonitoringSettings_Success() {
-        // ... test remains the same ...
-        List<String> objectsToMonitor = new List<String>{'Account', 'Opportunity'};
+        User testUser = [SELECT Id FROM User WHERE UserName = 'behavioriq_test_user@testorg.com' LIMIT 1];
         
-        Test.startTest();
-        SetupWizardController.saveMonitoringSettings(objectsToMonitor);
-        Test.stopTest();
+        System.runAs(testUser) {
+            List<String> objects = new List<String>{'Account', 'Opportunity'};
+            
+            Test.startTest();
+            SetupWizardController.saveMonitoringSettings(objects);
+            Test.stopTest();
 
-        // REFACTOR: Query Custom Object instead of Custom Setting
-        List<BehaviorIQ_Configuration__c> configs = [
-            SELECT Monitored_Objects__c 
-            FROM BehaviorIQ_Configuration__c 
-            LIMIT 1
-        ];
+            // Verify Record Created - Run as System to ensure visibility
+            List<BehaviorIQ_Configuration__c> configs = [SELECT Monitored_Objects__c FROM BehaviorIQ_Configuration__c LIMIT 1];
+            Assert.areEqual(1, configs.size(), 'Configuration record should be created');
+            Assert.areEqual('Account,Opportunity', configs[0].Monitored_Objects__c, 'Objects should match');
+            
+            // Verify IsSetupComplete
+            Boolean isComplete = SetupWizardController.isSetupComplete();
+            Assert.isTrue(isComplete, 'Setup should be marked complete');
+        }
+    }
+    
+    @IsTest
+    static void testIsSetupComplete_False() {
+        User testUser = [SELECT Id FROM User WHERE UserName = 'behavioriq_test_user@testorg.com' LIMIT 1];
         
-        System.assert(!configs.isEmpty(), 'Settings record should exist.');
-        System.assertEquals('Account,Opportunity', configs[0].Monitored_Objects__c);
+        System.runAs(testUser) {
+            Test.startTest();
+            Boolean isComplete = SetupWizardController.isSetupComplete();
+            Test.stopTest();
+
+            Assert.isFalse(isComplete, 'Setup should be incomplete initially');
+        }
     }
 }

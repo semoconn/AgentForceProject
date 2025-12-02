@@ -15,11 +15,18 @@ public virtual class DeleteRecordsBatch implements Database.Batchable<sObject> {
 
     public Database.QueryLocator start(Database.BatchableContext bc) {
         System.debug('[DeleteRecordsBatch.start] Query: ' + query);
-        return Database.getQueryLocator(query);
+        
+        // SECURITY FIX: Ensure the query enforces security
+        String secureQuery = query;
+        if (!secureQuery.contains('SECURITY_ENFORCED')) {
+            secureQuery += ' WITH SECURITY_ENFORCED';
+        }
+        return Database.getQueryLocator(secureQuery);
     }
 
     public virtual void execute(Database.BatchableContext bc, List<sObject> scope) { // ADDED 'virtual'
         // The check here is simplified to allow the test to cover the else branch easily.
+        // SECURITY FIX: Explicit check for Delete permissions
         if (!scope.isEmpty() && Schema.sObjectType.Behavior_Log__c.isDeletable()) {
              try {
                 // Bulk delete the records in the current chunk

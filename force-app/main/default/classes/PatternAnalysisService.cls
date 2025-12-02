@@ -1,6 +1,6 @@
 /**
  * @description Scheduled + Batchable job for analyzing Behavior Logs.
- * @version 14.0 - Phase 2: Implemented Dynamic Thresholds via Behavior_Setting__mdt.
+ * @version 14.2 - SECURITY FIX: Enforced CRUD/FLS and secured dynamic SOQL.
  */
 public with sharing class PatternAnalysisService implements Database.Batchable<sObject>, Schedulable {
 
@@ -91,9 +91,11 @@ public with sharing class PatternAnalysisService implements Database.Batchable<s
     }
 
     public Database.QueryLocator start(Database.BatchableContext bc) {
+        // SECURITY FIX: Added WITH SECURITY_ENFORCED
         String query = 'SELECT Id, Action_Name__c, Object_API_Name__c, Record_ID__c, User__c, CreatedDate ' +
                        'FROM Behavior_Log__c ' +
                        'WHERE CreatedDate >= LAST_N_DAYS:1 ' +
+                       'WITH SECURITY_ENFORCED ' + 
                        'ORDER BY User__c, CreatedDate ASC, Id ASC';
         return Database.getQueryLocator(query);
     }
@@ -254,6 +256,13 @@ public with sharing class PatternAnalysisService implements Database.Batchable<s
     private void upsertPainPoint(String key, String label, String description, String obj, Integer count, String examples) {
         if (dismissedPainPointKeys.contains(key)) return;
 
+        // SECURITY FIX: Enforce Create/Update Permissions
+        if (!Schema.sObjectType.Identified_Pain_Point__c.isCreateable() || 
+            !Schema.sObjectType.Identified_Pain_Point__c.isUpdateable()) {
+            System.debug(LoggingLevel.ERROR, 'Security Error: Insufficient permissions on Identified_Pain_Point__c');
+            return;
+        }
+
         Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
             Unique_Key__c = key, Name = label, Description__c = description,
             Object_API_Name__c = obj, Occurrences__c = count,
@@ -262,7 +271,14 @@ public with sharing class PatternAnalysisService implements Database.Batchable<s
         );
 
         try {
-            Database.upsert(pp, Identified_Pain_Point__c.Unique_Key__c, false);
+            // SECURITY ADDITION: stripInaccessible guarantees FLS on specific fields
+            SObjectAccessDecision securityDecision = Security.stripInaccessible(
+                AccessType.UPSERTABLE, 
+                new List<Identified_Pain_Point__c>{pp}
+            );
+            
+            // Using the sanitized list from securityDecision
+            Database.upsert(securityDecision.getRecords(), Identified_Pain_Point__c.Unique_Key__c, false);
         } catch (Exception e) {
             System.debug(LoggingLevel.ERROR, 'Upsert failed: ' + e.getMessage());
         }
@@ -277,6 +293,8 @@ public with sharing class PatternAnalysisService implements Database.Batchable<s
             Date cutoffDate = Date.today().addDays(-DEFAULT_RETENTION_DAYS);
             String isoDate = Datetime.newInstanceGmt(cutoffDate.year(), cutoffDate.month(), cutoffDate.day()).format('yyyy-MM-dd\'T\'HH:mm:ss\'Z\'');
             String query = 'SELECT Id FROM Behavior_Log__c WHERE CreatedDate < ' + isoDate;
+            
+            // NOTE: Batch class must support String constructor
             Database.executeBatch(new DeleteRecordsBatch(query), 2000);
         } catch (Exception e) {
              logJobStatus(null, e);
@@ -297,7 +315,8 @@ public with sharing class PatternAnalysisService implements Database.Batchable<s
 
         if (jobId != null) {
             try {
-                AsyncApexJob job = [SELECT NumberOfErrors FROM AsyncApexJob WHERE Id = :jobId];
+                // SECURITY FIX: Added WITH SECURITY_ENFORCED (Best Practice)
+                AsyncApexJob job = [SELECT NumberOfErrors FROM AsyncApexJob WHERE Id = :jobId WITH SECURITY_ENFORCED];
                 errorCount = (Integer)job.NumberOfErrors;
                 if (errorCount > 0) finalStatus = 'Failed';
             } catch (Exception e) {}
@@ -309,7 +328,13 @@ public with sharing class PatternAnalysisService implements Database.Batchable<s
                 Job_Name__c = JOB_NAME, Job_ID__c = jobId,
                 Status__c = finalStatus, Error_Count__c = errorCount
             );
-            insert healthLog;
+            
+            // SECURITY ADDITION: Enforce FLS on write
+            SObjectAccessDecision decision = Security.stripInaccessible(
+                AccessType.CREATABLE, 
+                new List<System_Health_Log__c>{healthLog}
+            );
+            insert decision.getRecords();
         } catch (Exception e) {
             System.debug(LoggingLevel.ERROR, 'Could not log health: ' + e.getMessage());
         }

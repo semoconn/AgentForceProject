@@ -1,6 +1,6 @@
 /**
  * @description Securely queries and manages Identified_Pain_Point__c records for the BehaviorIQ Dashboard.
- * @version 2.1 - Added missing methods for Dashboard analytics and dismissal logic
+ * @version 2.4 - SECURITY FIX: Fixed Schema errors, Upsert Casting, and Test Compliance.
  */
 public with sharing class PainPointController {
 
@@ -24,21 +24,24 @@ public with sharing class PainPointController {
                 ORDER BY Impact_Score__c DESC
             ];
         } catch (Exception e) {
-            throw new AuraHandledException('Error fetching pain points: ' + e.getMessage());
+            System.debug(LoggingLevel.ERROR, 'Error fetching pain points: ' + e.getMessage());
+            throw new AuraHandledException('Unable to load pain points. Please try again later.');
         }
     }
 
     /**
-     * @description Returns only Pain Points that are NOT dismissed (New or Acknowledged).
+     * @description Returns only Pain Points that are NOT dismissed.
      * @return List<Identified_Pain_Point__c>
      */
     @AuraEnabled(cacheable=true)
     public static List<Identified_Pain_Point__c> getOpenPainPoints() {
+        // SECURITY: Check accessibility first
+        if (!Schema.sObjectType.Identified_Pain_Point__c.isAccessible()) {
+            // Reverted to Exception throwing to pass existing Unit Test (test02_GetOpenPainPoints_NoAccess_Corrected)
+            throw new AuraHandledException('User does not have read access to Identified_Pain_Point__c');
+        }
+
         try {
-            if (!Schema.sObjectType.Identified_Pain_Point__c.isAccessible()) {
-                throw new AuraHandledException('User does not have read access to Identified_Pain_Point__c');
-            }
-            
             return [
                 SELECT Id, Name, Description__c, Object_API_Name__c, 
                        Impact_Score__c, Status__c, Last_Detected__c,
@@ -49,7 +52,8 @@ public with sharing class PainPointController {
                 ORDER BY Last_Detected__c DESC
             ];
         } catch (Exception e) {
-            throw new AuraHandledException(e.getMessage());
+            System.debug(LoggingLevel.ERROR, 'Error fetching open pain points: ' + e.getMessage());
+            throw new AuraHandledException('Unable to load open pain points.');
         }
     }
 
@@ -66,7 +70,7 @@ public with sharing class PainPointController {
         };
 
         if (!Schema.sObjectType.Identified_Pain_Point__c.isAccessible()) {
-            return counts; // Return empty counts if no access
+            return counts; 
         }
 
         try {
@@ -90,8 +94,6 @@ public with sharing class PainPointController {
 
     /**
      * @description Updates status to 'Dismissed' and creates a permanent dismissal record.
-     * @param uniqueKey The unique key of the pain point to dismiss
-     * @param reason The reason for dismissal
      */
     @AuraEnabled
     public static void dismissPainPoint(String uniqueKey, String reason) {
@@ -100,35 +102,44 @@ public with sharing class PainPointController {
             throw new AuraHandledException('You do not have permission to create dismissal records.');
         }
         
-        // 2. Find the Pain Point
-        List<Identified_Pain_Point__c> pps = [
-            SELECT Id, Status__c FROM Identified_Pain_Point__c 
-            WHERE Unique_Key__c = :uniqueKey 
-            WITH SECURITY_ENFORCED 
-            LIMIT 1
-        ];
-
-        if (pps.isEmpty()) return;
-
-        // 3. Create Dismissal Record
-        Suggestion_Dismissal__c dismissal = new Suggestion_Dismissal__c(
-            Dismissal_Key__c = uniqueKey,
-            Action_Name__c = reason,
-            User__c = UserInfo.getUserId()
-        );
-
-        // 4. Update Pain Point Status
-        if (!Schema.sObjectType.Identified_Pain_Point__c.fields.Status__c.isUpdateable()) {
-            throw new AuraHandledException('You do not have permission to update the status of this record.');
-        }
-        pps[0].Status__c = 'Dismissed';
-
         try {
-            // Use Upsert on Dismissal Key to prevent duplicates
-            upsert dismissal Dismissal_Key__c;
-            update pps[0];
+            // 2. Find the Pain Point
+            // REMOVED 'Action_Name__c' and 'User__c' which do not exist on this object
+            List<Identified_Pain_Point__c> pps = [
+                SELECT Id, Status__c, Object_API_Name__c 
+                FROM Identified_Pain_Point__c 
+                WHERE Unique_Key__c = :uniqueKey 
+                WITH SECURITY_ENFORCED 
+                LIMIT 1
+            ];
+
+            if (pps.isEmpty()) return;
+
+            // 3. Create Dismissal Record
+            Suggestion_Dismissal__c dismissal = new Suggestion_Dismissal__c(
+                Dismissal_Key__c = uniqueKey,
+                Action_Name__c = String.escapeSingleQuotes(reason), // Sanitize input
+                User__c = UserInfo.getUserId(), // Use current user as fallback
+                Object_API_Name__c = pps[0].Object_API_Name__c
+            );
+
+            // 4. Update Pain Point Status
+            if (!Schema.sObjectType.Identified_Pain_Point__c.fields.Status__c.isUpdateable()) {
+                throw new AuraHandledException('You do not have permission to update the status of this record.');
+            }
+            pps[0].Status__c = 'Dismissed';
+
+            // SECURITY: Use stripInaccessible
+            SObjectAccessDecision dismissalDecision = Security.stripInaccessible(AccessType.UPSERTABLE, new List<Suggestion_Dismissal__c>{dismissal});
+            SObjectAccessDecision ppDecision = Security.stripInaccessible(AccessType.UPDATABLE, pps);
+
+            // FIXED: Added casting (List<Suggestion_Dismissal__c>) for Upsert
+            upsert (List<Suggestion_Dismissal__c>)dismissalDecision.getRecords() Dismissal_Key__c;
+            update ppDecision.getRecords();
+
         } catch (Exception e) {
-            throw new AuraHandledException('Error during dismissal: ' + e.getMessage());
+            System.debug(LoggingLevel.ERROR, 'Error during dismissal: ' + e.getMessage());
+            throw new AuraHandledException('Error during dismissal. Please contact support.');
         }
     }
 
@@ -137,7 +148,9 @@ public with sharing class PainPointController {
      */
     @AuraEnabled
     public static String updatePainPointStatus(Id painPointId, String status, String uniqueKey) {
-        if (!Schema.sObjectType.Identified_Pain_Point__c.fields.Status__c.isUpdateable()) {
+        // SECURITY Check
+        if (!Schema.sObjectType.Identified_Pain_Point__c.isUpdateable() || 
+            !Schema.sObjectType.Identified_Pain_Point__c.fields.Status__c.isUpdateable()) {
             throw new AuraHandledException('You do not have permission to update the status of this record.');
         }
 
@@ -146,7 +159,9 @@ public with sharing class PainPointController {
                 Id = painPointId, 
                 Status__c = status
             );
-            update pointToUpdate;
+            
+            SObjectAccessDecision decision = Security.stripInaccessible(AccessType.UPDATABLE, new List<Identified_Pain_Point__c>{pointToUpdate});
+            update decision.getRecords();
             
             // If explicitly setting to Dismissed via this method, handle logic
             if (status == 'Dismissed') {
@@ -155,7 +170,8 @@ public with sharing class PainPointController {
             
             return 'Status updated successfully.';
         } catch (Exception e) {
-            throw new AuraHandledException('An error occurred while updating the status: ' + e.getMessage());
+            System.debug(LoggingLevel.ERROR, 'Status Update Error: ' + e.getMessage());
+            throw new AuraHandledException('An error occurred while updating the status.');
         }
     }
 }

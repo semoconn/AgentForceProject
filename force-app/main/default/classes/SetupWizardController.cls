@@ -2,12 +2,11 @@
  * @description       : Apex controller to support the BehaviorIQ setup wizard LWC.
  * @author            : Gemini
  * @group             : BehaviorIQ
- * @last modified on  : 11-19-2025
- * @last modified by  : Gemini
+ * @last modified on  : 12-01-2025
+ * @last modified by  : Security Auditor
 **/
 public with sharing class SetupWizardController {
 
-    // REBRAND UPDATE: Updated Job Name
     private static final String SCHEDULE_JOB_NAME = 'BehaviorIQ Nightly Analysis';
     @TestVisible private static Boolean testHook_simulateDuplicateJob = false;
 
@@ -30,19 +29,20 @@ public with sharing class SetupWizardController {
         List<TrackableObject> objects = new List<TrackableObject>();
         Set<String> supportedObjects = new Set<String>();
 
-        // Logic preserved: Dynamically find objects with BehaviorTriggers
-        for (ApexTrigger t : [
-            SELECT TableEnumOrId
-            FROM ApexTrigger 
-            WHERE Name LIKE '%BehaviorTrigger' AND TableEnumOrId != NULL
-            WITH SECURITY_ENFORCED
-        ]) {
-            supportedObjects.add(t.TableEnumOrId);
+        try {
+            for (ApexTrigger t : [
+                SELECT TableEnumOrId
+                FROM ApexTrigger 
+                WHERE Name LIKE '%BehaviorTrigger' AND TableEnumOrId != NULL
+                WITH SECURITY_ENFORCED
+            ]) {
+                supportedObjects.add(t.TableEnumOrId);
+            }
+        } catch (System.QueryException e) {
+            System.debug(LoggingLevel.INFO, 'User lacks permission to query ApexTrigger: ' + e.getMessage());
         }
 
-        // Fallback if no triggers are found (e.g., fresh install or triggers not yet deployed)
         if (supportedObjects.isEmpty()) {
-            // FIX: Added 'Task' to this list for consistency
             supportedObjects.addAll(new List<String>{'Account', 'Contact', 'Lead', 'Opportunity', 'Case', 'Task'});
         }
 
@@ -50,7 +50,9 @@ public with sharing class SetupWizardController {
         for (String objApiName : supportedObjects) {
             if (schemaMap.containsKey(objApiName)) {
                 Schema.DescribeSObjectResult describeResult = schemaMap.get(objApiName).getDescribe();
-                objects.add(new TrackableObject(describeResult.getLabel(), describeResult.getName()));
+                if (describeResult.isAccessible()) {
+                    objects.add(new TrackableObject(describeResult.getLabel(), describeResult.getName()));
+                }
             }
         }
         
@@ -64,67 +66,83 @@ public with sharing class SetupWizardController {
             throw new AuraHandledException('The analysis job is already scheduled.');
         }
 
-        List<CronTrigger> existingJobs = [
-            SELECT Id 
-            FROM CronTrigger 
-            WHERE CronJobDetail.Name = :SCHEDULE_JOB_NAME
-        ];
-        if (!existingJobs.isEmpty()) {
-            throw new AuraHandledException('The analysis job is already scheduled.');
-        }
-
         try {
+            List<CronTrigger> existingJobs = [
+                SELECT Id 
+                FROM CronTrigger 
+                WHERE CronJobDetail.Name = :SCHEDULE_JOB_NAME
+                WITH SECURITY_ENFORCED
+            ];
+            if (!existingJobs.isEmpty()) {
+                throw new AuraHandledException('The analysis job is already scheduled.');
+            }
+
             PatternAnalysisService service = new PatternAnalysisService();
             String cronExpression = '0 0 2 * * ?';
+            
             return System.schedule(SCHEDULE_JOB_NAME, cronExpression, service);
+
         } catch (Exception e) {
-            throw new AuraHandledException('Failed to schedule the analysis job: ' + e.getMessage());
+            System.debug(LoggingLevel.ERROR, 'Scheduling Error: ' + e.getMessage());
+            throw new AuraHandledException('Failed to schedule the analysis job. ' + e.getMessage());
         }
     }
 
     @AuraEnabled
     public static void saveMonitoringSettings(List<String> monitoredObjects) {
+        // SECURITY FIX: Explicit CRUD/FLS Check performed BEFORE try/catch 
+        // to prevent exception masking.
+        if (!Schema.sObjectType.BehaviorIQ_Configuration__c.isCreateable() ||
+            !Schema.sObjectType.BehaviorIQ_Configuration__c.isUpdateable() ||
+            !Schema.sObjectType.BehaviorIQ_Configuration__c.fields.Monitored_Objects__c.isCreateable() ||
+            !Schema.sObjectType.BehaviorIQ_Configuration__c.fields.Monitored_Objects__c.isUpdateable()) {
+            throw new AuraHandledException('Insufficient permissions to save configuration.');
+        }
+
         try {
-            // REFACTOR: Switched from Custom Setting (.getOrgDefaults) to Custom Object (SOQL)
             BehaviorIQ_Configuration__c settings;
             
             List<BehaviorIQ_Configuration__c> configs = [
                 SELECT Id, Monitored_Objects__c 
                 FROM BehaviorIQ_Configuration__c 
+                WITH SECURITY_ENFORCED
                 LIMIT 1
             ];
 
             if (configs.isEmpty()) {
-                // Create new if none exists
                 settings = new BehaviorIQ_Configuration__c(Name = 'Default Configuration');
             } else {
                 settings = configs[0];
             }
 
             settings.Monitored_Objects__c = String.join(monitoredObjects, ',');
+
             upsert settings;
+
         } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'Save Settings Error: ' + e.getMessage());
             throw new AuraHandledException('Failed to save settings: ' + e.getMessage());
         }
     }
     
-    /**
-     * @description Checks if the BehaviorIQ initial setup has been completed.
-     * @return      Boolean true if the configuration record exists, false otherwise.
-    **/
     @AuraEnabled(cacheable=true)
     public static Boolean isSetupComplete() {
-        // REFACTOR: Switched from Custom Setting (.getOrgDefaults) to Custom Object (SOQL)
-        List<BehaviorIQ_Configuration__c> configs = [
-            SELECT Monitored_Objects__c 
-            FROM BehaviorIQ_Configuration__c 
-            LIMIT 1
-        ];
-        
-        if (configs.isEmpty()) {
+        try {
+            List<BehaviorIQ_Configuration__c> configs = [
+                SELECT Monitored_Objects__c 
+                FROM BehaviorIQ_Configuration__c 
+                WITH SECURITY_ENFORCED
+                LIMIT 1
+            ];
+            
+            if (configs.isEmpty()) {
+                return false;
+            }
+            
+            return String.isNotBlank(configs[0].Monitored_Objects__c);
+        } catch (Exception e) {
+            System.debug(LoggingLevel.INFO, 'Access check failed for isSetupComplete: ' + e.getMessage());
             return false;
         }
-        
-        return String.isNotBlank(configs[0].Monitored_Objects__c);
     }
 }

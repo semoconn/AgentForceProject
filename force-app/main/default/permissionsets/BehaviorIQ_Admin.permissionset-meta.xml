@@ -1,10 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
     <description>Grants full access to BehaviorIQ configuration, logs, and settings.</description>
-    <hasActivationRequired>false</hasActivationRequired>
-    <label>BehaviorIQ Admin</label>
     
-    <!-- Access to the renamed Configuration Object -->
+    <!-- F: Field Permissions -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>BehaviorIQ_Configuration__c.Monitored_Objects__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+
+    <!-- H: Has Activation Required -->
+    <hasActivationRequired>false</hasActivationRequired>
+    
+    <!-- L: Label -->
+    <label>BehaviorIQ Admin</label>
+
+    <!-- O: Object Permissions (Sorted Alphabetically by Object Name) -->
     <objectPermissions>
         <allowCreate>true</allowCreate>
         <allowDelete>true</allowDelete>
@@ -14,8 +25,6 @@
         <object>BehaviorIQ_Configuration__c</object>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
-
-    <!-- Access to Logs (Name unchanged, but essential for Admin) -->
     <objectPermissions>
         <allowCreate>true</allowCreate>
         <allowDelete>true</allowDelete>
@@ -25,8 +34,6 @@
         <object>Behavior_Log__c</object>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
-
-    <!-- Access to Pain Points (Name unchanged) -->
     <objectPermissions>
         <allowCreate>true</allowCreate>
         <allowDelete>true</allowDelete>
@@ -36,14 +43,30 @@
         <object>Identified_Pain_Point__c</object>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
+    <objectPermissions>
+        <allowCreate>true</allowCreate>
+        <allowDelete>true</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>true</modifyAllRecords>
+        <object>Suggestion_Dismissal__c</object>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>true</allowCreate>
+        <allowDelete>true</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>true</modifyAllRecords>
+        <object>System_Health_Log__c</object>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
 
-    <!-- Access to the renamed Tab -->
+    <!-- T: Tab Settings -->
     <tabSettings>
         <tab>BehaviorIQ</tab>
         <visibility>Visible</visibility>
     </tabSettings>
-    
-    <!-- Access to Log Tabs if you have them -->
     <tabSettings>
         <tab>Behavior_Log__c</tab>
         <visibility>Visible</visibility>

@@ -48,50 +48,62 @@ public with sharing class WorkflowAnalyticsController {
 
     @AuraEnabled(cacheable=true)
     public static DashboardDataWrapper getDashboardData() {
-        DashboardDataWrapper data = new DashboardDataWrapper();
-        
-        // 1. Inject License Status (The Gate)
-        data.isPremium = LicenseService.isPremium();
-        
-        // 2. Fetch Metrics (Aggregated from Pain Points)
-        data.metrics = getMetrics();
+        try {
+            DashboardDataWrapper data = new DashboardDataWrapper();
+            
+            // 1. Inject License Status (The Gate)
+            data.isPremium = LicenseService.isPremium();
+            
+            // 2. Fetch Metrics (Aggregated from Pain Points)
+            data.metrics = getMetrics();
 
-        // 3. Fetch Recent Logs 
-        // FIX: Used CreatedDate instead of Timestamp__c (which doesn't exist on Behavior_Log__c)
-        data.recentLogs = [
-            SELECT Id, Action_Name__c, User__r.Name, CreatedDate, Object_API_Name__c 
-            FROM Behavior_Log__c 
-            WITH SECURITY_ENFORCED
-            ORDER BY CreatedDate DESC 
-            LIMIT 10 
-        ];
+            // 3. Fetch Recent Logs 
+            // FIX: Used CreatedDate instead of Timestamp__c (which doesn't exist on Behavior_Log__c)
+            data.recentLogs = [
+                SELECT Id, Action_Name__c, User__r.Name, CreatedDate, Object_API_Name__c 
+                FROM Behavior_Log__c 
+                WITH SECURITY_ENFORCED
+                ORDER BY CreatedDate DESC 
+                LIMIT 10 
+            ];
 
-        return data;
+            return data;
+        } catch (Exception e) {
+            throw new AuraHandledException('Unable to load dashboard data: ' + e.getMessage());
+        }
     }
 
     private static List<MetricWrapper> getMetrics() {
         List<MetricWrapper> metrics = new List<MetricWrapper>();
         
         // Aggregate from Identified_Pain_Point__c
-        for (AggregateResult ar : [
-            SELECT Status__c, Count(Id) cnt 
-            FROM Identified_Pain_Point__c 
-            WITH SECURITY_ENFORCED 
-            GROUP BY Status__c
-        ]) {
-            String status = (String)ar.get('Status__c');
-            Integer count = (Integer)ar.get('cnt');
-            
-            if (status == 'Active') {
-                metrics.add(new MetricWrapper('Active Anomalies', count, '+2%', 'alert', 'active_anomalies'));
-            } else if (status == 'Dismissed') {
-                metrics.add(new MetricWrapper('Dismissed', count, '0%', 'success', 'dismissed_anomalies'));
+        try {
+            for (AggregateResult ar : [
+                SELECT Status__c, Count(Id) cnt 
+                FROM Identified_Pain_Point__c 
+                WITH SECURITY_ENFORCED 
+                GROUP BY Status__c
+            ]) {
+                String status = (String)ar.get('Status__c');
+                Integer count = (Integer)ar.get('cnt');
+                
+                if (status == 'Active') {
+                    metrics.add(new MetricWrapper('Active Anomalies', count, '+2%', 'alert', 'active_anomalies'));
+                } else if (status == 'Dismissed') {
+                    metrics.add(new MetricWrapper('Dismissed', count, '0%', 'success', 'dismissed_anomalies'));
+                }
             }
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'Metric Aggregation Error: ' + e.getMessage());
         }
         
         // If no data, add a placeholder or default metric
         if (metrics.isEmpty()) {
-             Integer staleOppCount = [SELECT Count() FROM Opportunity WHERE LastStageChangeDate < LAST_N_DAYS:30 AND IsClosed = false WITH SECURITY_ENFORCED];
+             Integer staleOppCount = 0;
+             try {
+                staleOppCount = [SELECT Count() FROM Opportunity WHERE LastStageChangeDate < LAST_N_DAYS:30 AND IsClosed = false WITH SECURITY_ENFORCED];
+             } catch (Exception e) { /* Handle lack of Opp access gracefully */ }
+             
              metrics.add(new MetricWrapper('Stale Opportunities', staleOppCount, 'Live', 'warning', 'stale_opps'));
         }
 
@@ -106,6 +118,7 @@ public with sharing class WorkflowAnalyticsController {
         LicenseService.enforcePremiumGate();
         
         // Logic would go here. For MVP, we just validate the gate allows entry.
+        // SECURITY: Any DML here must be checked using Schema.sObjectType or Security.stripInaccessible
     }
 
     // --- ORIGINAL: Restored Analytics Methods ---
@@ -114,15 +127,18 @@ public with sharing class WorkflowAnalyticsController {
     public static Map<String, Integer> getWorkflowStats() {
         Map<String, Integer> stats = new Map<String, Integer>();
         
-        stats.put('totalLogs', [SELECT Count() FROM Behavior_Log__c WITH SECURITY_ENFORCED]);
-        
-        // FIX: Correct way to count distinct groups in SOQL
-        // We select the grouping field, then count the number of rows returned by the aggregate query
-        AggregateResult[] userResults = [SELECT User__c FROM Behavior_Log__c WITH SECURITY_ENFORCED GROUP BY User__c];
-        stats.put('uniqueUsers', userResults.size());
-        
-        AggregateResult[] objectResults = [SELECT Object_API_Name__c FROM Behavior_Log__c WITH SECURITY_ENFORCED GROUP BY Object_API_Name__c];
-        stats.put('objectsTracked', objectResults.size());
+        try {
+            stats.put('totalLogs', [SELECT Count() FROM Behavior_Log__c WITH SECURITY_ENFORCED]);
+            
+            // FIX: Correct way to count distinct groups in SOQL
+            AggregateResult[] userResults = [SELECT User__c FROM Behavior_Log__c WITH SECURITY_ENFORCED GROUP BY User__c];
+            stats.put('uniqueUsers', userResults.size());
+            
+            AggregateResult[] objectResults = [SELECT Object_API_Name__c FROM Behavior_Log__c WITH SECURITY_ENFORCED GROUP BY Object_API_Name__c];
+            stats.put('objectsTracked', objectResults.size());
+        } catch (Exception e) {
+            throw new AuraHandledException('Unable to calculate stats.');
+        }
         
         return stats;
     }
@@ -131,37 +147,45 @@ public with sharing class WorkflowAnalyticsController {
     public static List<TopAction> getTopActions() {
         List<TopAction> actions = new List<TopAction>();
         
-        List<AggregateResult> results = [
-            SELECT Action_Name__c actionName, Object_API_Name__c objectName, COUNT(Id) actionCount
-            FROM Behavior_Log__c
-            WHERE CreatedDate = LAST_N_DAYS:30
-            WITH SECURITY_ENFORCED
-            GROUP BY Action_Name__c, Object_API_Name__c
-            ORDER BY COUNT(Id) DESC
-            LIMIT 10
-        ];
-        
-        for (AggregateResult ar : results) {
-            TopAction action = new TopAction();
-            action.actionName = (String)ar.get('actionName');
-            action.objectName = (String)ar.get('objectName');
-            action.count = (Integer)ar.get('actionCount');
-            action.id = action.actionName + action.objectName;
-            actions.add(action);
+        try {
+            List<AggregateResult> results = [
+                SELECT Action_Name__c actionName, Object_API_Name__c objectName, COUNT(Id) actionCount
+                FROM Behavior_Log__c
+                WHERE CreatedDate = LAST_N_DAYS:30
+                WITH SECURITY_ENFORCED
+                GROUP BY Action_Name__c, Object_API_Name__c
+                ORDER BY COUNT(Id) DESC
+                LIMIT 10
+            ];
+            
+            for (AggregateResult ar : results) {
+                TopAction action = new TopAction();
+                action.actionName = (String)ar.get('actionName');
+                action.objectName = (String)ar.get('objectName');
+                action.count = (Integer)ar.get('actionCount');
+                action.id = action.actionName + action.objectName;
+                actions.add(action);
+            }
+        } catch (Exception e) {
+            throw new AuraHandledException('Error fetching top actions.');
         }
         return actions;
     }
 
     @AuraEnabled(cacheable=true)
     public static System_Health_Log__c getSystemHealth() {
-        // FIX: Used CreatedDate instead of Timestamp__c
-        List<System_Health_Log__c> logs = [
-            SELECT Id, Job_Name__c, Status__c, CreatedDate 
-            FROM System_Health_Log__c 
-            WITH SECURITY_ENFORCED
-            ORDER BY CreatedDate DESC 
-            LIMIT 1 
-        ];
-        return logs.isEmpty() ? null : logs[0];
+        try {
+            // FIX: Used CreatedDate instead of Timestamp__c
+            List<System_Health_Log__c> logs = [
+                SELECT Id, Job_Name__c, Status__c, CreatedDate 
+                FROM System_Health_Log__c 
+                WITH SECURITY_ENFORCED
+                ORDER BY CreatedDate DESC 
+                LIMIT 1 
+            ];
+            return logs.isEmpty() ? null : logs[0];
+        } catch (Exception e) {
+            return null; // Return null if error or no access, allowing UI to handle gracefully
+        }
     }
 }

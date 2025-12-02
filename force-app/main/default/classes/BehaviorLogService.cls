@@ -1,6 +1,6 @@
 /**
  * @description Service class responsible for creating Behavior_Log__c records from Behavior_Event__e platform events.
- * @version 3.0 - Added robust debugging and ensures all fields are mapped.
+ * @version 3.2 - SECURITY FIX: Added stripInaccessible for Field Level Security.
  */
 public with sharing class BehaviorLogService {
 
@@ -26,11 +26,17 @@ public with sharing class BehaviorLogService {
         }
 
         if (!logsToInsert.isEmpty()) {
-            try {
-                insert logsToInsert;
-            } catch (DmlException e) {
-                System.debug(LoggingLevel.ERROR, 'Failed to insert Behavior Logs: ' + e.getMessage());
-                // In a real production scenario, you might add more robust error handling here.
+            // SECURITY FIX: Enforce Create Permission
+            if (Schema.sObjectType.Behavior_Log__c.isCreateable()) {
+                try {
+                    // Added Security.stripInaccessible to enforce FLS on all fields being inserted
+                    SObjectAccessDecision decision = Security.stripInaccessible(AccessType.CREATABLE, logsToInsert);
+                    insert decision.getRecords();
+                } catch (Exception e) {
+                    System.debug(LoggingLevel.ERROR, 'Failed to insert Behavior Logs: ' + e.getMessage());
+                }
+            } else {
+                System.debug(LoggingLevel.ERROR, 'Security Error: User lacks permission to create Behavior_Log__c.');
             }
         }
     }
