@@ -11,11 +11,11 @@
                         </div>
                     </div>
                     <div class="slds-media__body">
-                        <!-- FIX: Added grid to align Title and Badge side-by-side -->
+                        <!-- Title and Badge -->
                         <div class="slds-grid slds-grid_vertical-align-center">
                             <h1 class="slds-text-heading_medium slds-text-color_inverse slds-m-right_small">BehaviorIQ Monitor</h1>
                             
-                            <!-- GATING BADGE (Moved Here) -->
+                            <!-- GATING BADGE -->
                             <template if:false={isPremium}>
                                 <div class="status-badge free">FREE PLAN</div>
                             </template>
@@ -47,7 +47,7 @@
             </div>
         </div>
 
-        <!-- METRICS BAR (Unchanged) -->
+        <!-- METRICS BAR -->
         <div class="slds-grid slds-gutters slds-m-bottom_medium">
              <div class="slds-col slds-size_1-of-4">
                 <div class="metric-card">
@@ -75,47 +75,136 @@
             </div>
         </div>
 
-        <!-- MAIN ANALYSIS CARD -->
-        <lightning-card class="main-card full-height-card">
-            <!-- Container for Filters -->
-            <div class="slds-p-horizontal_medium slds-p-vertical_small filter-container">
-                <div class="slds-grid slds-grid_vertical-align-center">
-                    <span class="slds-text-title_caps slds-m-right_small">Filter:</span>
-                    <lightning-button-group>
-                        <lightning-button label="All" variant={allVariant} onclick={filterAll}></lightning-button>
-                        <lightning-button label="Active" variant={activeVariant} onclick={filterActive}></lightning-button>
-                        <lightning-button label="Dismissed" variant={dismissedVariant} onclick={filterDismissed}></lightning-button>
-                    </lightning-button-group>
-                </div>
-                <div class="slds-text-body_small slds-text-color_weak">
-                    Showing <strong>{filteredCount}</strong> findings
-                </div>
+        <!-- MAIN CONTENT GRID -->
+        <div class="slds-grid slds-gutters">
+            
+            <!-- Left Column: Active Recommendations (Pain Points) -->
+            <div class="slds-col slds-size_2-of-3">
+                <lightning-card title="Active Insights & Recommendations" icon-name="standard:recommendation">
+                    <div class="slds-p-horizontal_medium">
+                        
+                        <!-- Filters -->
+                        <div class="slds-m-bottom_small filter-container slds-grid slds-grid_vertical-align-center">
+                            <span class="slds-text-title_caps slds-m-right_small">Filter:</span>
+                            <lightning-button-group>
+                                <lightning-button label="All" variant={allVariant} onclick={filterAll}></lightning-button>
+                                <lightning-button label="Active" variant={activeVariant} onclick={filterActive}></lightning-button>
+                                <lightning-button label="Dismissed" variant={dismissedVariant} onclick={filterDismissed}></lightning-button>
+                            </lightning-button-group>
+                            <div class="slds-col_bump-left slds-text-body_small slds-text-color_weak">
+                                Showing <strong>{filteredCount}</strong> findings
+                            </div>
+                        </div>
+
+                        <!-- Spinner -->
+                        <template if:true={isLoading}>
+                            <lightning-spinner alternative-text="Loading"></lightning-spinner>
+                        </template>
+
+                        <!-- List View of Recommendations -->
+                        <template if:true={hasPainPoints}>
+                            <template for:each={filteredPainPoints} for:item="point">
+                                <div key={point.Id} class="recommendation-row slds-box slds-box_x-small slds-m-bottom_small">
+                                    <div class="slds-grid slds-grid_align-spread slds-grid_vertical-align-center">
+                                        
+                                        <!-- Icon & Details -->
+                                        <div class="slds-media slds-media_center">
+                                            <div class="slds-media__figure">
+                                                <lightning-icon icon-name="utility:warning" variant="warning" size="small"></lightning-icon>
+                                            </div>
+                                            <div class="slds-media__body">
+                                                <div class="slds-grid slds-grid_vertical-align-center">
+                                                    <h3 class="slds-text-heading_small slds-m-right_small">{point.Name}</h3>
+                                                    <lightning-badge label={point.Object_API_Name__c} class="slds-badge_lightest"></lightning-badge>
+                                                </div>
+                                                <p class="slds-text-body_small slds-m-top_xx-small">{point.Description__c}</p>
+                                                <p class="slds-text-color_weak slds-text-body_small">Impact Score: {point.Impact_Score__c}</p>
+                                            </div>
+                                        </div>
+
+                                        <!-- Actions -->
+                                        <div class="slds-no-flex">
+                                            <!-- FIX: Title bound to dynamic getter for Premium logic -->
+                                            <lightning-button-icon 
+                                                icon-name="utility:magicwand" 
+                                                variant="border-filled" 
+                                                alternative-text="Auto-Fix" 
+                                                class="slds-m-right_x-small"
+                                                title={autoFixButtonTitle}
+                                                onclick={handleAutoFix}
+                                                data-id={point.Example_Records__c}
+                                                data-type={point.Object_API_Name__c}
+                                                disabled={isFixDisabled}>
+                                            </lightning-button-icon>
+
+                                            <!-- FIX: Using data-id instead of data-row to ensure object retrieval works -->
+                                            <lightning-button-icon 
+                                                icon-name="utility:preview" 
+                                                variant="border-filled" 
+                                                class="slds-m-right_x-small"
+                                                alternative-text="View Details" 
+                                                title="View Solution Guide"
+                                                onclick={handleViewDetails}
+                                                data-id={point.Id}>
+                                            </lightning-button-icon>
+
+                                            <lightning-button-icon 
+                                                icon-name="utility:close" 
+                                                variant="bare" 
+                                                alternative-text="Dismiss" 
+                                                title="Dismiss Suggestion"
+                                                onclick={handleDismiss}
+                                                data-id={point.Id}>
+                                            </lightning-button-icon>
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+                        </template>
+
+                        <!-- Empty State -->
+                        <template if:false={hasPainPoints}>
+                            <div class="slds-illustration slds-illustration_small slds-m-vertical_large">
+                                <img src="/img/chatter/Desert.svg" class="slds-illustration__svg" alt=""/>
+                                <div class="slds-text-color_weak slds-text-align_center">
+                                    <h3 class="slds-text-heading_small">System Healthy</h3>
+                                    <p>No anomalies detected matching your current filter.</p>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </lightning-card>
             </div>
 
-            <!-- Data Table -->
-            <template if:true={hasPainPoints}>
-                <div class="datatable-wrapper">
-                    <lightning-datatable
-                        key-field="Id"
-                        data={filteredPainPoints}
-                        columns={columns}
-                        hide-checkbox-column
-                        onrowaction={handleRowAction}>
-                    </lightning-datatable>
-                </div>
-            </template>
-
-            <!-- Empty State -->
-            <template if:false={hasPainPoints}>
-                <div class="slds-illustration slds-illustration_small slds-m-vertical_large">
-                    <img src="/img/chatter/Desert.svg" class="slds-illustration__svg" alt=""/>
-                    <div class="slds-text-color_weak slds-text-align_center">
-                        <h3 class="slds-text-heading_small">System Healthy</h3>
-                        <p>No anomalies detected matching your current filter.</p>
+            <!-- Right Column: Recent Activity Feed -->
+            <div class="slds-col slds-size_1-of-3">
+                <lightning-card title="Live Behavior Log" icon-name="standard:feed">
+                    <div class="slds-feed slds-p-horizontal_medium slds-scrollable_y" style="height: 400px;">
+                        <ul class="slds-feed__list">
+                            <template for:each={recentLogs} for:item="log">
+                                <li key={log.Id} class="slds-feed__item">
+                                    <div class="slds-media slds-comment slds-hint-parent">
+                                        <div class="slds-media__figure">
+                                            <lightning-icon icon-name="standard:user" size="small"></lightning-icon>
+                                        </div>
+                                        <div class="slds-media__body">
+                                            <div class="slds-grid slds-grid_align-spread slds-has-flexi-truncate">
+                                                <p class="slds-truncate">
+                                                    <strong>{log.UserName}</strong> performed <strong>{log.Action_Name__c}</strong> on {log.Object_API_Name__c}
+                                                </p>
+                                            </div>
+                                            <div class="slds-text-color_weak slds-text-body_small">
+                                                <lightning-formatted-date-time value={log.CreatedDate} year="numeric" month="short" day="2-digit" hour="2-digit" minute="2-digit"></lightning-formatted-date-time>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </li>
+                            </template>
+                        </ul>
                     </div>
-                </div>
-            </template>
-        </lightning-card>
+                </lightning-card>
+            </div>
+        </div>
 
         <!-- ADMIN MODAL -->
         <template if:true={isModalOpen}>
@@ -179,7 +268,15 @@
                         
                         <!-- GATING LOGIC -->
                         <template if:true={isPremium}>
-                            <lightning-button variant="brand" label="Run Auto-Fix" icon-name="utility:magicwand" onclick={handleAutoFix} title="Resolve this issue automatically"></lightning-button>
+                            <lightning-button 
+                                variant="brand" 
+                                label="Run Auto-Fix" 
+                                icon-name="utility:magicwand" 
+                                onclick={handleAutoFix} 
+                                title="Resolve this issue automatically"
+                                data-id={selectedRow.Example_Records__c}
+                                data-type={selectedRow.Object_API_Name__c}>
+                            </lightning-button>
                         </template>
                         <template if:false={isPremium}>
                             <lightning-button variant="neutral" label="Auto-Fix (Premium)" icon-name="utility:lock" onclick={handlePremiumClick} class="btn-premium-locked" title="Upgrade to unlock one-click remediation"></lightning-button>

@@ -1,9 +1,10 @@
 import { LightningElement, wire, track } from 'lwc';
-import getPainPoints from '@salesforce/apex/PainPointController.getPainPoints';
-import getDashboardData from '@salesforce/apex/WorkflowAnalyticsController.getDashboardData'; // NEW: For License Status
-import runAutoFix from '@salesforce/apex/WorkflowAnalyticsController.runAutoFix'; // NEW: Gated Action
-import { refreshApex } from '@salesforce/apex';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
+import getDashboardData from '@salesforce/apex/WorkflowAnalyticsController.getDashboardData';
+import getPainPoints from '@salesforce/apex/WorkflowAnalyticsController.getPainPoints';
+import runAutoFix from '@salesforce/apex/WorkflowAnalyticsController.runAutoFix';
+import dismissSuggestion from '@salesforce/apex/WorkflowAnalyticsController.dismissSuggestion';
+import { refreshApex } from '@salesforce/apex';
 import { updateRecord } from 'lightning/uiRecordApi';
 import ID_FIELD from '@salesforce/schema/Identified_Pain_Point__c.Id';
 import STATUS_FIELD from '@salesforce/schema/Identified_Pain_Point__c.Status__c';
@@ -13,36 +14,12 @@ const ACTIONS = [
     { label: 'Dismiss', name: 'dismiss' }
 ];
 
-// FIX: Updated to use CreatedDate since Timestamp__c does not exist on Behavior_Log__c
-const COLUMNS = [
-    { label: 'Timestamp', fieldName: 'CreatedDate', type: 'date', 
-      typeAttributes: { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' } },
-    { label: 'Action', fieldName: 'Action_Name__c', type: 'text' },
-    { label: 'Object', fieldName: 'Object_API_Name__c', type: 'text' },
-    { label: 'User', fieldName: 'UserName', type: 'text' }
-];
-
-// Note: I am assuming this LWC is responsible for the dashboard logic. 
-// The previous file content you shared showed PainPoint logic in this file, 
-// but my previous instruction generated code for the Dashboard view. 
-// I will merge the Dashboard Gating logic into your PainPoint logic below.
-
 export default class BehaviorIQDashboard extends LightningElement {
-    // --- EXISTING PROPERTIES ---
     @track allPainPoints = [];
-    
-    // IMPORTANT: I'm using your existing PainPoint columns here for the main table
-    // The COLUMNS const above is for the 'recentLogs' table if you choose to display it.
-    // Based on your previous paste, your main table uses specific columns.
-    @track columns = [
-        { label: 'Impact', fieldName: 'Impact_Score__c', type: 'number', cellAttributes: { alignment: 'left' }, initialWidth: 90, sortable: true },
-        { label: 'Status', fieldName: 'Status__c', type: 'text' }, 
-        { label: 'Type', fieldName: 'Object_API_Name__c', type: 'text' },
-        { label: 'Description', fieldName: 'Description__c', type: 'text', wrapText: true },
-        { label: 'Count', fieldName: 'Occurrences__c', type: 'number', initialWidth: 100 },
-        { label: 'Last Detected', fieldName: 'Last_Detected__c', type: 'date', initialWidth: 130 },
-        { type: 'action', typeAttributes: { rowActions: ACTIONS } }
-    ];
+    @track metrics = [];
+    @track recentLogs = [];
+    @track isPremium = false;
+    @track isLoading = true;
     
     // Modal & Tabs
     @track isModalOpen = false;
@@ -55,48 +32,52 @@ export default class BehaviorIQDashboard extends LightningElement {
 
     // Filter State
     @track currentFilter = 'Active'; 
-    
-    // --- NEW: Feature Gating State ---
-    @track isPremium = false; 
-    @track isLoading = false;
-    
-    // New: Recent Logs (if you want to show the secondary table from the Controller)
-    @track recentLogs = [];
-    @track recentLogsColumns = COLUMNS;
 
     wiredPainPointsResult;
 
-    // 1. ORIGINAL WIRE: Fetches the main table data
+    connectedCallback() {
+        this.loadDashboard();
+    }
+
+    // 1. Load Dashboard (License & Metrics)
+    loadDashboard() {
+        getDashboardData()
+            .then(result => {
+                this.isPremium = result.isPremium;
+                
+                // Flatten User Name for Recent Logs
+                this.recentLogs = result.recentLogs.map(log => ({
+                    ...log,
+                    UserName: log.User__r ? log.User__r.Name : 'System'
+                }));
+
+                // Process metrics
+                this.metrics = result.metrics.map(m => ({
+                    ...m,
+                    trendClass: m.type === 'alert' ? 'slds-text-color_error' : 'slds-text-color_success'
+                }));
+            })
+            .catch(error => {
+                console.error('Error loading dashboard:', error);
+            });
+    }
+
+    // 2. Load Recommendations
     @wire(getPainPoints)
     wiredData(result) {
         this.wiredPainPointsResult = result;
         if (result.data) {
             this.allPainPoints = result.data;
+            this.isLoading = false;
         } else if (result.error) {
             console.error('Error fetching pain points:', result.error);
             this.allPainPoints = [];
             this.showToast('Error', 'Failed to load findings.', 'error');
+            this.isLoading = false;
         }
     }
 
-    // 2. NEW WIRE: Fetches License Status (and optional metrics/logs)
-    @wire(getDashboardData)
-    wiredDashboard({ error, data }) {
-        if (data) {
-            this.isPremium = data.isPremium;
-            
-            // Flatten User Name for the Recent Logs table (if used)
-            this.recentLogs = data.recentLogs.map(log => ({
-                ...log,
-                UserName: log.User__r ? log.User__r.Name : 'System'
-            }));
-            
-        } else if (error) {
-            console.error('Error fetching dashboard config:', error);
-        }
-    }
-
-    // --- Getters for Filters (Preserved) ---
+    // --- Getters for Filters ---
     get filteredPainPoints() {
         if (!this.allPainPoints) return [];
         switch (this.currentFilter) {
@@ -113,10 +94,16 @@ export default class BehaviorIQDashboard extends LightningElement {
     get hasPainPoints() { return this.filteredPainPoints.length > 0; }
     get filteredCount() { return this.filteredPainPoints.length; }
 
-    // Button Variants
     get allVariant() { return this.currentFilter === 'All' ? 'brand' : 'neutral'; }
     get activeVariant() { return this.currentFilter === 'Active' ? 'brand' : 'neutral'; }
     get dismissedVariant() { return this.currentFilter === 'Dismissed' ? 'brand' : 'neutral'; }
+
+    get isFixDisabled() { return !this.isPremium; }
+
+    // NEW: Dynamic Tooltip
+    get autoFixButtonTitle() {
+        return this.isPremium ? 'Apply Auto-Fix' : 'Apply Auto-Fix (Premium)';
+    }
 
     // --- Actions ---
     filterAll() { this.currentFilter = 'All'; }
@@ -125,87 +112,109 @@ export default class BehaviorIQDashboard extends LightningElement {
 
     handleRefresh() { 
         this.isLoading = true;
+        this.loadDashboard();
         return refreshApex(this.wiredPainPointsResult)
             .then(() => { this.isLoading = false; });
     }
 
-    // --- NEW: Gated "Auto-Fix" Action ---
-    handleAutoFix() {
-        // Double check License state before calling server
+    // --- AUTO-FIX LOGIC ---
+    handleAutoFix(event) {
         if (!this.isPremium) {
             this.handlePremiumClick();
             return;
         }
 
-        this.isLoading = true;
-        const idsToFix = this.selectedRow && this.selectedRow.Id ? [this.selectedRow.Id] : [];
+        const recordId = event.currentTarget.dataset.id || (this.selectedRow ? this.selectedRow.Example_Records__c : null);
+        const fixType = event.currentTarget.dataset.type || (this.selectedRow ? this.selectedRow.Object_API_Name__c : null);
 
-        runAutoFix({ recordIds: idsToFix })
-            .then(() => {
-                this.showToast('Success', 'Auto-Fix job initiated successfully.', 'success');
+        if (!recordId) {
+            this.showToast('Error', 'No target record ID found for this recommendation.', 'error');
+            return;
+        }
+
+        if (!fixType) {
+            this.showToast('Error', 'Unknown fix type. Cannot proceed.', 'error');
+            return;
+        }
+
+        this.isLoading = true;
+
+        runAutoFix({ recordIds: [recordId], fixType: fixType })
+            .then(result => {
+                this.showToast('Success', result, 'success');
                 this.closeSolutionModal();
                 return refreshApex(this.wiredPainPointsResult);
             })
             .catch(error => {
-                this.showToast('Error', error.body.message, 'error');
+                let message = 'Unknown error';
+                if (error && error.body && error.body.message) {
+                    message = error.body.message;
+                }
+                this.showToast('Auto-Fix Failed', message, 'error');
             })
             .finally(() => {
                 this.isLoading = false;
             });
     }
 
-    // --- Row Action Handling (Preserved) ---
-    handleRowAction(event) {
-        const actionName = event.detail.action.name;
-        const row = event.detail.row;
+    // --- Dismiss Logic ---
+    handleDismiss(event) {
+        const painPointId = event.currentTarget.dataset.id;
+        if(!painPointId) return;
 
-        switch (actionName) {
-            case 'dismiss':
-                this.dismissRow(row);
-                break;
-            case 'view_details':
-                this.showSolution(row);
-                break;
-            default:
-        }
+        this.isLoading = true;
+
+        dismissSuggestion({ painPointId: painPointId })
+            .then(result => {
+                this.showToast('Dismissed', result, 'success');
+                return refreshApex(this.wiredPainPointsResult);
+            })
+            .catch(error => {
+                this.showToast('Error', 'Could not dismiss suggestion', 'error');
+            })
+            .finally(() => {
+                this.isLoading = false;
+            });
     }
 
-    // Action: Dismiss (Preserved)
-    async dismissRow(row) {
-        const fields = {};
-        fields[ID_FIELD.fieldApiName] = row.Id;
-        fields[STATUS_FIELD.fieldApiName] = 'Dismissed';
-
-        const recordInput = { fields };
-
-        try {
-            await updateRecord(recordInput);
-            this.showToast('Success', 'Finding dismissed.', 'success');
-            return refreshApex(this.wiredPainPointsResult);
-        } catch (error) {
-            this.showToast('Error', 'Error dismissing record: ' + error.body.message, 'error');
+    // --- Modal Handling ---
+    handleViewDetails(event) {
+        // Use data-id to find the record, bypassing the need to pass object in HTML
+        const rowId = event.currentTarget.dataset.id; 
+        
+        if (rowId) {
+            this.selectedRow = this.allPainPoints.find(row => row.Id === rowId);
+            if (this.selectedRow) {
+                this.solutionSteps = this.getStepsForType(this.selectedRow.Object_API_Name__c);
+                this.isSolutionModalOpen = true;
+            }
         }
-    }
-
-    // Action: View Solution Guide (Preserved)
-    showSolution(row) {
-        this.selectedRow = row;
-        this.solutionSteps = this.getStepsForType(row.Object_API_Name__c);
-        this.isSolutionModalOpen = true;
     }
 
     closeSolutionModal() {
         this.isSolutionModalOpen = false;
     }
 
-    // Updated: Opens the Admin modal to the licensing tab
+    openAdminModal(event) {
+        const targetTab = event.currentTarget.dataset.tab;
+        this.activeTab = targetTab ? targetTab : 'settings';
+        this.isModalOpen = true;
+    }
+
+    closeModal() {
+        this.isModalOpen = false;
+    }
+
     handlePremiumClick() {
         this.closeSolutionModal();
         this.activeTab = 'licensing';
         this.isModalOpen = true; 
     }
 
-    // Helper: Detailed "Root Cause" Steps (Preserved)
+    showToast(title, message, variant) {
+        this.dispatchEvent(new ShowToastEvent({ title, message, variant }));
+    }
+
     getStepsForType(type) {
         switch (type) {
             case 'Opportunity':
@@ -243,28 +252,5 @@ export default class BehaviorIQDashboard extends LightningElement {
                     'Review recent automation changes in the Audit Trail.'
                 ];
         }
-    }
-
-    // --- Admin Modal Logic (Preserved) ---
-    openAdminModal(event) {
-        // Check if triggered by an element with a dataset (like the header button)
-        const targetTab = event.currentTarget.dataset.tab;
-        this.activeTab = targetTab ? targetTab : 'settings';
-        this.isModalOpen = true;
-    }
-
-    closeModal() {
-        this.isModalOpen = false;
-    }
-
-    // Helper for Toast
-    showToast(title, message, variant) {
-        this.dispatchEvent(
-            new ShowToastEvent({
-                title,
-                message,
-                variant
-            })
-        );
     }
 }
