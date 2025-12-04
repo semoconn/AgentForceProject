@@ -1,0 +1,90 @@
+.header-row {
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    color: #514f4d;
+    background-color: #f3f2f2;
+    border-top: 1px solid #dddbda;
+}
+
+.row-item {
+    transition: background-color 0.1s ease;
+}
+
+.row-item:hover {
+    background-color: #fafaf9;
+}
+
+/* User Info Layout */
+.user-info-container {
+    display: flex;
+    align-items: center;
+}
+
+.user-name {
+    font-size: 0.875rem;
+    color: #080707;
+}
+
+/* Score Typography */
+.score-text {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #3e3e3c;
+}
+
+/* --- Free Tier Styling (FIXED) --- */
+/* Before: filter: blur(6px); -> This made text unreadable */
+/* Now: Grayscale + Opacity -> Looks "Locked" but readable */
+.content-blur {
+    filter: grayscale(100%);
+    opacity: 0.6;
+    user-select: none;
+    pointer-events: none; /* Prevents clicking/copying */
+}
+
+/* Optional: Add a lock icon via CSS if desired, or keep clean */
+
+.upgrade-overlay {
+    position: absolute;
+    top: 35px; /* Offset for header */
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 10;
+    background: rgba(255, 255, 255, 0.2); /* Much lighter overlay */
+    /* Only blur the background slightly to keep overlay distinct */
+    backdrop-filter: blur(1px); 
+    -webkit-backdrop-filter: blur(1px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.cta-card {
+    background: white;
+    border-radius: 0.5rem;
+    max-width: 320px;
+    border: 1px solid #c9c7c5;
+}
+
+/* --- Rank Badges --- */
+.rank-badge {
+    display: inline-block;
+    width: 24px;
+    height: 24px;
+    line-height: 24px;
+    border-radius: 50%;
+    color: white;
+    font-weight: 700;
+    font-size: 0.75rem;
+}
+
+.rank-text {
+    color: #706e6b;
+    font-weight: 600;
+}
+
+.rank-1 { background-color: #FFB03B; box-shadow: 0 2px 4px rgba(255, 176, 59, 0.4); } /* Gold */
+.rank-2 { background-color: #9AA5B1; } /* Silver */
+.rank-3 { background-color: #B58D76; } /* Bronze */

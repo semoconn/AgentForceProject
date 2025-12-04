@@ -176,8 +176,16 @@
                 </lightning-card>
             </div>
 
-            <!-- Right Column: Recent Activity Feed -->
+            <!-- Right Column: Leaderboard & Feed -->
             <div class="slds-col slds-size_1-of-3">
+                
+                <!-- NEW: User Leaderboard ("Wall of Shame") -->
+                <!-- We place it at the top for high visibility -->
+                <div class="slds-m-bottom_medium">
+                    <c-user-leaderboard onupgrade={handlePremiumClick}></c-user-leaderboard>
+                </div>
+
+                <!-- Existing Feed -->
                 <lightning-card title="Live Behavior Log" icon-name="standard:feed">
                     <div class="slds-feed slds-p-horizontal_medium slds-scrollable_y" style="height: 400px;">
                         <ul class="slds-feed__list">

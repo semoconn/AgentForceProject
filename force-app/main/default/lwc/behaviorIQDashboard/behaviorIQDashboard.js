@@ -33,39 +33,41 @@ export default class BehaviorIQDashboard extends LightningElement {
     // Filter State
     @track currentFilter = 'Active'; 
 
-    wiredPainPointsResult;
+    // Wired Results (Stored for Refresh)
+    _wiredPainPointsResult;
+    _wiredDashboardResult;
 
     connectedCallback() {
-        this.loadDashboard();
+        // No imperative call needed here as we use wires
     }
 
     // 1. Load Dashboard (License & Metrics)
-    loadDashboard() {
-        getDashboardData()
-            .then(result => {
-                this.isPremium = result.isPremium;
-                
-                // Flatten User Name for Recent Logs
-                this.recentLogs = result.recentLogs.map(log => ({
-                    ...log,
-                    UserName: log.User__r ? log.User__r.Name : 'System'
-                }));
+    @wire(getDashboardData)
+    wiredDashboard(result) {
+        this._wiredDashboardResult = result;
+        if (result.data) {
+            this.isPremium = result.data.isPremium;
+            
+            // Flatten User Name for Recent Logs
+            this.recentLogs = result.data.recentLogs.map(log => ({
+                ...log,
+                UserName: log.User__r ? log.User__r.Name : 'System'
+            }));
 
-                // Process metrics
-                this.metrics = result.metrics.map(m => ({
-                    ...m,
-                    trendClass: m.type === 'alert' ? 'slds-text-color_error' : 'slds-text-color_success'
-                }));
-            })
-            .catch(error => {
-                console.error('Error loading dashboard:', error);
-            });
+            // Process metrics
+            this.metrics = result.data.metrics.map(m => ({
+                ...m,
+                trendClass: m.type === 'alert' ? 'slds-text-color_error' : 'slds-text-color_success'
+            }));
+        } else if (result.error) {
+            console.error('Error loading dashboard:', result.error);
+        }
     }
 
     // 2. Load Recommendations
     @wire(getPainPoints)
     wiredData(result) {
-        this.wiredPainPointsResult = result;
+        this._wiredPainPointsResult = result;
         if (result.data) {
             this.allPainPoints = result.data;
             this.isLoading = false;
@@ -112,49 +114,123 @@ export default class BehaviorIQDashboard extends LightningElement {
 
     handleRefresh() { 
         this.isLoading = true;
-        this.loadDashboard();
-        return refreshApex(this.wiredPainPointsResult)
-            .then(() => { this.isLoading = false; });
+        
+        const dashboardPromise = refreshApex(this._wiredDashboardResult);
+        const painPointsPromise = refreshApex(this._wiredPainPointsResult);
+
+        const leaderboard = this.template.querySelector('c-user-leaderboard');
+        let leaderboardPromise = Promise.resolve();
+        if (leaderboard && typeof leaderboard.refresh === 'function') {
+            leaderboardPromise = leaderboard.refresh();
+        }
+
+        return Promise.all([dashboardPromise, painPointsPromise, leaderboardPromise])
+            .then(() => { 
+                this.isLoading = false; 
+                this.showToast('Success', 'Dashboard refreshed', 'success');
+            })
+            .catch(error => {
+                this.isLoading = false;
+                console.error('Refresh error:', error);
+            });
     }
 
-    // --- AUTO-FIX LOGIC ---
+    handleUpgradeRequest() {
+        this.handlePremiumClick();
+    }
+
+    // --- AUTO-FIX LOGIC (FIXED) ---
     handleAutoFix(event) {
         if (!this.isPremium) {
             this.handlePremiumClick();
             return;
         }
 
-        const recordId = event.currentTarget.dataset.id || (this.selectedRow ? this.selectedRow.Example_Records__c : null);
-        const fixType = event.currentTarget.dataset.type || (this.selectedRow ? this.selectedRow.Object_API_Name__c : null);
+        // Get values from button dataset OR selected row context
+        let rawId = event.currentTarget.dataset.id;
+        let objectApiName = event.currentTarget.dataset.type;
 
-        if (!recordId) {
+        // Fallback to selectedRow if we are in the modal context
+        if (!rawId && this.selectedRow) {
+            rawId = this.selectedRow.Example_Records__c;
+        }
+        if (!objectApiName && this.selectedRow) {
+            objectApiName = this.selectedRow.Object_API_Name__c;
+        }
+
+        if (!rawId) {
             this.showToast('Error', 'No target record ID found for this recommendation.', 'error');
             return;
         }
 
-        if (!fixType) {
+        if (!objectApiName) {
             this.showToast('Error', 'Unknown fix type. Cannot proceed.', 'error');
             return;
         }
 
+        // FIX: Convert Object API Name to the fixType expected by Apex
+        const fixType = this.mapObjectToFixType(objectApiName);
+        
+        if (!fixType) {
+            this.showToast('Error', `No Auto-Fix available for ${objectApiName} records yet.`, 'warning');
+            return;
+        }
+
+        // Ensure rawId is a string before splitting
+        const idString = String(rawId);
+        
+        // Split by comma, trim whitespace, and filter out empty strings
+        const recordIds = idString.split(',')
+            .map(id => id.trim())
+            .filter(id => id.length > 0);
+
+        if (recordIds.length === 0) {
+            this.showToast('Error', 'Could not parse valid Record IDs.', 'error');
+            return;
+        }
+
+        console.log('=== AUTO-FIX DEBUG ===');
+        console.log('Object API Name:', objectApiName);
+        console.log('Mapped fixType:', fixType);
+        console.log('Record IDs:', recordIds);
+        console.log('Record IDs type:', typeof recordIds);
+        console.log('Record IDs isArray:', Array.isArray(recordIds));
+
         this.isLoading = true;
 
-        runAutoFix({ recordIds: [recordId], fixType: fixType })
+        runAutoFix({ recordIds: recordIds, fixType: fixType })
             .then(result => {
                 this.showToast('Success', result, 'success');
                 this.closeSolutionModal();
-                return refreshApex(this.wiredPainPointsResult);
+                return refreshApex(this._wiredPainPointsResult);
             })
             .catch(error => {
+                console.error('Auto-Fix Failed:', error);
                 let message = 'Unknown error';
                 if (error && error.body && error.body.message) {
                     message = error.body.message;
+                } else if (error && error.body && Array.isArray(error.body)) {
+                    message = error.body.map(e => e.message).join(', ');
+                } else if (typeof error === 'string') {
+                    message = error;
                 }
                 this.showToast('Auto-Fix Failed', message, 'error');
             })
             .finally(() => {
                 this.isLoading = false;
             });
+    }
+
+    // CRITICAL FIX: Map Object API Names to fixType strings expected by Apex
+    mapObjectToFixType(objectApiName) {
+        const mapping = {
+            'Case': 'Stale Case',
+            'Lead': 'Unassigned Lead',
+            'Opportunity': 'Stale Opportunity', // Add more as you implement them in Apex
+            'Account': 'Hoarding Records',
+            'Contact': 'Duplicate Contacts'
+        };
+        return mapping[objectApiName] || null;
     }
 
     // --- Dismiss Logic ---
@@ -167,7 +243,7 @@ export default class BehaviorIQDashboard extends LightningElement {
         dismissSuggestion({ painPointId: painPointId })
             .then(result => {
                 this.showToast('Dismissed', result, 'success');
-                return refreshApex(this.wiredPainPointsResult);
+                return refreshApex(this._wiredPainPointsResult);
             })
             .catch(error => {
                 this.showToast('Error', 'Could not dismiss suggestion', 'error');
@@ -179,7 +255,6 @@ export default class BehaviorIQDashboard extends LightningElement {
 
     // --- Modal Handling ---
     handleViewDetails(event) {
-        // Use data-id to find the record, bypassing the need to pass object in HTML
         const rowId = event.currentTarget.dataset.id; 
         
         if (rowId) {
