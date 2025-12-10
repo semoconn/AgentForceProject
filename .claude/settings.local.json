@@ -3,7 +3,9 @@
     "allow": [
       "Bash(sf apex run:*)",
       "Bash(findstr:*)",
-      "Bash(sf project deploy start:*)"
+      "Bash(sf project deploy start:*)",
+      "Bash(mkdir:*)",
+      "Bash(sf project deploy report:*)"
     ]
   }
 }

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Action_Taken__c</fullName>
+    <description>The type of remediation action that was performed.</description>
+    <externalId>false</externalId>
+    <label>Action Taken</label>
+    <required>true</required>
+    <trackTrending>false</trackTrending>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Task_Creation</fullName>
+                <default>false</default>
+                <label>Task Creation</label>
+            </value>
+            <value>
+                <fullName>Owner_Assignment</fullName>
+                <default>false</default>
+                <label>Owner Assignment</label>
+            </value>
+            <value>
+                <fullName>Field_Update</fullName>
+                <default>false</default>
+                <label>Field Update</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

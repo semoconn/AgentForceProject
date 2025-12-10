@@ -225,6 +225,33 @@
         <readable>true</readable>
     </fieldPermissions>
 
+    <!-- FIELD PERMISSIONS: Remediation_Log__c (excluding required fields) -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Remediation_Log__c.Original_Value__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Remediation_Log__c.New_Value__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Remediation_Log__c.Executed_By__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Remediation_Log__c.Error_Message__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Remediation_Log__c.Rule_Developer_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+
     <!-- OBJECT PERMISSIONS -->
     <objectPermissions>
         <allowCreate>true</allowCreate>
@@ -280,6 +307,15 @@
         <object>BehaviorIQ_License__c</object>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
+    <objectPermissions>
+        <allowCreate>true</allowCreate>
+        <allowDelete>true</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>true</modifyAllRecords>
+        <object>Remediation_Log__c</object>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
 
     <!-- TAB SETTINGS -->
     <tabSettings>
@@ -292,6 +328,10 @@
     </tabSettings>
     <tabSettings>
         <tab>Identified_Pain_Point__c</tab>
+        <visibility>Visible</visibility>
+    </tabSettings>
+    <tabSettings>
+        <tab>Remediation_Log__c</tab>
         <visibility>Visible</visibility>
     </tabSettings>
 </PermissionSet>
