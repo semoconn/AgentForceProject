@@ -53,7 +53,6 @@ public with sharing class WorkflowAnalyticsController {
         }
 
         try {
-            // FIX: Changed filter from 'Active' to 'New' to match Schema/Test Data
             List<Identified_Pain_Point__c> points = [
                 SELECT Id, Name, Object_API_Name__c, Impact_Score__c, Status__c, Description__c, Occurrences__c, Example_Records__c
                 FROM Identified_Pain_Point__c
@@ -67,12 +66,13 @@ public with sharing class WorkflowAnalyticsController {
             return (List<Identified_Pain_Point__c>) decision.getRecords();
 
         } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'getPainPoints Error: ' + e.getMessage());
             throw new AuraHandledException('Error retrieving analytics data. Please check logs.');
         }
     }
 
     @AuraEnabled
-    public static String runAutoFix(List<Id> recordIds, String fixType) {
+    public static String runAutoFix(List<String> recordIds, String fixType) {
         // License Check
         if (!LicenseService.isPremium()) {
             throw new AuraHandledException('This is a Premium feature. Please upgrade BehaviorIQ to enable Auto-Fix.');
@@ -82,31 +82,119 @@ public with sharing class WorkflowAnalyticsController {
             throw new AuraHandledException('No records selected for Auto-Fix.');
         }
 
-        try {
-            // Normalize inputs to be safe
-            String normalizedType = (fixType != null) ? fixType.toLowerCase() : '';
+        // CRITICAL FIX: Convert List<String> to List<Id>
+        List<Id> idList = new List<Id>();
+        for (String idStr : recordIds) {
+            try {
+                idList.add((Id)idStr);
+            } catch (Exception e) {
+                throw new AuraHandledException('Invalid Record ID format: ' + idStr);
+            }
+        }
 
-            // Route to the appropriate fix logic in PatternFixService
-            // Added fallbacks for Object Names ('case', 'lead') to be more robust for UI calls
+        System.debug('runAutoFix called with:');
+        System.debug('  recordIds: ' + recordIds);
+        System.debug('  fixType: ' + fixType);
+        System.debug('  Converted to Id List: ' + idList);
+
+        try {
+            // Normalize the fixType to handle variations
+            String normalizedType = (fixType != null) ? fixType.toLowerCase().trim() : '';
+
+            // Route to appropriate fix method based on type
             if (normalizedType.contains('case')) {
-                PatternFixService.fixStaleCases(recordIds);
-                return 'Success: Created high-priority tasks for ' + recordIds.size() + ' stale cases.';
+                fixStaleCases(idList);
+                return 'Success: Created high-priority tasks for ' + idList.size() + ' stale cases.';
             } else if (normalizedType.contains('lead')) {
-                PatternFixService.fixUnassignedLeads(recordIds);
-                return 'Success: Ownership claimed for ' + recordIds.size() + ' leads.';
+                fixUnassignedLeads(idList);
+                return 'Success: Ownership claimed for ' + idList.size() + ' leads.';
+            } else if (normalizedType.contains('opportunity')) {
+                fixStaleOpportunities(idList);
+                return 'Success: Created follow-up tasks for ' + idList.size() + ' stale opportunities.';
             } else {
-                throw new AuraHandledException('Unknown Auto-Fix type: ' + fixType);
+                // Try metadata-driven approach for other types
+                try {
+                    PatternFixService service = new PatternFixService();
+                    String metaName = fixType.replace(' ', '_');
+                    service.executeFix(idList, metaName);
+                    return 'Success: Auto-Fix executed for ' + fixType;
+                } catch (Exception e) {
+                    System.debug(LoggingLevel.ERROR, 'Metadata-driven fix failed: ' + e.getMessage());
+                    throw new AuraHandledException('Auto-Fix not yet implemented for: ' + fixType);
+                }
             }
         } catch (Exception e) {
-            // IMPROVED EXCEPTION HANDLING:
-            // If the Service throws an AuraHandledException (e.g. Permission denied), throw it directly
-            // so the UI sees the specific message instead of "Script-thrown exception".
+            System.debug(LoggingLevel.ERROR, 'runAutoFix Error: ' + e.getMessage());
+            System.debug(LoggingLevel.ERROR, 'Stack Trace: ' + e.getStackTraceString());
+            
             if (e instanceof AuraHandledException) {
                 throw e;
             }
-            // Otherwise, mask the internal stack trace but present the message
             throw new AuraHandledException('Auto-Fix failed: ' + e.getMessage());
         }
+    }
+
+    // --- LEGACY FIX METHODS (Kept for backward compatibility) ---
+    
+    private static void fixStaleCases(List<Id> recordIds) {
+        if (!Schema.sObjectType.Task.isCreateable()) {
+            throw new AuraHandledException('Insufficient permissions to create Tasks.');
+        }
+
+        List<Task> tasks = new List<Task>();
+        for (Id caseId : recordIds) {
+            tasks.add(new Task(
+                Subject = 'URGENT: Follow up on stale case',
+                Priority = 'High',
+                Status = 'Not Started',
+                ActivityDate = Date.today().addDays(1),
+                WhatId = caseId,
+                OwnerId = UserInfo.getUserId()
+            ));
+        }
+
+        SObjectAccessDecision decision = Security.stripInaccessible(AccessType.CREATABLE, tasks);
+        insert decision.getRecords();
+    }
+
+    private static void fixUnassignedLeads(List<Id> recordIds) {
+        if (!Schema.sObjectType.Lead.isUpdateable() || 
+            !Schema.sObjectType.Lead.fields.OwnerId.isUpdateable()) {
+            throw new AuraHandledException('Insufficient permissions to update Leads.');
+        }
+
+        List<Lead> leads = new List<Lead>();
+        for (Id leadId : recordIds) {
+            leads.add(new Lead(
+                Id = leadId,
+                OwnerId = UserInfo.getUserId()
+            ));
+        }
+
+        SObjectAccessDecision decision = Security.stripInaccessible(AccessType.UPDATABLE, leads);
+        update decision.getRecords();
+    }
+
+    private static void fixStaleOpportunities(List<Id> recordIds) {
+        if (!Schema.sObjectType.Task.isCreateable()) {
+            throw new AuraHandledException('Insufficient permissions to create Tasks.');
+        }
+
+        List<Task> tasks = new List<Task>();
+        for (Id oppId : recordIds) {
+            tasks.add(new Task(
+                Subject = 'Follow up on stale opportunity',
+                Priority = 'High',
+                Status = 'Not Started',
+                ActivityDate = Date.today().addDays(2),
+                WhatId = oppId,
+                OwnerId = UserInfo.getUserId(),
+                Description = 'This opportunity has been inactive. Please review and update the stage or close it.'
+            ));
+        }
+
+        SObjectAccessDecision decision = Security.stripInaccessible(AccessType.CREATABLE, tasks);
+        insert decision.getRecords();
     }
     
     @AuraEnabled
@@ -146,17 +234,26 @@ public with sharing class WorkflowAnalyticsController {
             data.metrics = getMetrics();
 
             // 3. Fetch Recent Logs 
-            data.recentLogs = [
+            data.recentLogs = getRecentLogs();
+
+            return data;
+        } catch (Exception e) {
+            throw new AuraHandledException('Unable to load dashboard data: ' + e.getMessage());
+        }
+    }
+
+    @AuraEnabled(cacheable=true)
+    public static List<Behavior_Log__c> getRecentLogs() {
+        try {
+            return [
                 SELECT Id, Action_Name__c, User__r.Name, CreatedDate, Object_API_Name__c 
                 FROM Behavior_Log__c 
                 WITH SECURITY_ENFORCED
                 ORDER BY CreatedDate DESC 
                 LIMIT 10 
             ];
-
-            return data;
         } catch (Exception e) {
-            throw new AuraHandledException('Unable to load dashboard data: ' + e.getMessage());
+            return new List<Behavior_Log__c>();
         }
     }
 
@@ -174,7 +271,6 @@ public with sharing class WorkflowAnalyticsController {
                 String status = (String)ar.get('Status__c');
                 Integer count = (Integer)ar.get('cnt');
                 
-                // Using 'New' as Active equivalent based on schema constraints
                 if (status == 'New' || status == 'Active') {
                     metrics.add(new MetricWrapper('Active Anomalies', count, '+2%', 'alert', 'active_anomalies'));
                 } else if (status == 'Dismissed') {
@@ -189,7 +285,6 @@ public with sharing class WorkflowAnalyticsController {
         if (metrics.isEmpty()) {
              Integer staleOppCount = 0;
              try {
-                // Check if user has access to Opportunity before query
                 if (Schema.sObjectType.Opportunity.isAccessible()) {
                     staleOppCount = [SELECT Count() FROM Opportunity WHERE LastStageChangeDate < LAST_N_DAYS:30 AND IsClosed = false WITH SECURITY_ENFORCED];
                 }
@@ -263,7 +358,7 @@ public with sharing class WorkflowAnalyticsController {
             ];
             return logs.isEmpty() ? null : logs[0];
         } catch (Exception e) {
-            return null; // Return null if error or no access, allowing UI to handle gracefully
+            return null;
         }
     }
 }

@@ -21,7 +21,8 @@ public with sharing class BehaviorLogService {
                 Object_API_Name__c  = event.Object_API_Name__c,
                 Record_ID__c        = event.Record_ID__c,
                 User__c             = event.User_ID__c,
-                Behavior_Data__c    = event.Behavior_Data__c
+                Behavior_Data__c    = event.Behavior_Data__c,
+                Timestamp__c        = System.now()
             ));
         }
 

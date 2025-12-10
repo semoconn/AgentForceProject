@@ -32,13 +32,15 @@ private class UserLeaderboardControllerTest {
                     User__c = testStandardUser.Id,
                     Action_Name__c = 'Stale Opportunity',
                     Object_API_Name__c = 'Opportunity',
-                    Behavior_Data__c = '{"daysOpen": 45}'
+                    Behavior_Data__c = '{"daysOpen": 45}',
+                    Timestamp__c = System.now()
                 ));
             }
             logs.add(new Behavior_Log__c(
                 User__c = testStandardUser.Id,
                 Action_Name__c = 'Unassigned Lead',
-                Object_API_Name__c = 'Lead'
+                Object_API_Name__c = 'Lead',
+                Timestamp__c = System.now()
             ));
             insert logs;
         }

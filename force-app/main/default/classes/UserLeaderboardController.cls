@@ -38,6 +38,19 @@ public with sharing class UserLeaderboardController {
         }
     }
 
+    /**
+     * @description Simple accessor for LWC to check license status directly.
+     * FIX: This method is required by the Dashboard LWC.
+     */
+    @AuraEnabled(cacheable=true)
+    public static String getLicenseStatus() {
+        try {
+            return isPremiumUser() ? 'Premium' : 'Free';
+        } catch (Exception e) {
+            return 'Free';
+        }
+    }
+
     @AuraEnabled(cacheable=true)
     public static LeaderboardResult getLeaderboardData() {
         Boolean isPremium = false;
@@ -147,12 +160,6 @@ public with sharing class UserLeaderboardController {
             // Apply security stripping manually
             SObjectAccessDecision securityDecision = Security.stripInaccessible(AccessType.READABLE, logs);
             
-            // DEBUG: Check if the field was stripped
-            Map<String,Set<String>> removedFields = securityDecision.getRemovedFields();
-            if (removedFields.containsKey('Behavior_Log__c') && removedFields.get('Behavior_Log__c').contains('Action_Name__c')) {
-                System.debug(LoggingLevel.ERROR, 'BehaviorIQ SECURITY: Action_Name__c was STRIPPED due to lack of FLS permissions.');
-            }
-
             for (SObject obj : securityDecision.getRecords()) {
                 Behavior_Log__c log = (Behavior_Log__c)obj;
                 
@@ -169,7 +176,6 @@ public with sharing class UserLeaderboardController {
                 }
             }
         } catch (Exception e) {
-            // Now strictly logging exceptions to debug logs
             System.debug(LoggingLevel.ERROR, 'BehaviorIQ Breakdown Query Error: ' + e.getMessage());
         }
         return resultMap;

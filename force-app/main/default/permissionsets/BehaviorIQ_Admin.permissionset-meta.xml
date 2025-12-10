@@ -1,21 +1,231 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
-    <description>Grants full access to BehaviorIQ configuration, logs, and settings.</description>
+    <description>Full access to all BehaviorIQ objects, fields, and configuration.</description>
+    <hasActivationRequired>false</hasActivationRequired>
+    <label>BehaviorIQ Admin</label>
     
-    <!-- F: Field Permissions -->
+    <!-- APP VISIBILITY -->
+    <applicationVisibilities>
+        <application>standard__Platform</application>
+        <visible>true</visible>
+    </applicationVisibilities>
+
+    <!-- CLASS ACCESS -->
+    <classAccesses>
+        <apexClass>BehaviorLogService</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>GenericBehaviorTriggerHandler</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>PainPointController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>PatternAnalysisService</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>PatternFixService</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>UserLeaderboardController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>LicenseService</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>SetupWizardController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>BehaviorSettingsController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+
+    <!-- CUSTOM METADATA ACCESS -->
+    <customMetadataTypeAccesses>
+        <enabled>true</enabled>
+        <name>Behavior_Setting__mdt</name>
+    </customMetadataTypeAccesses>
+    <customMetadataTypeAccesses>
+        <enabled>true</enabled>
+        <name>AgentForce_Setting__mdt</name>
+    </customMetadataTypeAccesses>
+    <customMetadataTypeAccesses>
+        <enabled>true</enabled>
+        <name>Behavior_Pattern_Rule__mdt</name>
+    </customMetadataTypeAccesses>
+
+    <!-- FIELD PERMISSIONS: AgentForce_Setting__mdt -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>AgentForce_Setting__mdt.Suggestion_Threshold__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+
+    <!-- FIELD PERMISSIONS: Behavior_Setting__mdt -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Behavior_Setting__mdt.Sequential_Action_Threshold__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Behavior_Setting__mdt.Stale_Case_Days__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Behavior_Setting__mdt.Stale_Opportunity_Days__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Behavior_Setting__mdt.Unassigned_Lead_Age_Hours__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+
+    <!-- FIELD PERMISSIONS: Behavior_Pattern_Rule__mdt -->
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Behavior_Pattern_Rule__mdt.Fix_Config__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Behavior_Pattern_Rule__mdt.Is_Premium__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Behavior_Pattern_Rule__mdt.Query_Condition__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Behavior_Pattern_Rule__mdt.Threshold_Default__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+
+    <!-- FIELD PERMISSIONS: BehaviorIQ_Configuration__c (ADDED FIX) -->
     <fieldPermissions>
         <editable>true</editable>
         <field>BehaviorIQ_Configuration__c.Monitored_Objects__c</field>
         <readable>true</readable>
     </fieldPermissions>
 
-    <!-- H: Has Activation Required -->
-    <hasActivationRequired>false</hasActivationRequired>
-    
-    <!-- L: Label -->
-    <label>BehaviorIQ Admin</label>
+    <!-- FIELD PERMISSIONS: Identified_Pain_Point__c -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Identified_Pain_Point__c.Description__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Identified_Pain_Point__c.Example_Records__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Identified_Pain_Point__c.Impact_Score__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Identified_Pain_Point__c.Last_Detected__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Identified_Pain_Point__c.Object_API_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Identified_Pain_Point__c.Occurrences__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Identified_Pain_Point__c.Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
 
-    <!-- O: Object Permissions (Sorted Alphabetically by Object Name) -->
+    <!-- FIELD PERMISSIONS: Behavior_Log__c -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Behavior_Log__c.Action_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Behavior_Log__c.Behavior_Data__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Behavior_Log__c.Object_API_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Behavior_Log__c.Record_ID__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Behavior_Log__c.User__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+
+    <!-- FIELD PERMISSIONS: Suggestion_Dismissal__c -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Suggestion_Dismissal__c.Action_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Suggestion_Dismissal__c.Object_API_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Suggestion_Dismissal__c.User__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+
+    <!-- FIELD PERMISSIONS: System_Health_Log__c -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>System_Health_Log__c.Error_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>System_Health_Log__c.Job_ID__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>System_Health_Log__c.Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+
+    <!-- FIELD PERMISSIONS: BehaviorIQ_License__c -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>BehaviorIQ_License__c.Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+
+    <!-- OBJECT PERMISSIONS -->
     <objectPermissions>
         <allowCreate>true</allowCreate>
         <allowDelete>true</allowDelete>
@@ -31,7 +241,7 @@
         <allowEdit>true</allowEdit>
         <allowRead>true</allowRead>
         <modifyAllRecords>true</modifyAllRecords>
-        <object>Behavior_Log__c</object>
+        <object>Identified_Pain_Point__c</object>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
     <objectPermissions>
@@ -40,7 +250,7 @@
         <allowEdit>true</allowEdit>
         <allowRead>true</allowRead>
         <modifyAllRecords>true</modifyAllRecords>
-        <object>Identified_Pain_Point__c</object>
+        <object>Behavior_Log__c</object>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
     <objectPermissions>
@@ -61,8 +271,17 @@
         <object>System_Health_Log__c</object>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
+    <objectPermissions>
+        <allowCreate>true</allowCreate>
+        <allowDelete>true</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>true</modifyAllRecords>
+        <object>BehaviorIQ_License__c</object>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
 
-    <!-- T: Tab Settings -->
+    <!-- TAB SETTINGS -->
     <tabSettings>
         <tab>BehaviorIQ</tab>
         <visibility>Visible</visibility>

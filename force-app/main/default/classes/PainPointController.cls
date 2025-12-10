@@ -1,79 +1,54 @@
 /**
- * @description Securely queries and manages Identified_Pain_Point__c records for the BehaviorIQ Dashboard.
- * @version 2.4 - SECURITY FIX: Fixed Schema errors, Upsert Casting, and Test Compliance.
+ * @description Controller for the BehaviorIQ Dashboard LWC.
+ * Bridges the "Insight" layer (Identified Pain Points) to the UI.
+ * @version 3.1 - Phase 3 Metadata Support + Robust Security (stripInaccessible)
  */
 public with sharing class PainPointController {
 
     /**
-     * @description Queries and returns all Identified_Pain_Point__c records, prioritized by Impact Score.
-     * @return List<Identified_Pain_Point__c> A list of pain point records.
+     * @description Fetches active pain points. Uses stripInaccessible to ensure partial results 
+     * return even if user lacks FLS on specific non-critical fields.
+     * @return List of Identified_Pain_Point__c records.
      */
-    @AuraEnabled(cacheable=true)
-    public static List<Identified_Pain_Point__c> getPainPoints() {
-        try {
-            if (!Schema.sObjectType.Identified_Pain_Point__c.isAccessible()) {
-                return new List<Identified_Pain_Point__c>();
-            }
-            
-            return [
-                SELECT Id, Name, Description__c, Object_API_Name__c, 
-                       Impact_Score__c, Status__c, Last_Detected__c,
-                       Example_Records__c, Unique_Key__c, Occurrences__c
-                FROM Identified_Pain_Point__c
-                WITH SECURITY_ENFORCED
-                ORDER BY Impact_Score__c DESC
-            ];
-        } catch (Exception e) {
-            System.debug(LoggingLevel.ERROR, 'Error fetching pain points: ' + e.getMessage());
-            throw new AuraHandledException('Unable to load pain points. Please try again later.');
-        }
-    }
-
-    /**
-     * @description Returns only Pain Points that are NOT dismissed.
-     * @return List<Identified_Pain_Point__c>
-     */
-    @AuraEnabled(cacheable=true)
+    @AuraEnabled
     public static List<Identified_Pain_Point__c> getOpenPainPoints() {
-        // SECURITY: Check accessibility first
-        if (!Schema.sObjectType.Identified_Pain_Point__c.isAccessible()) {
-            // Reverted to Exception throwing to pass existing Unit Test (test02_GetOpenPainPoints_NoAccess_Corrected)
-            throw new AuraHandledException('User does not have read access to Identified_Pain_Point__c');
-        }
-
         try {
-            return [
-                SELECT Id, Name, Description__c, Object_API_Name__c, 
-                       Impact_Score__c, Status__c, Last_Detected__c,
-                       Example_Records__c, Unique_Key__c, Occurrences__c
+            // Raw query without WITH SECURITY_ENFORCED to prevent all-or-nothing crashes
+            List<Identified_Pain_Point__c> rawResults = [
+                SELECT Id, Name, Description__c, Impact_Score__c, Status__c, 
+                       Occurrences__c, Last_Detected__c, 
+                       Unique_Key__c, Example_Records__c, Object_API_Name__c
                 FROM Identified_Pain_Point__c
                 WHERE Status__c != 'Dismissed'
-                WITH SECURITY_ENFORCED
-                ORDER BY Last_Detected__c DESC
+                ORDER BY Impact_Score__c DESC, Last_Detected__c DESC
+                LIMIT 50
             ];
+
+            // Gracefully strip fields the user cannot see
+            SObjectAccessDecision securityDecision = Security.stripInaccessible(AccessType.READABLE, rawResults);
+            return (List<Identified_Pain_Point__c>)securityDecision.getRecords();
+
         } catch (Exception e) {
-            System.debug(LoggingLevel.ERROR, 'Error fetching open pain points: ' + e.getMessage());
-            throw new AuraHandledException('Unable to load open pain points.');
+            System.debug(LoggingLevel.ERROR, 'Dashboard Query Error: ' + e.getMessage());
+            throw new AuraHandledException('Unable to load findings: ' + e.getMessage());
         }
     }
 
     /**
-     * @description Returns a count of Pain Points grouped by Status.
-     * @return Map<String, Integer>
+     * @description Provides a breakdown of findings by Status for the metrics bar.
      */
     @AuraEnabled(cacheable=true)
     public static Map<String, Integer> getPainPointCounts() {
         Map<String, Integer> counts = new Map<String, Integer>{
-            'New' => 0,
-            'Acknowledged' => 0,
-            'Dismissed' => 0
+            'New' => 0, 'Acknowledged' => 0, 'Dismissed' => 0
         };
 
         if (!Schema.sObjectType.Identified_Pain_Point__c.isAccessible()) {
-            return counts; 
+            return counts;
         }
 
         try {
+            // Aggregate queries require WITH SECURITY_ENFORCED as stripInaccessible doesn't work on Aggregates
             for (AggregateResult ar : [
                 SELECT Status__c, COUNT(Id) cnt 
                 FROM Identified_Pain_Point__c 
@@ -87,91 +62,52 @@ public with sharing class PainPointController {
                 }
             }
         } catch (Exception e) {
-            System.debug(LoggingLevel.ERROR, 'Error aggregating counts: ' + e.getMessage());
+            System.debug(LoggingLevel.ERROR, 'Error fetching counts: ' + e.getMessage());
         }
         return counts;
     }
 
     /**
-     * @description Updates status to 'Dismissed' and creates a permanent dismissal record.
+     * @description Dismisses a finding and logs the dismissal to preventing re-alerting.
      */
     @AuraEnabled
     public static void dismissPainPoint(String uniqueKey, String reason) {
-        // 1. Check permissions for Suggestion_Dismissal__c creation
+        if (String.isBlank(uniqueKey)) return;
+
+        // Strict Create Check for Audit Log
         if (!Schema.sObjectType.Suggestion_Dismissal__c.isCreateable()) {
-            throw new AuraHandledException('You do not have permission to create dismissal records.');
+            throw new AuraHandledException('Insufficient permissions to create dismissal records.');
         }
-        
+
         try {
-            // 2. Find the Pain Point
-            // REMOVED 'Action_Name__c' and 'User__c' which do not exist on this object
-            List<Identified_Pain_Point__c> pps = [
+            List<Identified_Pain_Point__c> points = [
                 SELECT Id, Status__c, Object_API_Name__c 
                 FROM Identified_Pain_Point__c 
                 WHERE Unique_Key__c = :uniqueKey 
-                WITH SECURITY_ENFORCED 
                 LIMIT 1
             ];
 
-            if (pps.isEmpty()) return;
+            if (!points.isEmpty()) {
+                // Prepare Dismissal Log
+                Suggestion_Dismissal__c dismissal = new Suggestion_Dismissal__c(
+                    Dismissal_Key__c = uniqueKey,
+                    Action_Name__c = String.isNotBlank(reason) ? reason : 'Dismissed via Dashboard',
+                    User__c = UserInfo.getUserId(),
+                    Object_API_Name__c = points[0].Object_API_Name__c
+                );
 
-            // 3. Create Dismissal Record
-            Suggestion_Dismissal__c dismissal = new Suggestion_Dismissal__c(
-                Dismissal_Key__c = uniqueKey,
-                Action_Name__c = String.escapeSingleQuotes(reason), // Sanitize input
-                User__c = UserInfo.getUserId(), // Use current user as fallback
-                Object_API_Name__c = pps[0].Object_API_Name__c
-            );
+                // Prepare Update
+                points[0].Status__c = 'Dismissed';
 
-            // 4. Update Pain Point Status
-            if (!Schema.sObjectType.Identified_Pain_Point__c.fields.Status__c.isUpdateable()) {
-                throw new AuraHandledException('You do not have permission to update the status of this record.');
+                // Secure Execution
+                SObjectAccessDecision logDecision = Security.stripInaccessible(AccessType.UPSERTABLE, new List<Suggestion_Dismissal__c>{dismissal});
+                SObjectAccessDecision ppDecision = Security.stripInaccessible(AccessType.UPDATABLE, points);
+
+                upsert (List<Suggestion_Dismissal__c>)logDecision.getRecords() Dismissal_Key__c;
+                update ppDecision.getRecords();
             }
-            pps[0].Status__c = 'Dismissed';
-
-            // SECURITY: Use stripInaccessible
-            SObjectAccessDecision dismissalDecision = Security.stripInaccessible(AccessType.UPSERTABLE, new List<Suggestion_Dismissal__c>{dismissal});
-            SObjectAccessDecision ppDecision = Security.stripInaccessible(AccessType.UPDATABLE, pps);
-
-            // FIXED: Added casting (List<Suggestion_Dismissal__c>) for Upsert
-            upsert (List<Suggestion_Dismissal__c>)dismissalDecision.getRecords() Dismissal_Key__c;
-            update ppDecision.getRecords();
-
         } catch (Exception e) {
-            System.debug(LoggingLevel.ERROR, 'Error during dismissal: ' + e.getMessage());
-            throw new AuraHandledException('Error during dismissal. Please contact support.');
-        }
-    }
-
-    /**
-     * @description Updates the status of a pain point record.
-     */
-    @AuraEnabled
-    public static String updatePainPointStatus(Id painPointId, String status, String uniqueKey) {
-        // SECURITY Check
-        if (!Schema.sObjectType.Identified_Pain_Point__c.isUpdateable() || 
-            !Schema.sObjectType.Identified_Pain_Point__c.fields.Status__c.isUpdateable()) {
-            throw new AuraHandledException('You do not have permission to update the status of this record.');
-        }
-
-        try {
-            Identified_Pain_Point__c pointToUpdate = new Identified_Pain_Point__c(
-                Id = painPointId, 
-                Status__c = status
-            );
-            
-            SObjectAccessDecision decision = Security.stripInaccessible(AccessType.UPDATABLE, new List<Identified_Pain_Point__c>{pointToUpdate});
-            update decision.getRecords();
-            
-            // If explicitly setting to Dismissed via this method, handle logic
-            if (status == 'Dismissed') {
-                dismissPainPoint(uniqueKey, 'Dismissed via Status Update');
-            }
-            
-            return 'Status updated successfully.';
-        } catch (Exception e) {
-            System.debug(LoggingLevel.ERROR, 'Status Update Error: ' + e.getMessage());
-            throw new AuraHandledException('An error occurred while updating the status.');
+            throw new AuraHandledException('Error handling dismissal: ' + e.getMessage());
         }
     }
 }

@@ -30,14 +30,16 @@ private class WorkflowAnalyticsControllerTest {
             logs.add(new Behavior_Log__c(
                 Action_Name__c = 'Record_Created',
                 Object_API_Name__c = 'Contact',
-                User__c = UserInfo.getUserId()
+                User__c = UserInfo.getUserId(),
+                Timestamp__c = System.now()
             ));
         }
         for (Integer i = 0; i < 3; i++) {
             logs.add(new Behavior_Log__c(
                 Action_Name__c = 'Record_Updated',
                 Object_API_Name__c = 'Account',
-                User__c = UserInfo.getUserId()
+                User__c = UserInfo.getUserId(),
+                Timestamp__c = System.now()
             ));
         }
         insert logs;

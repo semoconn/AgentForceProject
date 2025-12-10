@@ -47,39 +47,30 @@
             </div>
         </div>
 
-        <!-- METRICS BAR -->
-        <div class="slds-grid slds-gutters slds-m-bottom_medium">
-             <div class="slds-col slds-size_1-of-4">
-                <div class="metric-card">
-                    <div class="metric-icon event-icon"><lightning-icon icon-name="standard:logging" size="small"></lightning-icon></div>
-                    <div class="metric-info"><div class="metric-value">12,450</div><div class="metric-label">Events Analyzed</div></div>
+        <!-- METRICS BAR (FIXED) -->
+        <!-- Added slds-wrap and updated loop item sizing for responsiveness -->
+        <div class="slds-grid slds-wrap slds-gutters slds-m-bottom_medium">
+            <template for:each={metrics} for:item="metric">
+                <div key={metric.id} class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2 slds-large-size_1-of-4 slds-m-bottom_small">
+                    <div class="metric-card shadow-card">
+                        <!-- FIXED: Use class={metric.cssClass} instead of data-class -->
+                        <div class={metric.cssClass}>
+                            <lightning-icon icon-name={metric.icon} size="medium" variant="inverse"></lightning-icon>
+                        </div>
+                        <div class="metric-info">
+                            <div class="metric-value">{metric.value}</div>
+                            <div class="metric-label">{metric.label}</div>
+                        </div>
+                    </div>
                 </div>
-            </div>
-            <div class="slds-col slds-size_1-of-4">
-                <div class="metric-card">
-                    <div class="metric-icon user-icon"><lightning-icon icon-name="standard:user" size="small"></lightning-icon></div>
-                    <div class="metric-info"><div class="metric-value">48</div><div class="metric-label">Active Users</div></div>
-                </div>
-            </div>
-            <div class="slds-col slds-size_1-of-4">
-                <div class="metric-card">
-                    <div class="metric-icon object-icon"><lightning-icon icon-name="standard:custom" size="small"></lightning-icon></div>
-                    <div class="metric-info"><div class="metric-value">6</div><div class="metric-label">Objects Monitored</div></div>
-                </div>
-            </div>
-            <div class="slds-col slds-size_1-of-4">
-                <div class="metric-card">
-                    <div class="metric-icon time-icon"><lightning-icon icon-name="standard:recent" size="small"></lightning-icon></div>
-                    <div class="metric-info"><div class="metric-value text-small">Today, 2:00 AM</div><div class="metric-label">Last Scan</div></div>
-                </div>
-            </div>
+            </template>
         </div>
 
         <!-- MAIN CONTENT GRID -->
-        <div class="slds-grid slds-gutters">
+        <div class="slds-grid slds-wrap slds-gutters">
             
             <!-- Left Column: Active Recommendations (Pain Points) -->
-            <div class="slds-col slds-size_2-of-3">
+            <div class="slds-col slds-size_1-of-1 slds-large-size_2-of-3">
                 <lightning-card title="Active Insights & Recommendations" icon-name="standard:recommendation">
                     <div class="slds-p-horizontal_medium">
                         
@@ -98,7 +89,9 @@
 
                         <!-- Spinner -->
                         <template if:true={isLoading}>
-                            <lightning-spinner alternative-text="Loading"></lightning-spinner>
+                            <div class="slds-is-relative" style="height:100px">
+                                <lightning-spinner alternative-text="Loading"></lightning-spinner>
+                            </div>
                         </template>
 
                         <!-- List View of Recommendations -->
@@ -124,7 +117,6 @@
 
                                         <!-- Actions -->
                                         <div class="slds-no-flex">
-                                            <!-- FIX: Title bound to dynamic getter for Premium logic -->
                                             <lightning-button-icon 
                                                 icon-name="utility:magicwand" 
                                                 variant="border-filled" 
@@ -137,7 +129,6 @@
                                                 disabled={isFixDisabled}>
                                             </lightning-button-icon>
 
-                                            <!-- FIX: Using data-id instead of data-row to ensure object retrieval works -->
                                             <lightning-button-icon 
                                                 icon-name="utility:preview" 
                                                 variant="border-filled" 
@@ -154,7 +145,8 @@
                                                 alternative-text="Dismiss" 
                                                 title="Dismiss Suggestion"
                                                 onclick={handleDismiss}
-                                                data-id={point.Id}>
+                                                data-id={point.Id}
+                                                data-key={point.Unique_Key__c}>
                                             </lightning-button-icon>
                                         </div>
                                     </div>
@@ -177,40 +169,41 @@
             </div>
 
             <!-- Right Column: Leaderboard & Feed -->
-            <div class="slds-col slds-size_1-of-3">
+            <div class="slds-col slds-size_1-of-1 slds-large-size_1-of-3">
                 
-                <!-- NEW: User Leaderboard ("Wall of Shame") -->
-                <!-- We place it at the top for high visibility -->
+                <!-- User Leaderboard -->
                 <div class="slds-m-bottom_medium">
                     <c-user-leaderboard onupgrade={handlePremiumClick}></c-user-leaderboard>
                 </div>
 
-                <!-- Existing Feed -->
-                <lightning-card title="Live Behavior Log" icon-name="standard:feed">
-                    <div class="slds-feed slds-p-horizontal_medium slds-scrollable_y" style="height: 400px;">
-                        <ul class="slds-feed__list">
-                            <template for:each={recentLogs} for:item="log">
-                                <li key={log.Id} class="slds-feed__item">
-                                    <div class="slds-media slds-comment slds-hint-parent">
-                                        <div class="slds-media__figure">
-                                            <lightning-icon icon-name="standard:user" size="small"></lightning-icon>
-                                        </div>
-                                        <div class="slds-media__body">
-                                            <div class="slds-grid slds-grid_align-spread slds-has-flexi-truncate">
-                                                <p class="slds-truncate">
-                                                    <strong>{log.UserName}</strong> performed <strong>{log.Action_Name__c}</strong> on {log.Object_API_Name__c}
-                                                </p>
+                <!-- Live Behavior Log -->
+                <template if:true={recentLogs.length}>
+                    <lightning-card title="Live Behavior Log" icon-name="standard:feed">
+                        <div class="slds-feed slds-p-horizontal_medium slds-scrollable_y" style="height: 400px;">
+                            <ul class="slds-feed__list">
+                                <template for:each={recentLogs} for:item="log">
+                                    <li key={log.Id} class="slds-feed__item">
+                                        <div class="slds-media slds-comment slds-hint-parent">
+                                            <div class="slds-media__figure">
+                                                <lightning-icon icon-name="standard:user" size="small"></lightning-icon>
                                             </div>
-                                            <div class="slds-text-color_weak slds-text-body_small">
-                                                <lightning-formatted-date-time value={log.CreatedDate} year="numeric" month="short" day="2-digit" hour="2-digit" minute="2-digit"></lightning-formatted-date-time>
+                                            <div class="slds-media__body">
+                                                <div class="slds-grid slds-grid_align-spread slds-has-flexi-truncate">
+                                                    <p class="slds-truncate">
+                                                        <strong>{log.UserName}</strong> performed <strong>{log.Action_Name__c}</strong> on {log.Object_API_Name__c}
+                                                    </p>
+                                                </div>
+                                                <div class="slds-text-color_weak slds-text-body_small">
+                                                    <lightning-formatted-date-time value={log.CreatedDate} year="numeric" month="short" day="2-digit" hour="2-digit" minute="2-digit"></lightning-formatted-date-time>
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
-                                </li>
-                            </template>
-                        </ul>
-                    </div>
-                </lightning-card>
+                                    </li>
+                                </template>
+                            </ul>
+                        </div>
+                    </lightning-card>
+                </template>
             </div>
         </div>
 
@@ -274,7 +267,6 @@
                     <footer class="slds-modal__footer slds-grid slds-grid_align-spread">
                         <lightning-button label="Close" onclick={closeSolutionModal}></lightning-button>
                         
-                        <!-- GATING LOGIC -->
                         <template if:true={isPremium}>
                             <lightning-button 
                                 variant="brand" 

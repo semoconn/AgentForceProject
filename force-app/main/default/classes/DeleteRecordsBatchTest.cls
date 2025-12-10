@@ -16,13 +16,23 @@ private class DeleteRecordsBatchTest {
             // Create logs for deletion
             List<Behavior_Log__c> logs = new List<Behavior_Log__c>();
             for (Integer i = 0; i < 20; i++) {
-                logs.add(new Behavior_Log__c(Action_Name__c = 'To_Delete_' + i, User__c = u.Id));
+                logs.add(new Behavior_Log__c(
+                    Action_Name__c = 'To_Delete_' + i,
+                    User__c = u.Id,
+                    Timestamp__c = System.now()
+                ));
             }
             insert logs;
-            
+
             // Insert a log that should remain (not targeted by query)
             // CORRECTED: Assign sublist result to a new list before insertion
-            List<Behavior_Log__c> failLog = new List<Behavior_Log__c>{new Behavior_Log__c(Action_Name__c = 'Dml_Fail_Log', User__c = u.Id)};
+            List<Behavior_Log__c> failLog = new List<Behavior_Log__c>{
+                new Behavior_Log__c(
+                    Action_Name__c = 'Dml_Fail_Log',
+                    User__c = u.Id,
+                    Timestamp__c = System.now()
+                )
+            };
             insert failLog;
         }
     }

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Fix_Type__c</fullName>
+    <description>Determines the remediation strategy used by PatternFixService.</description>
+    <externalId>false</externalId>
+    <fieldManageability>DeveloperControlled</fieldManageability>
+    <label>Fix Type</label>
+    <required>true</required>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>Task_Creation</fullName>
+                <default>true</default>
+                <label>Task Creation</label>
+            </value>
+            <value>
+                <fullName>Owner_Assignment</fullName>
+                <default>false</default>
+                <label>Owner Assignment</label>
+            </value>
+            <value>
+                <fullName>Field_Update</fullName>
+                <default>false</default>
+                <label>Field Update</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>

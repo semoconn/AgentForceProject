@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Timestamp__c</fullName>
+    <description>Records the date and time when the user action or behavior occurred. Used for leaderboard calculation and behavioral pattern analysis.</description>
+    <externalId>false</externalId>
+    <label>Timestamp</label>
+    <required>true</required>
+    <trackTrending>false</trackTrending>
+    <type>DateTime</type>
+</CustomField>

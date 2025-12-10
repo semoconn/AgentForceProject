@@ -9,6 +9,7 @@
 
 /* --- HEADER & METRICS --- */
 .header-section {
+    /* Using your existing gradient */
     background: linear-gradient(135deg, #0b5cab 0%, #009cc8 100%);
     border-radius: 0.5rem;
     padding: 1.5rem;
@@ -42,30 +43,50 @@
     color: #0b5cab;
 }
 
+/* --- METRIC CARDS (Updated for 4-Column Layout) --- */
 .metric-card {
-    background-color: white;
-    border-radius: 0.5rem;
-    padding: 1rem;
+    background: #fff;
+    border: 1px solid #dddbda;
+    border-radius: 0.5rem; /* Matched to your preference */
     display: flex;
     align-items: center;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    border: 1px solid #e5e5e5;
+    padding: 1rem;
+    height: 100%;
+    transition: transform 0.2s ease-in-out;
 }
 
-.metric-icon {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
+.shadow-card {
+    box-shadow: 0 2px 2px 0 rgba(0, 0, 0, 0.10);
+}
+
+.metric-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 4px 0 rgba(0, 0, 0, 0.16);
+}
+
+/* Icon Box Styling (The colored rounded squares) */
+.icon-box {
+    width: 48px;
+    height: 48px;
+    border-radius: 8px; 
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-right: 1rem;
+    margin-right: 1rem; /* Spacing between icon and text */
+    flex-shrink: 0;
 }
 
-.event-icon { background-color: #e0e5f8; }
-.user-icon { background-color: #e3f8e0; }
-.object-icon { background-color: #f8e0e0; }
-.time-icon { background-color: #fdf2d0; }
+/* Color Mappings for Icons */
+.icon-blue { background-color: #57aaf5; } 
+.icon-green { background-color: #4bca81; } 
+.icon-red { background-color: #ffb75d; }   
+.icon-lightblue { background-color: #57aaf5; } 
+.icon-yellow { background-color: #ffb75d; }
+
+/* Override SLDS icon color to white inside the colored box */
+.icon-box lightning-icon {
+    --slds-c-icon-color-foreground-default: white;
+}
 
 .metric-value {
     font-size: 1.5rem;
@@ -73,8 +94,6 @@
     line-height: 1;
     color: #080707;
 }
-
-.text-small { font-size: 1rem; }
 
 .metric-label {
     font-size: 0.75rem;
@@ -84,7 +103,7 @@
     margin-top: 0.25rem;
 }
 
-/* --- MAIN CARD --- */
+/* --- MAIN CONTENT & UTILITIES --- */
 .main-card {
     border: none;
     box-shadow: 0 2px 6px rgba(0,0,0,0.05);
@@ -92,14 +111,6 @@
     flex-grow: 1;
     display: flex;
     flex-direction: column;
-}
-
-/* Force wrapper to inherit width properly */
-.datatable-wrapper {
-    height: 100%;
-    width: 100%;
-    display: block; 
-    overflow-x: hidden; /* Prevent scroll unless needed */
 }
 
 .filter-container {
@@ -114,8 +125,7 @@
     padding-left: 0.5rem;
 }
 
-/* --- NEW GATING STYLES (Enhanced Visibility) --- */
-
+/* --- STATUS BADGES --- */
 .btn-premium-locked {
     opacity: 0.7;
     cursor: not-allowed;
@@ -124,12 +134,12 @@
 .status-badge {
     display: inline-flex;
     align-items: center;
-    padding: 4px 10px; /* Slightly tighter padding */
+    padding: 4px 10px;
     border-radius: 1rem;
-    font-weight: 700; /* Bold text */
-    font-size: 0.65rem; /* Smaller but punchy */
+    font-weight: 700;
+    font-size: 0.65rem;
     vertical-align: middle;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1); /* Lift it off background */
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     letter-spacing: 0.5px;
 }
 
@@ -140,7 +150,7 @@
 }
 
 .status-badge.free {
-    background-color: #ff9a3c; /* Brighter Orange */
-    color: #1a1a1a; /* Dark Text for Contrast */
+    background-color: #ff9a3c;
+    color: #1a1a1a;
     border: 1px solid #d37c26;
 }
