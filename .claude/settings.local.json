@@ -5,7 +5,12 @@
       "Bash(findstr:*)",
       "Bash(sf project deploy start:*)",
       "Bash(mkdir:*)",
-      "Bash(sf project deploy report:*)"
+      "Bash(sf project deploy report:*)",
+      "Bash(1 <<'EOF'\ntry {\n    BehaviorSettingsController.ConfigSettingsWrapper result = BehaviorSettingsController.getConfigSettings();\n    System.debug('Success: ' + result);\n} catch (Exception e) {\n    System.debug('Error: ' + e.getMessage());\n    System.debug('Type: ' + e.getTypeName());\n}\nEOF)",
+      "Bash(sf sobject describe:*)",
+      "Bash(sf project delete:*)",
+      "Bash(sf org display:*)",
+      "Bash(sf data query:*)"
     ]
   }
 }

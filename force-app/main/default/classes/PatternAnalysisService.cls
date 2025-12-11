@@ -6,8 +6,14 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
 
     private static final String JOB_NAME = 'Pattern Analysis Service';
     public static final Integer DEFAULT_RETENTION_DAYS = 90;
-    
+
+    // @TestVisible variables for metadata-agnostic testing
+    @TestVisible private static Behavior_Pattern_Rule__mdt mockRule;
+    @TestVisible private static BehaviorIQ_Configuration__c mockConfig;
+    @TestVisible private static String lastExecutedQuery;
+
     private Set<String> dismissedPainPointKeys;
+    private BehaviorIQ_Configuration__c cachedConfig;
 
     public PatternAnalysisService() {
         dismissedPainPointKeys = new Set<String>();
@@ -44,16 +50,20 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
             return;
         }
 
-        // 3. Dynamic Detection
-        String queryString = 'SELECT Id FROM ' + String.escapeSingleQuotes(rule.Object_API_Name__c) + 
-                             ' WHERE ' + rule.Query_Condition__c + 
+        // 3. Dynamic Detection with Admin Configuration Injection
+        String effectiveCondition = getEffectiveQuery(rule);
+        String queryString = 'SELECT Id FROM ' + String.escapeSingleQuotes(rule.Object_API_Name__c) +
+                             ' WHERE ' + effectiveCondition +
                              ' LIMIT 2000';
 
+        // Store the executed query for test verification
+        lastExecutedQuery = queryString;
+
         List<SObject> detectedRecords = new List<SObject>();
-        
+
         try {
             // NOTE: We rely on the Admin's rule definition being correct.
-            // Using Database.query without SECURITY_ENFORCED allows the engine to see 
+            // Using Database.query without SECURITY_ENFORCED allows the engine to see
             // records the current user might not, which is intended for system monitoring.
             detectedRecords = Database.query(queryString);
         } catch (Exception e) {
@@ -70,14 +80,100 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
             }
 
             upsertPainPoint(
-                rule.DeveloperName, 
-                rule.MasterLabel, 
+                rule.DeveloperName,
+                rule.MasterLabel,
                 'Automated detection for ' + rule.Object_API_Name__c,
-                rule.Object_API_Name__c, 
-                count, 
+                rule.Object_API_Name__c,
+                count,
                 JSON.serialize(exampleIds)
             );
         }
+    }
+
+    /**
+     * @description Gets the effective query condition by injecting Admin configuration values.
+     * Replaces LAST_N_DAYS:\d+ patterns with values from BehaviorIQ_Configuration__c.
+     * @param rule The pattern rule containing the query condition
+     * @return The modified query condition with injected threshold values
+     */
+    @TestVisible
+    private String getEffectiveQuery(Behavior_Pattern_Rule__mdt rule) {
+        String queryCondition = rule.Query_Condition__c;
+
+        if (String.isBlank(queryCondition)) {
+            return queryCondition;
+        }
+
+        // Get the configuration (cached for performance)
+        BehaviorIQ_Configuration__c config = getConfiguration();
+
+        if (config == null) {
+            return queryCondition;
+        }
+
+        // Map rule DeveloperNames to their corresponding threshold fields
+        String ruleName = rule.DeveloperName;
+        Decimal thresholdValue = null;
+
+        // Check for Stale_Case rules
+        if (ruleName != null && ruleName.startsWithIgnoreCase('Stale_Case')) {
+            thresholdValue = config.Stale_Case_Threshold__c;
+        }
+        // Check for Stale_Opp/Stale_Opportunity rules
+        else if (ruleName != null && (ruleName.startsWithIgnoreCase('Stale_Opp') ||
+                                       ruleName.startsWithIgnoreCase('Stale_Opportunity'))) {
+            thresholdValue = config.Stale_Opportunity_Threshold__c;
+        }
+
+        // If we have a threshold value, replace the LAST_N_DAYS pattern
+        if (thresholdValue != null) {
+            // Use regex to replace LAST_N_DAYS:\d+ with the configured value
+            String pattern = 'LAST_N_DAYS:\\d+';
+            String replacement = 'LAST_N_DAYS:' + thresholdValue.intValue();
+            queryCondition = queryCondition.replaceAll(pattern, replacement);
+        }
+
+        return queryCondition;
+    }
+
+    /**
+     * @description Retrieves the BehaviorIQ Configuration singleton record.
+     * Uses caching to avoid repeated queries within the same execution context.
+     * @return The configuration record, or null if none exists
+     */
+    private BehaviorIQ_Configuration__c getConfiguration() {
+        // Return mock config for tests
+        if (Test.isRunningTest() && mockConfig != null) {
+            return mockConfig;
+        }
+
+        // Return cached config if available
+        if (cachedConfig != null) {
+            return cachedConfig;
+        }
+
+        // Query for the singleton configuration record
+        // NOTE: Not using WITH SECURITY_ENFORCED because this is a system batch job
+        // that needs to read admin configuration regardless of running user's FLS
+        if (Schema.sObjectType.BehaviorIQ_Configuration__c.isAccessible()) {
+            try {
+                List<BehaviorIQ_Configuration__c> configs = [
+                    SELECT Id, Stale_Case_Threshold__c, Stale_Opportunity_Threshold__c
+                    FROM BehaviorIQ_Configuration__c
+                    LIMIT 1
+                ];
+
+                if (!configs.isEmpty()) {
+                    cachedConfig = configs[0];
+                    return cachedConfig;
+                }
+            } catch (Exception e) {
+                // If fields don't exist yet, return null to use defaults
+                System.debug(LoggingLevel.WARN, 'Unable to query configuration: ' + e.getMessage());
+            }
+        }
+
+        return null;
     }
 
     public void finish(Database.BatchableContext bc) {

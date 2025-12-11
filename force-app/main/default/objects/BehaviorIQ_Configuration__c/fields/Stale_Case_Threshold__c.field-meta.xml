@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Stale_Case_Threshold__c</fullName>
+    <defaultValue>30</defaultValue>
+    <description>Number of days after which a Case is considered stale. Used by the Pattern Analysis Service for dynamic query injection.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>Enter the number of days (1-999) after which a Case should be flagged as stale.</inlineHelpText>
+    <label>Stale Case Threshold (Days)</label>
+    <precision>3</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

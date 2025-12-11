@@ -11,6 +11,22 @@
     border-color: #b0adab;
 }
 
+/* Pattern Analysis section styling */
+.pattern-setting {
+    border-left: 3px solid #0176d3; /* Blue accent for Pattern Analysis settings */
+}
+
+.pattern-setting:hover {
+    border-left-color: #014486;
+}
+
+.slds-section__title {
+    background-color: #fafaf9;
+    padding: 0.5rem;
+    border-radius: 0.25rem;
+    margin-bottom: 0.75rem;
+}
+
 .slds-card__header {
     padding-bottom: 0;
 }

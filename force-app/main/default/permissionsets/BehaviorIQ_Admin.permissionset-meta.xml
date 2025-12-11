@@ -113,10 +113,20 @@
         <readable>true</readable>
     </fieldPermissions>
 
-    <!-- FIELD PERMISSIONS: BehaviorIQ_Configuration__c (ADDED FIX) -->
+    <!-- FIELD PERMISSIONS: BehaviorIQ_Configuration__c -->
     <fieldPermissions>
         <editable>true</editable>
         <field>BehaviorIQ_Configuration__c.Monitored_Objects__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>BehaviorIQ_Configuration__c.Stale_Case_Threshold__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>BehaviorIQ_Configuration__c.Stale_Opportunity_Threshold__c</field>
         <readable>true</readable>
     </fieldPermissions>
 
