@@ -117,15 +117,17 @@
 
                                         <!-- Actions -->
                                         <div class="slds-no-flex">
-                                            <lightning-button-icon 
-                                                icon-name="utility:magicwand" 
-                                                variant="border-filled" 
-                                                alternative-text="Auto-Fix" 
+                                            <lightning-button-icon
+                                                icon-name="utility:magicwand"
+                                                variant="border-filled"
+                                                alternative-text="Auto-Fix"
                                                 class="slds-m-right_x-small"
                                                 title={autoFixButtonTitle}
                                                 onclick={handleAutoFix}
                                                 data-id={point.Example_Records__c}
                                                 data-type={point.Object_API_Name__c}
+                                                data-key={point.Unique_Key__c}
+                                                data-label={point.Name}
                                                 disabled={isFixDisabled}>
                                             </lightning-button-icon>
 
@@ -286,6 +288,18 @@
                 </div>
             </section>
             <div class="slds-backdrop slds-backdrop_open"></div>
+        </template>
+
+        <!-- REMEDIATION PREVIEW MODAL (Sprint 4 - Glass Box UI) -->
+        <template if:true={isPreviewModalOpen}>
+            <c-remediation-preview
+                rule-developer-name={previewRuleDeveloperName}
+                object-api-name={previewObjectApiName}
+                rule-label={previewRuleLabel}
+                fix-type={previewFixType}
+                onclose={handlePreviewClose}
+                onfixcomplete={handlePreviewFixComplete}>
+            </c-remediation-preview>
         </template>
 
     </div>

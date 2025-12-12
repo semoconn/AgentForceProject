@@ -71,15 +71,39 @@ public with sharing class WorkflowAnalyticsController {
         }
     }
 
+    /**
+     * @description Result wrapper for Auto-Fix operations to support "Inbox Zero" UX
+     */
+    public class AutoFixResult {
+        @AuraEnabled public String message;
+        @AuraEnabled public List<String> fixedRecordIds;
+        @AuraEnabled public Integer fixedCount;
+
+        public AutoFixResult(String message, List<Id> fixedIds) {
+            this.message = message;
+            this.fixedRecordIds = new List<String>();
+            for (Id recId : fixedIds) {
+                this.fixedRecordIds.add(String.valueOf(recId));
+            }
+            this.fixedCount = fixedIds.size();
+        }
+    }
+
     @AuraEnabled
-    public static String runAutoFix(List<String> recordIds, String fixType) {
+    public static AutoFixResult runAutoFix(List<String> recordIds, String fixType) {
         // License Check
         if (!LicenseService.isPremium()) {
-            throw new AuraHandledException('This is a Premium feature. Please upgrade BehaviorIQ to enable Auto-Fix.');
+            String msg = 'This is a Premium feature. Please upgrade BehaviorIQ to enable Auto-Fix.';
+            AuraHandledException e = new AuraHandledException(msg);
+            e.setMessage(msg);
+            throw e;
         }
 
         if (recordIds == null || recordIds.isEmpty()) {
-            throw new AuraHandledException('No records selected for Auto-Fix.');
+            String msg = 'No records selected for Auto-Fix.';
+            AuraHandledException e = new AuraHandledException(msg);
+            e.setMessage(msg);
+            throw e;
         }
 
         // CRITICAL FIX: Convert List<String> to List<Id>
@@ -87,8 +111,11 @@ public with sharing class WorkflowAnalyticsController {
         for (String idStr : recordIds) {
             try {
                 idList.add((Id)idStr);
-            } catch (Exception e) {
-                throw new AuraHandledException('Invalid Record ID format: ' + idStr);
+            } catch (Exception ex) {
+                String msg = 'Invalid Record ID format: ' + idStr;
+                AuraHandledException e = new AuraHandledException(msg);
+                e.setMessage(msg);
+                throw e;
             }
         }
 
@@ -100,37 +127,47 @@ public with sharing class WorkflowAnalyticsController {
         try {
             // Normalize the fixType to handle variations
             String normalizedType = (fixType != null) ? fixType.toLowerCase().trim() : '';
+            String successMessage;
 
             // Route to appropriate fix method based on type
             if (normalizedType.contains('case')) {
                 fixStaleCases(idList);
-                return 'Success: Created high-priority tasks for ' + idList.size() + ' stale cases.';
+                successMessage = 'Created high-priority tasks for ' + idList.size() + ' stale cases.';
             } else if (normalizedType.contains('lead')) {
                 fixUnassignedLeads(idList);
-                return 'Success: Ownership claimed for ' + idList.size() + ' leads.';
+                successMessage = 'Ownership claimed for ' + idList.size() + ' leads.';
             } else if (normalizedType.contains('opportunity')) {
                 fixStaleOpportunities(idList);
-                return 'Success: Created follow-up tasks for ' + idList.size() + ' stale opportunities.';
+                successMessage = 'Created follow-up tasks for ' + idList.size() + ' stale opportunities.';
             } else {
                 // Try metadata-driven approach for other types
                 try {
                     PatternFixService service = new PatternFixService();
                     String metaName = fixType.replace(' ', '_');
                     service.executeFix(idList, metaName);
-                    return 'Success: Auto-Fix executed for ' + fixType;
-                } catch (Exception e) {
-                    System.debug(LoggingLevel.ERROR, 'Metadata-driven fix failed: ' + e.getMessage());
-                    throw new AuraHandledException('Auto-Fix not yet implemented for: ' + fixType);
+                    successMessage = 'Auto-Fix executed for ' + fixType;
+                } catch (Exception metaEx) {
+                    System.debug(LoggingLevel.ERROR, 'Metadata-driven fix failed: ' + metaEx.getMessage());
+                    String msg = 'Auto-Fix not yet implemented for: ' + fixType;
+                    AuraHandledException e = new AuraHandledException(msg);
+                    e.setMessage(msg);
+                    throw e;
                 }
             }
-        } catch (Exception e) {
-            System.debug(LoggingLevel.ERROR, 'runAutoFix Error: ' + e.getMessage());
-            System.debug(LoggingLevel.ERROR, 'Stack Trace: ' + e.getStackTraceString());
-            
-            if (e instanceof AuraHandledException) {
-                throw e;
-            }
-            throw new AuraHandledException('Auto-Fix failed: ' + e.getMessage());
+
+            // Return result with fixed record IDs for UI state management
+            return new AutoFixResult(successMessage, idList);
+
+        } catch (AuraHandledException ahe) {
+            // Re-throw AuraHandledException as-is
+            throw ahe;
+        } catch (Exception ex) {
+            System.debug(LoggingLevel.ERROR, 'runAutoFix Error: ' + ex.getMessage());
+            System.debug(LoggingLevel.ERROR, 'Stack Trace: ' + ex.getStackTraceString());
+            String msg = 'Auto-Fix failed: ' + ex.getMessage();
+            AuraHandledException e = new AuraHandledException(msg);
+            e.setMessage(msg);
+            throw e;
         }
     }
 

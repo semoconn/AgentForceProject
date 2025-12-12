@@ -8,7 +8,7 @@
     </values>
     <values>
         <field>Query_Condition__c</field>
-        <value xsi:type="xsd:string">Owner.Type = 'Queue' AND CreatedDate &lt; LAST_N_HOURS:48 AND Status = 'Open - Not Contacted'</value>
+        <value xsi:type="xsd:string">Owner.Type = 'Queue' AND CreatedDate &lt; LAST_N_DAYS:2 AND Status = 'Open - Not Contacted'</value>
     </values>
     <values>
         <field>Threshold_Default__c</field>

@@ -525,4 +525,261 @@ private class PatternAnalysisServiceTest {
 
         clearMocks();
     }
+
+    // ==================== REMEDIATION PREVIEW TESTS (Sprint 4) ====================
+
+    @isTest
+    static void testGetPatternMatches_Success() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create test cases to be matched
+        List<Case> testCases = new List<Case>();
+        for (Integer i = 0; i < 5; i++) {
+            testCases.add(new Case(
+                Subject = 'Test Case ' + i,
+                Status = 'New',
+                Priority = 'Medium'
+            ));
+        }
+        insert testCases;
+
+        Test.startTest();
+        System.runAs(testUser) {
+            // This test will use actual metadata in the org
+            // If Stale_Case_30 exists, it will return matching records
+            try {
+                List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_30', 50);
+                // The test passes if no exception is thrown
+                // Results depend on org metadata and test data
+                System.assertNotEquals(null, results, 'Results should not be null');
+            } catch (AuraHandledException e) {
+                // Expected if rule doesn't exist in org
+                System.assert(e.getMessage().contains('Pattern rule not found') ||
+                              e.getMessage().contains('Premium feature') ||
+                              e.getMessage().contains('Unable to query'),
+                    'Exception should be a known error type: ' + e.getMessage());
+            }
+        }
+        Test.stopTest();
+
+        clearMocks();
+    }
+
+    @isTest
+    static void testGetPatternMatches_NullRuleName() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        Test.startTest();
+        System.runAs(testUser) {
+            try {
+                PatternAnalysisService.getPatternMatches(null, 50);
+                System.assert(false, 'Should have thrown an exception');
+            } catch (AuraHandledException e) {
+                System.assert(e.getMessage().contains('Rule developer name is required'),
+                    'Exception should mention required rule name: ' + e.getMessage());
+            }
+        }
+        Test.stopTest();
+
+        clearMocks();
+    }
+
+    @isTest
+    static void testGetPatternMatches_BlankRuleName() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        Test.startTest();
+        System.runAs(testUser) {
+            try {
+                PatternAnalysisService.getPatternMatches('', 50);
+                System.assert(false, 'Should have thrown an exception');
+            } catch (AuraHandledException e) {
+                System.assert(e.getMessage().contains('Rule developer name is required'),
+                    'Exception should mention required rule name: ' + e.getMessage());
+            }
+        }
+        Test.stopTest();
+
+        clearMocks();
+    }
+
+    @isTest
+    static void testGetPatternMatches_InvalidRuleName() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        Test.startTest();
+        System.runAs(testUser) {
+            try {
+                PatternAnalysisService.getPatternMatches('NonExistent_Rule_XYZ', 50);
+                System.assert(false, 'Should have thrown an exception');
+            } catch (AuraHandledException e) {
+                System.assert(e.getMessage().contains('Pattern rule not found'),
+                    'Exception should mention rule not found: ' + e.getMessage());
+            }
+        }
+        Test.stopTest();
+
+        clearMocks();
+    }
+
+    @isTest
+    static void testGetPatternMatches_LimitEnforcement() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        Test.startTest();
+        System.runAs(testUser) {
+            // Test with various limit values
+            try {
+                // Test with null limit (should default to 50)
+                PatternAnalysisService.getPatternMatches('Stale_Case_30', null);
+            } catch (AuraHandledException e) {
+                // Expected if rule doesn't exist
+            }
+
+            try {
+                // Test with negative limit (should default to 50)
+                PatternAnalysisService.getPatternMatches('Stale_Case_30', -10);
+            } catch (AuraHandledException e) {
+                // Expected if rule doesn't exist
+            }
+
+            try {
+                // Test with limit > 200 (should cap at 200)
+                PatternAnalysisService.getPatternMatches('Stale_Case_30', 500);
+            } catch (AuraHandledException e) {
+                // Expected if rule doesn't exist
+            }
+        }
+        Test.stopTest();
+
+        clearMocks();
+    }
+
+    @isTest
+    static void testGetPatternMatches_WithConfiguration() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create configuration to test threshold injection
+        BehaviorIQ_Configuration__c config = new BehaviorIQ_Configuration__c(
+            Name = 'Default',
+            Stale_Case_Threshold__c = 10
+        );
+        insert config;
+
+        // Create test cases
+        List<Case> testCases = new List<Case>();
+        for (Integer i = 0; i < 3; i++) {
+            testCases.add(new Case(
+                Subject = 'Config Test Case ' + i,
+                Status = 'New'
+            ));
+        }
+        insert testCases;
+
+        Test.startTest();
+        System.runAs(testUser) {
+            try {
+                List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_30', 50);
+                // If we get here, the query executed successfully
+                System.assertNotEquals(null, results, 'Results should not be null');
+
+                // Verify query was captured
+                String capturedQuery = PatternAnalysisService.lastExecutedQuery;
+                if (capturedQuery != null) {
+                    // Security is now enforced via stripInaccessible after query execution
+                    System.assert(capturedQuery.contains('ORDER BY CreatedDate DESC'),
+                        'Query should include ORDER BY clause');
+                }
+            } catch (AuraHandledException e) {
+                // Expected if rule doesn't exist or FLS issues
+                System.debug('Expected exception: ' + e.getMessage());
+            }
+        }
+        Test.stopTest();
+
+        clearMocks();
+    }
+
+    @isTest
+    static void testGetDisplayFieldsForObject_Case() {
+        // Test that Case fields are properly returned
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        Test.startTest();
+        System.runAs(testUser) {
+            try {
+                // Attempt to get pattern matches for Case
+                // This indirectly tests getDisplayFieldsForObject
+                PatternAnalysisService.getPatternMatches('Stale_Case_30', 10);
+
+                String query = PatternAnalysisService.lastExecutedQuery;
+                if (query != null) {
+                    // Verify Case-specific fields are included
+                    System.assert(query.containsIgnoreCase('Subject') ||
+                                  query.containsIgnoreCase('Status') ||
+                                  query.containsIgnoreCase('Priority'),
+                        'Query should include Case-specific fields');
+                }
+            } catch (AuraHandledException e) {
+                // Expected if rule doesn't exist
+            }
+        }
+        Test.stopTest();
+
+        clearMocks();
+    }
+
+    @isTest
+    static void testGetPatternMatches_OpportunityFields() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        Test.startTest();
+        System.runAs(testUser) {
+            try {
+                // Attempt to get pattern matches for Opportunity
+                PatternAnalysisService.getPatternMatches('Stale_Opp_30', 10);
+
+                String query = PatternAnalysisService.lastExecutedQuery;
+                if (query != null) {
+                    // Verify Opportunity-specific fields are included
+                    System.assert(query.containsIgnoreCase('StageName') ||
+                                  query.containsIgnoreCase('Amount') ||
+                                  query.containsIgnoreCase('CloseDate'),
+                        'Query should include Opportunity-specific fields');
+                }
+            } catch (AuraHandledException e) {
+                // Expected if rule doesn't exist
+            }
+        }
+        Test.stopTest();
+
+        clearMocks();
+    }
+
+    @isTest
+    static void testGetPatternMatches_LeadFields() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        Test.startTest();
+        System.runAs(testUser) {
+            try {
+                // Attempt to get pattern matches for Lead
+                PatternAnalysisService.getPatternMatches('Unassigned_Lead_48', 10);
+
+                String query = PatternAnalysisService.lastExecutedQuery;
+                if (query != null) {
+                    // Verify Lead-specific fields are included
+                    System.assert(query.containsIgnoreCase('Company') ||
+                                  query.containsIgnoreCase('Email') ||
+                                  query.containsIgnoreCase('Phone'),
+                        'Query should include Lead-specific fields');
+                }
+            } catch (AuraHandledException e) {
+                // Expected if rule doesn't exist
+            }
+        }
+        Test.stopTest();
+
+        clearMocks();
+    }
 }

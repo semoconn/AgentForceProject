@@ -1,0 +1,92 @@
+/* Remediation Preview Modal Styles */
+
+.datatable-container {
+    border: 1px solid #dddbda;
+    border-radius: 0.25rem;
+    overflow: hidden;
+}
+
+/* Ensure proper modal sizing */
+.slds-modal__container {
+    max-width: 80rem;
+    width: 90%;
+}
+
+/* Header styling */
+.slds-modal__header.slds-theme_info {
+    background: linear-gradient(135deg, #0070d2 0%, #1589ee 100%);
+}
+
+/* Summary banner customization */
+.slds-notify_alert {
+    border-radius: 0.25rem;
+}
+
+/* Badge styling */
+.slds-badge_lightest {
+    background-color: #f3f2f2;
+    color: #080707;
+    font-weight: 500;
+}
+
+/* Footer alignment */
+.slds-modal__footer {
+    background-color: #f3f2f2;
+}
+
+/* Loading state container */
+.slds-is-relative {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Empty state illustration */
+.slds-illustration__svg {
+    max-width: 200px;
+    margin: 0 auto;
+    display: block;
+}
+
+/* Celebration icon for "All Caught Up" state */
+.celebration-icon {
+    display: inline-block;
+    animation: celebrate 0.6s ease-in-out;
+}
+
+@keyframes celebrate {
+    0% { transform: scale(0.5); opacity: 0; }
+    50% { transform: scale(1.2); }
+    100% { transform: scale(1); opacity: 1; }
+}
+
+/* Tab styling enhancements */
+lightning-tabset {
+    --sds-c-tabs-list-sizing-border: none;
+}
+
+/* Success theme for fixed tab banner */
+.slds-theme_success {
+    background-color: #2e844a;
+}
+
+/* Warning theme for pending tab banner */
+.slds-theme_warning {
+    background-color: #fe9339;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .slds-modal__container {
+        width: 95%;
+        margin: 0.5rem;
+    }
+
+    .slds-modal__content {
+        padding: 0.75rem !important;
+    }
+
+    .datatable-container {
+        overflow-x: auto;
+    }
+}

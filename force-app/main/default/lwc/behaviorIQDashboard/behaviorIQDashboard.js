@@ -14,18 +14,30 @@ export default class BehaviorIQDashboard extends LightningElement {
     @track recentLogs = [];
     @track isPremium = false;
     @track isLoading = true;
-    
+
     // Modal & Tabs
     @track isModalOpen = false;
-    @track activeTab = 'settings'; 
-    
+    @track activeTab = 'settings';
+
     // Solution Modal
     @track isSolutionModalOpen = false;
     @track selectedRow = {};
     @track solutionSteps = [];
 
+    // Remediation Preview Modal (Sprint 4)
+    @track previewRuleDeveloperName = '';
+    @track previewObjectApiName = '';
+    @track previewRuleLabel = '';
+    @track previewFixType = '';
+
+    // Getter to safely control modal visibility - only show when we have valid data
+    get isPreviewModalOpen() {
+        return this._isPreviewModalOpen && this.previewRuleDeveloperName;
+    }
+    _isPreviewModalOpen = false;
+
     // Filter State
-    @track currentFilter = 'Active'; 
+    @track currentFilter = 'Active';
 
     _wiredPainPointsResult;
     _wiredDashboardResult;
@@ -149,13 +161,43 @@ export default class BehaviorIQDashboard extends LightningElement {
 
     handleAutoFix(event) {
         if (!this.isPremium) { this.handlePremiumClick(); return; }
-        
-        // Logic to support button click OR modal click
+
+        // Get pain point info from button data attributes or selected row
+        let objectApiName = event.currentTarget.dataset.type || (this.selectedRow ? this.selectedRow.Object_API_Name__c : null);
+        let uniqueKey = event.currentTarget.dataset.key || (this.selectedRow ? this.selectedRow.Unique_Key__c : null);
+        let ruleLabel = event.currentTarget.dataset.label || (this.selectedRow ? this.selectedRow.Name : null);
+
+        if (!objectApiName) {
+            return this.showToast('Error', 'Unable to determine object type.', 'error');
+        }
+
+        // Map object to rule developer name
+        const ruleDeveloperName = this.mapObjectToRuleDeveloperName(objectApiName, uniqueKey);
+
+        if (!ruleDeveloperName) {
+            return this.showToast('Error', 'No pattern rule found for this object.', 'warning');
+        }
+
+        // Close solution modal if open, then open preview modal
+        this.closeSolutionModal();
+
+        // Set preview modal properties
+        this.previewRuleDeveloperName = ruleDeveloperName;
+        this.previewObjectApiName = objectApiName;
+        this.previewRuleLabel = ruleLabel || objectApiName + ' Issues';
+        this.previewFixType = this.mapObjectToFixType(objectApiName);
+        this._isPreviewModalOpen = true;
+    }
+
+    // Legacy direct fix method (for backward compatibility or quick fixes)
+    handleDirectFix(event) {
+        if (!this.isPremium) { this.handlePremiumClick(); return; }
+
         let rawId = event.currentTarget.dataset.id || (this.selectedRow ? this.selectedRow.Example_Records__c : null);
         let objectApiName = event.currentTarget.dataset.type || (this.selectedRow ? this.selectedRow.Object_API_Name__c : null);
 
         if (!rawId) return this.showToast('Error', 'No target record ID found.', 'error');
-        
+
         const fixType = this.mapObjectToFixType(objectApiName);
         if (!fixType) return this.showToast('Error', 'No Auto-Fix available.', 'warning');
 
@@ -178,6 +220,41 @@ export default class BehaviorIQDashboard extends LightningElement {
     mapObjectToFixType(apiName) {
         const map = { 'Case': 'Stale Case', 'Lead': 'Unassigned Lead', 'Opportunity': 'Stale Opportunity' };
         return map[apiName] || null;
+    }
+
+    mapObjectToRuleDeveloperName(objectApiName, uniqueKey) {
+        // The uniqueKey from the pain point IS the rule's DeveloperName - use it directly
+        // This ensures we always use the exact metadata name (e.g., Stale_Opp_90, not Stale_Opp_30)
+        if (uniqueKey) {
+            return uniqueKey;
+        }
+
+        // Fallback: Only used if uniqueKey is somehow missing (shouldn't happen with proper data)
+        // These are just defaults and may not match actual metadata in the org
+        const defaultRuleMap = {
+            'Case': 'Stale_Case_30',
+            'Lead': 'Unassigned_Lead_48',
+            'Opportunity': 'Stale_Opp_90'
+        };
+
+        return defaultRuleMap[objectApiName] || null;
+    }
+
+    // --- Remediation Preview Modal Handlers ---
+
+    handlePreviewClose() {
+        this._isPreviewModalOpen = false;
+        this.previewRuleDeveloperName = '';
+        this.previewObjectApiName = '';
+        this.previewRuleLabel = '';
+        this.previewFixType = '';
+    }
+
+    handlePreviewFixComplete(event) {
+        const { fixedCount, ruleDeveloperName } = event.detail;
+        this.handlePreviewClose();
+        this.showToast('Success', `Successfully fixed ${fixedCount} record(s).`, 'success');
+        refreshApex(this._wiredPainPointsResult);
     }
 
     handleDismiss(event) {
