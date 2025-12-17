@@ -178,6 +178,190 @@ private class PatternAnalysisServiceTest {
             'Default retention days should be 90');
     }
 
+    // ==================== SNAPSHOT CREATION TESTS (Sprint 5) ====================
+
+    @isTest
+    static void testSnapshotCreation() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create test cases that will match the Stale_Case rule
+        List<Case> testCases = new List<Case>();
+        for (Integer i = 0; i < 5; i++) {
+            testCases.add(new Case(
+                Subject = 'Snapshot Test Case ' + i,
+                Status = 'New'
+            ));
+        }
+
+        System.runAs(testUser) {
+            insert testCases;
+
+            // Backdate cases to ensure they match the stale pattern
+            for (Case c : testCases) {
+                Test.setCreatedDate(c.Id, Datetime.now().addDays(-60));
+            }
+        }
+
+        // Clear any existing pain points and snapshots
+        delete [SELECT Id FROM Identified_Pain_Point__c];
+        delete [SELECT Id FROM Behavior_Snapshot__c];
+
+        Test.startTest();
+        System.runAs(testUser) {
+            // Execute the batch job - this should create pain points AND snapshots
+            Database.executeBatch(new PatternAnalysisService(), 50);
+        }
+        Test.stopTest();
+
+        // Verify the batch completed
+        List<AsyncApexJob> jobs = [
+            SELECT Id, Status, NumberOfErrors
+            FROM AsyncApexJob
+            WHERE ApexClass.Name = 'PatternAnalysisService'
+            AND Status = 'Completed'
+            ORDER BY CreatedDate DESC
+            LIMIT 1
+        ];
+        System.assertEquals(1, jobs.size(), 'Batch job should complete successfully');
+
+        // Verify pain points were created (depends on org metadata)
+        List<Identified_Pain_Point__c> painPoints = [
+            SELECT Id, Unique_Key__c, Occurrences__c, Impact_Score__c
+            FROM Identified_Pain_Point__c
+        ];
+
+        // Verify snapshots were created for each pain point
+        List<Behavior_Snapshot__c> snapshots = [
+            SELECT Id, Metric_Name__c, Record_Count__c, Impact_Score__c,
+                   Snapshot_Date__c, Related_Pain_Point__c
+            FROM Behavior_Snapshot__c
+        ];
+
+        // If pain points exist, snapshots should also exist
+        if (!painPoints.isEmpty()) {
+            System.assert(!snapshots.isEmpty(),
+                'Snapshots should be created when pain points are detected. Pain points: ' +
+                painPoints.size() + ', Snapshots: ' + snapshots.size());
+
+            // Verify snapshot has correct date
+            for (Behavior_Snapshot__c snapshot : snapshots) {
+                System.assertEquals(Date.today(), snapshot.Snapshot_Date__c,
+                    'Snapshot date should be today');
+                System.assertNotEquals(null, snapshot.Metric_Name__c,
+                    'Snapshot should have a metric name');
+            }
+        }
+
+        clearMocks();
+    }
+
+    @isTest
+    static void testSnapshotCreation_MatchesPainPointData() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create a configuration for consistent threshold
+        BehaviorIQ_Configuration__c config = new BehaviorIQ_Configuration__c(
+            Name = 'Default',
+            Stale_Case_Threshold__c = 5
+        );
+        insert config;
+
+        // Create test cases that will match the stale pattern
+        List<Case> testCases = new List<Case>();
+        for (Integer i = 0; i < 3; i++) {
+            testCases.add(new Case(
+                Subject = 'Match Test Case ' + i,
+                Status = 'New'
+            ));
+        }
+
+        System.runAs(testUser) {
+            insert testCases;
+
+            // Backdate cases to ensure they match
+            for (Case c : testCases) {
+                Test.setCreatedDate(c.Id, Datetime.now().addDays(-30));
+            }
+        }
+
+        // Clear existing data
+        delete [SELECT Id FROM Identified_Pain_Point__c];
+        delete [SELECT Id FROM Behavior_Snapshot__c];
+
+        Test.startTest();
+        System.runAs(testUser) {
+            Database.executeBatch(new PatternAnalysisService(), 50);
+        }
+        Test.stopTest();
+
+        // Verify relationship between pain points and snapshots
+        Map<String, Identified_Pain_Point__c> painPointsByKey = new Map<String, Identified_Pain_Point__c>();
+        for (Identified_Pain_Point__c pp : [SELECT Id, Unique_Key__c, Occurrences__c, Impact_Score__c FROM Identified_Pain_Point__c]) {
+            painPointsByKey.put(pp.Unique_Key__c, pp);
+        }
+
+        List<Behavior_Snapshot__c> snapshots = [
+            SELECT Id, Metric_Name__c, Record_Count__c, Impact_Score__c, Related_Pain_Point__c
+            FROM Behavior_Snapshot__c
+        ];
+
+        // Verify each snapshot matches its related pain point
+        for (Behavior_Snapshot__c snapshot : snapshots) {
+            if (snapshot.Related_Pain_Point__c != null) {
+                // Find the related pain point
+                Identified_Pain_Point__c relatedPP = null;
+                for (Identified_Pain_Point__c pp : painPointsByKey.values()) {
+                    if (pp.Id == snapshot.Related_Pain_Point__c) {
+                        relatedPP = pp;
+                        break;
+                    }
+                }
+
+                if (relatedPP != null) {
+                    System.assertEquals(relatedPP.Occurrences__c, snapshot.Record_Count__c,
+                        'Snapshot record count should match pain point occurrences');
+                    System.assertEquals(relatedPP.Impact_Score__c, snapshot.Impact_Score__c,
+                        'Snapshot impact score should match pain point impact score');
+                }
+            }
+        }
+
+        clearMocks();
+    }
+
+    @isTest
+    static void testSnapshotNotCreatedForRealTimeChecks() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Clear existing snapshots
+        delete [SELECT Id FROM Behavior_Snapshot__c];
+
+        Integer snapshotsBefore = [SELECT COUNT() FROM Behavior_Snapshot__c];
+
+        Test.startTest();
+        System.runAs(testUser) {
+            // Create a service instance directly (not through batch)
+            // This simulates a real-time check scenario
+            PatternAnalysisService service = new PatternAnalysisService();
+
+            // Call getPatternMatches which is a real-time API
+            // It should NOT create snapshots
+            try {
+                PatternAnalysisService.getPatternMatches('Stale_Case_30', 50);
+            } catch (AuraHandledException e) {
+                // Expected if rule doesn't exist - that's fine
+            }
+        }
+        Test.stopTest();
+
+        Integer snapshotsAfter = [SELECT COUNT() FROM Behavior_Snapshot__c];
+
+        System.assertEquals(snapshotsBefore, snapshotsAfter,
+            'Real-time API calls should NOT create snapshots');
+
+        clearMocks();
+    }
+
     // ==================== DYNAMIC QUERY INJECTION TESTS ====================
 
     @isTest

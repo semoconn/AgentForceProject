@@ -2,7 +2,7 @@
  * @description Metadata-Driven Batch Engine for BehaviorIQ (Phase 3).
  * Iterates through Behavior_Pattern_Rule__mdt records and executes dynamic SOQL to detect pain points.
  */
-public with sharing class PatternAnalysisService implements Database.Batchable<SObject>, Schedulable {
+public with sharing class PatternAnalysisService implements Database.Batchable<SObject>, Database.Stateful, Schedulable {
 
     private static final String JOB_NAME = 'Pattern Analysis Service';
     public static final Integer DEFAULT_RETENTION_DAYS = 90;
@@ -14,9 +14,12 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
 
     private Set<String> dismissedPainPointKeys;
     private BehaviorIQ_Configuration__c cachedConfig;
+    private List<Behavior_Snapshot__c> pendingSnapshots;
+    private Boolean createSnapshots = false;
 
     public PatternAnalysisService() {
         dismissedPainPointKeys = new Set<String>();
+        pendingSnapshots = new List<Behavior_Snapshot__c>();
         loadDismissals();
     }
 
@@ -25,9 +28,29 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
     }
 
     public Iterable<SObject> start(Database.BatchableContext bc) {
+        // Enable snapshot creation when running as a batch job
+        createSnapshots = true;
+
+        // Delete today's snapshots first to prevent duplicates (replaces separate DeleteSnapshotBatch)
+        // This ensures atomic operation - delete and insert happen in same job, no race condition
+        if (Schema.sObjectType.Behavior_Snapshot__c.isDeletable()) {
+            try {
+                List<Behavior_Snapshot__c> todaysSnapshots = [
+                    SELECT Id FROM Behavior_Snapshot__c
+                    WHERE Snapshot_Date__c = TODAY
+                    LIMIT 10000
+                ];
+                if (!todaysSnapshots.isEmpty()) {
+                    delete todaysSnapshots;
+                }
+            } catch (Exception e) {
+                System.debug(LoggingLevel.WARN, 'Failed to delete today\'s snapshots: ' + e.getMessage());
+            }
+        }
+
         // Fetch all defined rules from Metadata
         return [
-            SELECT DeveloperName, MasterLabel, Object_API_Name__c, Query_Condition__c, 
+            SELECT DeveloperName, MasterLabel, Object_API_Name__c, Query_Condition__c,
                    Is_Premium__c, Threshold_Default__c
             FROM Behavior_Pattern_Rule__mdt
         ];
@@ -179,6 +202,7 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
     }
 
     public void finish(Database.BatchableContext bc) {
+        insertPendingSnapshots();
         logJobStatus(bc);
         deleteOldLogs();
     }
@@ -187,23 +211,63 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
 
     private void upsertPainPoint(String key, String label, String description, String obj, Integer count, String examples) {
         Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
-            Unique_Key__c = key, 
-            Name = label, 
+            Unique_Key__c = key,
+            Name = label,
             Description__c = description,
-            Object_API_Name__c = obj, 
+            Object_API_Name__c = obj,
             Occurrences__c = count,
             Impact_Score__c = count * 10,
             Example_Records__c = examples,
-            Last_Detected__c = System.now(), 
+            Last_Detected__c = System.now(),
             Status__c = 'New'
         );
 
         try {
             SObjectAccessDecision securityDecision = Security.stripInaccessible(AccessType.UPSERTABLE, new List<Identified_Pain_Point__c>{pp});
-            Database.upsert(securityDecision.getRecords(), Identified_Pain_Point__c.Unique_Key__c, false);
+            List<SObject> upsertedRecords = securityDecision.getRecords();
+            Database.UpsertResult[] results = Database.upsert(upsertedRecords, Identified_Pain_Point__c.Unique_Key__c, false);
+
+            // Create snapshot if running in batch context and upsert succeeded
+            if (createSnapshots && !results.isEmpty() && results[0].isSuccess()) {
+                Id painPointId = results[0].getId();
+                createSnapshot(key, count, count * 10, painPointId);
+            }
         } catch (Exception e) {
             System.debug(LoggingLevel.ERROR, 'Upsert failed: ' + e.getMessage());
         }
+    }
+
+    /**
+     * @description Creates a snapshot record to track historical trend data.
+     * Only called when running in batch context to avoid overhead during real-time operations.
+     */
+    private void createSnapshot(String metricName, Integer recordCount, Integer impactScore, Id painPointId) {
+        Behavior_Snapshot__c snapshot = new Behavior_Snapshot__c(
+            Snapshot_Date__c = Date.today(),
+            Metric_Name__c = metricName,
+            Record_Count__c = recordCount,
+            Impact_Score__c = impactScore,
+            Related_Pain_Point__c = painPointId
+        );
+        pendingSnapshots.add(snapshot);
+    }
+
+    /**
+     * @description Inserts all pending snapshot records. Called at the end of batch execution.
+     */
+    private void insertPendingSnapshots() {
+        if (pendingSnapshots.isEmpty()) {
+            return;
+        }
+
+        try {
+            SObjectAccessDecision securityDecision = Security.stripInaccessible(AccessType.CREATABLE, pendingSnapshots);
+            Database.insert(securityDecision.getRecords(), false);
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'Snapshot insert failed: ' + e.getMessage());
+        }
+
+        pendingSnapshots.clear();
     }
 
     private void loadDismissals() {

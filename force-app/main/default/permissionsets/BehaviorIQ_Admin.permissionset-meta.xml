@@ -235,6 +235,23 @@
         <readable>true</readable>
     </fieldPermissions>
 
+    <!-- FIELD PERMISSIONS: Behavior_Snapshot__c (excluding required fields) -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Behavior_Snapshot__c.Record_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Behavior_Snapshot__c.Impact_Score__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Behavior_Snapshot__c.Related_Pain_Point__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+
     <!-- FIELD PERMISSIONS: Remediation_Log__c (excluding required fields) -->
     <fieldPermissions>
         <editable>true</editable>
@@ -326,6 +343,15 @@
         <object>Remediation_Log__c</object>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
+    <objectPermissions>
+        <allowCreate>true</allowCreate>
+        <allowDelete>true</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>true</modifyAllRecords>
+        <object>Behavior_Snapshot__c</object>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
 
     <!-- TAB SETTINGS -->
     <tabSettings>
@@ -342,6 +368,10 @@
     </tabSettings>
     <tabSettings>
         <tab>Remediation_Log__c</tab>
+        <visibility>Visible</visibility>
+    </tabSettings>
+    <tabSettings>
+        <tab>Behavior_Snapshot__c</tab>
         <visibility>Visible</visibility>
     </tabSettings>
 </PermissionSet>
