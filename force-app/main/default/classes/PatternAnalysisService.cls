@@ -73,9 +73,22 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
             return;
         }
 
-        // 3. Dynamic Detection with Admin Configuration Injection
+        // 3. Dynamic Object Existence Check (for custom objects that may not be installed)
+        String objectApiName = rule.Object_API_Name__c;
+        if (!isObjectAccessible(objectApiName)) {
+            System.debug(LoggingLevel.INFO, 'Skipping rule [' + rule.DeveloperName + ']: Object ' + objectApiName + ' is not accessible or does not exist.');
+            return;
+        }
+
+        // 4. FLS Check for fields referenced in query condition
+        if (!validateQueryFieldsAccessible(objectApiName, rule.Query_Condition__c)) {
+            System.debug(LoggingLevel.WARN, 'Skipping rule [' + rule.DeveloperName + ']: One or more required fields are not accessible.');
+            return;
+        }
+
+        // 5. Dynamic Detection with Admin Configuration Injection
         String effectiveCondition = getEffectiveQuery(rule);
-        String queryString = 'SELECT Id FROM ' + String.escapeSingleQuotes(rule.Object_API_Name__c) +
+        String queryString = 'SELECT Id FROM ' + String.escapeSingleQuotes(objectApiName) +
                              ' WHERE ' + effectiveCondition +
                              ' LIMIT 2000';
 
@@ -94,7 +107,7 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
             return;
         }
 
-        // 4. Result Generation
+        // 6. Result Generation
         if (!detectedRecords.isEmpty()) {
             Integer count = detectedRecords.size();
             List<Id> exampleIds = new List<Id>();
@@ -111,6 +124,253 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
                 JSON.serialize(exampleIds)
             );
         }
+    }
+
+    /**
+     * @description Checks if an object exists and is accessible in the current org.
+     * Uses Schema.getGlobalDescribe() for weak reference checking - prevents crashes
+     * when custom objects from managed packages are not installed.
+     * @param objectApiName The API name of the object to check
+     * @return True if the object exists and is accessible, false otherwise
+     */
+    @TestVisible
+    private static Boolean isObjectAccessible(String objectApiName) {
+        if (String.isBlank(objectApiName)) {
+            return false;
+        }
+
+        try {
+            // Use getGlobalDescribe() for dynamic/weak reference - doesn't crash if object doesn't exist
+            Map<String, Schema.SObjectType> globalDescribe = Schema.getGlobalDescribe();
+            // Schema.getGlobalDescribe() keys are case-insensitive in Apex, but use lowercase for consistency
+            Schema.SObjectType sObjType = globalDescribe.get(objectApiName.toLowerCase());
+
+            if (sObjType == null) {
+                // Object doesn't exist in this org
+                return false;
+            }
+
+            // Check if the object is accessible (read permission)
+            Schema.DescribeSObjectResult describeResult = sObjType.getDescribe();
+            return describeResult.isAccessible();
+
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'Error checking object accessibility for ' + objectApiName + ': ' + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * @description Validates that all fields referenced in a query condition are accessible.
+     * Parses the query condition to extract field names and checks FLS for each.
+     * Supports standard fields, custom fields, and relationship traversals (e.g., Account.Rating).
+     * @param objectApiName The API name of the object being queried
+     * @param queryCondition The WHERE clause condition to validate
+     * @return True if all referenced fields are accessible, false otherwise
+     */
+    @TestVisible
+    private static Boolean validateQueryFieldsAccessible(String objectApiName, String queryCondition) {
+        if (String.isBlank(queryCondition)) {
+            return true; // No condition means no fields to validate
+        }
+
+        try {
+            Map<String, Schema.SObjectType> globalDescribe = Schema.getGlobalDescribe();
+            // Use lowercase for case-insensitive lookup
+            Schema.SObjectType sObjType = globalDescribe.get(objectApiName.toLowerCase());
+
+            if (sObjType == null) {
+                return false;
+            }
+
+            Schema.DescribeSObjectResult describeResult = sObjType.getDescribe();
+            Map<String, Schema.SObjectField> fieldMap = describeResult.fields.getMap();
+
+            // Extract field names from the query condition
+            Set<String> extractedFields = extractFieldsFromCondition(queryCondition);
+
+            for (String fieldRef : extractedFields) {
+                // Handle relationship traversals like "Account.Rating" or "Owner.Type"
+                if (fieldRef.contains('.')) {
+                    if (!validateRelationshipFieldAccessible(objectApiName, fieldRef, globalDescribe)) {
+                        System.debug(LoggingLevel.DEBUG, 'Relationship field not accessible: ' + fieldRef);
+                        return false;
+                    }
+                } else {
+                    // Simple field on the base object
+                    Schema.SObjectField field = fieldMap.get(fieldRef.toLowerCase());
+                    if (field == null) {
+                        // Field doesn't exist - might be a special keyword like TRUE, FALSE, etc.
+                        // Check if it's a known SOQL literal
+                        if (!isKnownSoqlLiteral(fieldRef)) {
+                            System.debug(LoggingLevel.DEBUG, 'Field not found: ' + fieldRef + ' on ' + objectApiName);
+                            return false;
+                        }
+                    } else if (!field.getDescribe().isAccessible()) {
+                        System.debug(LoggingLevel.DEBUG, 'Field not accessible: ' + fieldRef);
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'Error validating field accessibility: ' + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * @description Extracts field names from a SOQL WHERE clause condition.
+     * Handles common patterns like field = value, field IN (...), field > value, etc.
+     * Properly ignores text inside single quotes (string literals).
+     * @param condition The WHERE clause condition
+     * @return Set of field names referenced in the condition
+     */
+    private static Set<String> extractFieldsFromCondition(String condition) {
+        Set<String> fields = new Set<String>();
+
+        if (String.isBlank(condition)) {
+            return fields;
+        }
+
+        // Common SOQL operators and keywords to filter out
+        Set<String> operators = new Set<String>{
+            '=', '!=', '<>', '<', '>', '<=', '>=', 'LIKE', 'IN', 'NOT', 'AND', 'OR',
+            'NULL', 'TRUE', 'FALSE', 'INCLUDES', 'EXCLUDES', 'TODAY', 'YESTERDAY',
+            'TOMORROW', 'LAST_WEEK', 'THIS_WEEK', 'NEXT_WEEK', 'LAST_MONTH', 'THIS_MONTH',
+            'NEXT_MONTH', 'LAST_QUARTER', 'THIS_QUARTER', 'NEXT_QUARTER', 'LAST_YEAR',
+            'THIS_YEAR', 'NEXT_YEAR', 'LAST_N_DAYS', 'NEXT_N_DAYS', 'LAST_N_WEEKS',
+            'NEXT_N_WEEKS', 'LAST_N_MONTHS', 'NEXT_N_MONTHS', 'LAST_N_QUARTERS',
+            'NEXT_N_QUARTERS', 'LAST_N_YEARS', 'NEXT_N_YEARS', 'THIS_FISCAL_QUARTER',
+            'LAST_FISCAL_QUARTER', 'NEXT_FISCAL_QUARTER', 'THIS_FISCAL_YEAR',
+            'LAST_FISCAL_YEAR', 'NEXT_FISCAL_YEAR', 'LAST_N_FISCAL_QUARTERS',
+            'NEXT_N_FISCAL_QUARTERS', 'LAST_N_FISCAL_YEARS', 'NEXT_N_FISCAL_YEARS'
+        };
+
+        // First, remove all content inside single quotes (string literals)
+        // This prevents treating 'Closed' or 'New' as field names
+        String conditionWithoutStrings = condition.replaceAll('\'[^\']*\'', ' ');
+
+        // Tokenize the condition - split on spaces, parentheses, commas, and operators
+        String tokenized = conditionWithoutStrings.replaceAll('[(),:]', ' ');
+        tokenized = tokenized.replaceAll('!=|<>|<=|>=|=|<|>', ' ');
+        List<String> tokens = tokenized.split('\\s+');
+
+        for (String token : tokens) {
+            token = token.trim();
+            if (String.isBlank(token)) continue;
+
+            // Skip numeric values
+            if (token.isNumeric()) continue;
+
+            // Skip date literals with numbers (e.g., LAST_N_DAYS:30 - already handled by : split)
+            // but handle LAST_N_DAYS without number
+            if (token.contains(':') && !token.contains('.')) continue;
+
+            // Skip known operators and keywords
+            if (operators.contains(token.toUpperCase())) continue;
+
+            // This looks like a field reference
+            fields.add(token);
+        }
+
+        return fields;
+    }
+
+    /**
+     * @description Validates accessibility of a relationship field traversal.
+     * @param baseObjectApiName The API name of the starting object
+     * @param fieldRef The relationship field reference (e.g., "Account.Rating")
+     * @param globalDescribe The global describe map
+     * @return True if all parts of the relationship are accessible
+     */
+    private static Boolean validateRelationshipFieldAccessible(String baseObjectApiName, String fieldRef,
+                                                                Map<String, Schema.SObjectType> globalDescribe) {
+        List<String> parts = fieldRef.split('\\.');
+        if (parts.size() < 2) {
+            return false;
+        }
+
+        String relationshipName = parts[0];
+        String targetField = parts[1];
+
+        // Get the base object describe - use lowercase for case-insensitive lookup
+        Schema.SObjectType baseType = globalDescribe.get(baseObjectApiName.toLowerCase());
+        if (baseType == null) {
+            return false;
+        }
+
+        Schema.DescribeSObjectResult baseDescribe = baseType.getDescribe();
+        Map<String, Schema.SObjectField> baseFields = baseDescribe.fields.getMap();
+
+        // Find the relationship field - it might be stored with __r suffix or as a standard relationship
+        String lookupFieldName = relationshipName;
+        if (relationshipName.endsWith('__r')) {
+            lookupFieldName = relationshipName.replace('__r', '__c');
+        } else {
+            // Standard relationships like "Account" -> "AccountId"
+            lookupFieldName = relationshipName + 'Id';
+        }
+
+        Schema.SObjectField lookupField = baseFields.get(lookupFieldName.toLowerCase());
+        if (lookupField == null) {
+            // Try the relationship name directly (for custom relationships)
+            lookupField = baseFields.get((relationshipName + '__c').toLowerCase());
+        }
+
+        if (lookupField == null) {
+            // Special case for Owner relationship
+            if (relationshipName.equalsIgnoreCase('Owner')) {
+                lookupField = baseFields.get('ownerid');
+            }
+        }
+
+        if (lookupField == null) {
+            System.debug(LoggingLevel.DEBUG, 'Lookup field not found for relationship: ' + relationshipName);
+            return false;
+        }
+
+        // Check if the lookup field is accessible
+        if (!lookupField.getDescribe().isAccessible()) {
+            return false;
+        }
+
+        // Get the related object type
+        Schema.DescribeFieldResult fieldDescribe = lookupField.getDescribe();
+        List<Schema.SObjectType> referenceTo = fieldDescribe.getReferenceTo();
+
+        if (referenceTo.isEmpty()) {
+            return false;
+        }
+
+        // Check if the target field on the related object is accessible
+        Schema.SObjectType relatedType = referenceTo[0];
+        Map<String, Schema.SObjectField> relatedFields = relatedType.getDescribe().fields.getMap();
+
+        Schema.SObjectField targetFieldRef = relatedFields.get(targetField.toLowerCase());
+        if (targetFieldRef == null) {
+            System.debug(LoggingLevel.DEBUG, 'Target field not found: ' + targetField + ' on ' + relatedType.getDescribe().getName());
+            return false;
+        }
+
+        return targetFieldRef.getDescribe().isAccessible();
+    }
+
+    /**
+     * @description Checks if a token is a known SOQL literal or keyword that isn't a field.
+     * @param token The token to check
+     * @return True if this is a known SOQL literal
+     */
+    private static Boolean isKnownSoqlLiteral(String token) {
+        Set<String> literals = new Set<String>{
+            'TRUE', 'FALSE', 'NULL', 'TODAY', 'YESTERDAY', 'TOMORROW',
+            'LAST_WEEK', 'THIS_WEEK', 'NEXT_WEEK', 'LAST_MONTH', 'THIS_MONTH',
+            'NEXT_MONTH', 'LAST_QUARTER', 'THIS_QUARTER', 'NEXT_QUARTER',
+            'LAST_YEAR', 'THIS_YEAR', 'NEXT_YEAR'
+        };
+        return literals.contains(token.toUpperCase());
     }
 
     /**
@@ -355,6 +615,24 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
             throw e;
         }
 
+        String objectApiName = rule.Object_API_Name__c;
+
+        // Check if object exists and is accessible
+        if (!isObjectAccessible(objectApiName)) {
+            String msg = 'Object ' + objectApiName + ' is not accessible or does not exist in this org.';
+            AuraHandledException e = new AuraHandledException(msg);
+            e.setMessage(msg);
+            throw e;
+        }
+
+        // Validate FLS for query fields
+        if (!validateQueryFieldsAccessible(objectApiName, rule.Query_Condition__c)) {
+            String msg = 'One or more fields in the rule are not accessible. Please contact your administrator.';
+            AuraHandledException e = new AuraHandledException(msg);
+            e.setMessage(msg);
+            throw e;
+        }
+
         // Get effective query condition with admin threshold injection
         PatternAnalysisService service = new PatternAnalysisService();
         String effectiveCondition = service.getEffectiveQuery(rule);
@@ -367,7 +645,6 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
         }
 
         // Build dynamic query with display fields based on object type
-        String objectApiName = rule.Object_API_Name__c;
         String displayFields = getDisplayFieldsForObject(objectApiName);
 
         String queryString = 'SELECT ' + displayFields +
@@ -434,13 +711,76 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
             fields = new List<String>{ 'Id', 'Name', 'Email', 'Phone', 'Title', 'AccountId', 'CreatedDate', 'OwnerId' };
         } else if (objLower == 'task') {
             fields = new List<String>{ 'Id', 'Subject', 'Status', 'Priority', 'ActivityDate', 'CreatedDate', 'OwnerId' };
+        } else if (objLower == 'contract') {
+            fields = new List<String>{ 'Id', 'ContractNumber', 'Status', 'StartDate', 'EndDate', 'AccountId', 'CreatedDate', 'OwnerId' };
         } else {
-            // Default fields for any other object
-            fields = new List<String>{ 'Id', 'Name', 'CreatedDate', 'OwnerId' };
+            // Default fields for any other object (including custom objects like Project__c)
+            // Uses dynamic field detection for custom objects
+            fields = getDynamicDisplayFields(objectApiName);
         }
 
         // Remove duplicates and return
         Set<String> uniqueFields = new Set<String>(fields);
         return String.join(new List<String>(uniqueFields), ', ');
+    }
+
+    /**
+     * @description Dynamically discovers display fields for custom objects.
+     * Looks for common field patterns (Name, Status, OwnerId, etc.) and returns
+     * a list of accessible fields suitable for display.
+     * @param objectApiName The API name of the custom object
+     * @return List of field names to include in the query
+     */
+    private static List<String> getDynamicDisplayFields(String objectApiName) {
+        List<String> fields = new List<String>{ 'Id' };
+
+        try {
+            Map<String, Schema.SObjectType> globalDescribe = Schema.getGlobalDescribe();
+            // Use lowercase for case-insensitive lookup
+            Schema.SObjectType sObjType = globalDescribe.get(objectApiName.toLowerCase());
+
+            if (sObjType == null) {
+                return fields;
+            }
+
+            Map<String, Schema.SObjectField> fieldMap = sObjType.getDescribe().fields.getMap();
+
+            // Priority fields to look for (in order of preference)
+            List<String> priorityFields = new List<String>{
+                'Name',
+                'Status__c',
+                'Status',
+                'OwnerId',
+                'CreatedDate',
+                'LastModifiedDate',
+                'Description__c',
+                'Description',
+                'Type__c',
+                'Type',
+                'AccountId',
+                'Account__c'
+            };
+
+            for (String fieldName : priorityFields) {
+                Schema.SObjectField field = fieldMap.get(fieldName.toLowerCase());
+                if (field != null && field.getDescribe().isAccessible()) {
+                    fields.add(fieldName);
+                }
+            }
+
+            // Ensure we have at least some useful fields
+            if (fields.size() == 1) {
+                // Just Id - add CreatedDate if available
+                Schema.SObjectField createdDate = fieldMap.get('createddate');
+                if (createdDate != null && createdDate.getDescribe().isAccessible()) {
+                    fields.add('CreatedDate');
+                }
+            }
+
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'Error getting dynamic display fields for ' + objectApiName + ': ' + e.getMessage());
+        }
+
+        return fields;
     }
 }

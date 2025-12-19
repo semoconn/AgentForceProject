@@ -792,4 +792,259 @@ private class PatternFixServiceTest {
 
         clearMockRule();
     }
+
+    // ==================== EMAIL NOTIFICATION TESTS (Sprint 6) ====================
+
+    @isTest
+    static void testEmailNotification_SingleCase() {
+        // Setup - Create account and case
+        Account acc = new Account(Name = 'Hot Customer', Rating = 'Hot');
+        insert acc;
+
+        Case c = new Case(
+            AccountId = acc.Id,
+            Subject = 'Critical Issue',
+            Priority = 'High',
+            Status = 'New'
+        );
+        insert c;
+
+        // Configure mock rule for Email_Notification
+        String config = '{"subject":"CHURN ALERT","body":"Hot account has critical case","recipientField":"Account.OwnerId"}';
+        PatternFixService.mockRule = createMockRule('Email_Notification', false, config);
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        // Note: In tests, emails won't actually send but the code path is exercised
+        service.executeFix(new List<Id>{c.Id}, 'Test_Rule');
+        Test.stopTest();
+
+        // Verify Remediation Log was created (email send is mocked in test context)
+        List<Remediation_Log__c> logs = [
+            SELECT Action_Taken__c, Status__c
+            FROM Remediation_Log__c
+            WHERE Affected_Record_ID__c = :String.valueOf(c.Id)
+        ];
+        System.assertEquals(1, logs.size(), 'Expected exactly 1 remediation log');
+        System.assertEquals('Email_Notification', logs[0].Action_Taken__c, 'Action should be Email_Notification');
+
+        clearMockRule();
+    }
+
+    @isTest
+    static void testEmailNotification_DefaultConfig() {
+        // Setup - Test with minimal config (using defaults)
+        Account acc = new Account(Name = 'Test Account');
+        insert acc;
+
+        Case c = new Case(
+            AccountId = acc.Id,
+            Subject = 'Test Case',
+            Status = 'New'
+        );
+        insert c;
+
+        // Configure mock rule with empty config (use defaults)
+        PatternFixService.mockRule = createMockRule('Email_Notification', false, '{}');
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(new List<Id>{c.Id}, 'Test_Rule');
+        Test.stopTest();
+
+        // Verify log was created
+        List<Remediation_Log__c> logs = [
+            SELECT Action_Taken__c
+            FROM Remediation_Log__c
+            WHERE Affected_Record_ID__c = :String.valueOf(c.Id)
+        ];
+        System.assertEquals(1, logs.size(), 'Expected exactly 1 remediation log');
+        System.assertEquals('Email_Notification', logs[0].Action_Taken__c, 'Action should be Email_Notification');
+
+        clearMockRule();
+    }
+
+    @isTest
+    static void testEmailNotification_BulkCases() {
+        // Setup - Create multiple cases
+        Account acc = new Account(Name = 'Bulk Email Account', Rating = 'Hot');
+        insert acc;
+
+        List<Case> cases = new List<Case>();
+        for (Integer i = 0; i < 10; i++) {
+            cases.add(new Case(
+                AccountId = acc.Id,
+                Subject = 'Bulk Case ' + i,
+                Priority = 'High',
+                Status = 'New'
+            ));
+        }
+        insert cases;
+
+        List<Id> caseIds = new List<Id>();
+        for (Case c : cases) {
+            caseIds.add(c.Id);
+        }
+
+        // Configure mock rule
+        PatternFixService.mockRule = createMockRule('Email_Notification', false, '{"subject":"Bulk Alert"}');
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(caseIds, 'Test_Rule');
+        Test.stopTest();
+
+        // Verify logs were created for all cases
+        List<Remediation_Log__c> logs = [SELECT Id FROM Remediation_Log__c WHERE Action_Taken__c = 'Email_Notification'];
+        System.assertEquals(10, logs.size(), 'Expected 10 remediation logs');
+
+        clearMockRule();
+    }
+
+    // ==================== OPPORTUNITY CREATION TESTS (Sprint 6) ====================
+
+    @isTest
+    static void testOpportunityCreation_SingleContract() {
+        // Setup - Create account and contract
+        Account acc = new Account(Name = 'Contract Customer');
+        insert acc;
+
+        Contract c = new Contract(
+            AccountId = acc.Id,
+            Status = 'Draft',
+            StartDate = Date.today().addMonths(-11),
+            ContractTerm = 12
+        );
+        insert c;
+
+        // Configure mock rule for Opportunity_Creation
+        String config = '{"opportunityName":"Renewal - {ContractNumber}","stageName":"Prospecting","closeDate":"+30","type":"Existing Customer - Renewal"}';
+        PatternFixService.mockRule = createMockRule('Opportunity_Creation', false, config);
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(new List<Id>{c.Id}, 'Test_Rule');
+        Test.stopTest();
+
+        // Verify Opportunity was created
+        List<Opportunity> opps = [SELECT Id, Name, StageName, Type, AccountId, ContractId FROM Opportunity WHERE ContractId = :c.Id];
+        System.assertEquals(1, opps.size(), 'Expected exactly 1 opportunity to be created');
+        System.assertEquals('Prospecting', opps[0].StageName, 'Opportunity stage should be Prospecting');
+        System.assertEquals('Existing Customer - Renewal', opps[0].Type, 'Opportunity type should be set');
+        System.assertEquals(acc.Id, opps[0].AccountId, 'Opportunity should be linked to the account');
+
+        // Verify Remediation Log was created
+        List<Remediation_Log__c> logs = [
+            SELECT Action_Taken__c, Status__c, New_Value__c
+            FROM Remediation_Log__c
+            WHERE Affected_Record_ID__c = :String.valueOf(c.Id)
+        ];
+        System.assertEquals(1, logs.size(), 'Expected exactly 1 remediation log');
+        System.assertEquals('Opportunity_Creation', logs[0].Action_Taken__c, 'Action should be Opportunity_Creation');
+        System.assertEquals('Success', logs[0].Status__c, 'Status should be Success');
+        System.assert(logs[0].New_Value__c.contains('Opportunity Created'), 'New value should indicate opportunity creation');
+
+        clearMockRule();
+    }
+
+    @isTest
+    static void testOpportunityCreation_DefaultConfig() {
+        // Setup - Test with minimal config (using defaults)
+        Account acc = new Account(Name = 'Default Config Customer');
+        insert acc;
+
+        Contract c = new Contract(
+            AccountId = acc.Id,
+            Status = 'Draft',
+            StartDate = Date.today().addMonths(-6),
+            ContractTerm = 6
+        );
+        insert c;
+
+        // Configure mock rule with empty config (use defaults)
+        PatternFixService.mockRule = createMockRule('Opportunity_Creation', false, '{}');
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(new List<Id>{c.Id}, 'Test_Rule');
+        Test.stopTest();
+
+        // Verify Opportunity was created with defaults
+        List<Opportunity> opps = [SELECT StageName FROM Opportunity WHERE ContractId = :c.Id];
+        System.assertEquals(1, opps.size(), 'Expected exactly 1 opportunity');
+        System.assertEquals('Prospecting', opps[0].StageName, 'Should use default stage');
+
+        clearMockRule();
+    }
+
+    @isTest
+    static void testOpportunityCreation_BulkContracts() {
+        // Setup - Create multiple contracts
+        Account acc = new Account(Name = 'Bulk Contract Customer');
+        insert acc;
+
+        List<Contract> contracts = new List<Contract>();
+        for (Integer i = 0; i < 10; i++) {
+            contracts.add(new Contract(
+                AccountId = acc.Id,
+                Status = 'Draft',
+                StartDate = Date.today().addMonths(-11),
+                ContractTerm = 12
+            ));
+        }
+        insert contracts;
+
+        List<Id> contractIds = new List<Id>();
+        for (Contract c : contracts) {
+            contractIds.add(c.Id);
+        }
+
+        // Configure mock rule
+        PatternFixService.mockRule = createMockRule('Opportunity_Creation', false, '{"stageName":"Qualification"}');
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(contractIds, 'Test_Rule');
+        Test.stopTest();
+
+        // Verify opportunities were created for all contracts
+        List<Opportunity> opps = [SELECT Id FROM Opportunity WHERE ContractId IN :contractIds];
+        System.assertEquals(10, opps.size(), 'Expected 10 opportunities');
+
+        // Verify logs
+        List<Remediation_Log__c> logs = [SELECT Id FROM Remediation_Log__c WHERE Action_Taken__c = 'Opportunity_Creation'];
+        System.assertEquals(10, logs.size(), 'Expected 10 remediation logs');
+
+        clearMockRule();
+    }
+
+    @isTest
+    static void testOpportunityCreation_Premium() {
+        // Setup - Test that premium rule works with premium license
+        Account acc = new Account(Name = 'Premium Customer');
+        insert acc;
+
+        Contract c = new Contract(
+            AccountId = acc.Id,
+            Status = 'Draft',
+            StartDate = Date.today().addMonths(-11),
+            ContractTerm = 12
+        );
+        insert c;
+
+        // Configure mock rule as Premium
+        PatternFixService.mockRule = createMockRule('Opportunity_Creation', true, '{"stageName":"Negotiation/Review"}');
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(new List<Id>{c.Id}, 'Test_Rule');
+        Test.stopTest();
+
+        // Verify Opportunity was created (premium license exists from testSetup)
+        List<Opportunity> opps = [SELECT StageName FROM Opportunity WHERE ContractId = :c.Id];
+        System.assertEquals(1, opps.size(), 'Premium user should be able to create renewal opportunity');
+        System.assertEquals('Negotiation/Review', opps[0].StageName, 'Stage should match config');
+
+        clearMockRule();
+    }
 }

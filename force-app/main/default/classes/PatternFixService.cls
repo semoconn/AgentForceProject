@@ -9,6 +9,8 @@ public with sharing class PatternFixService {
     private static final String ACTION_TASK_CREATION = 'Task_Creation';
     private static final String ACTION_OWNER_ASSIGNMENT = 'Owner_Assignment';
     private static final String ACTION_FIELD_UPDATE = 'Field_Update';
+    private static final String ACTION_EMAIL_NOTIFICATION = 'Email_Notification';
+    private static final String ACTION_OPPORTUNITY_CREATION = 'Opportunity_Creation';
 
     // Status constants
     private static final String STATUS_SUCCESS = 'Success';
@@ -67,6 +69,12 @@ public with sharing class PatternFixService {
             }
             when 'Field_Update' {
                 updateFields(recordIds, config);
+            }
+            when 'Email_Notification' {
+                sendEmailNotifications(recordIds, config);
+            }
+            when 'Opportunity_Creation' {
+                createRenewalOpportunities(recordIds, config);
             }
             when else {
                 throw new AuraHandledException('Unknown Fix Type: ' + rule.Fix_Type__c);
@@ -309,6 +317,247 @@ public with sharing class PatternFixService {
         }
 
         return false;
+    }
+
+    /**
+     * @description Sends email notifications for churn risk alerts.
+     * Uses SingleEmailMessage to send alerts to Account owners or configured recipients.
+     */
+    private void sendEmailNotifications(List<Id> recordIds, Map<String, Object> config) {
+        if (recordIds.isEmpty()) return;
+
+        // Get the subject and body from config
+        String subject = (String)config.get('subject');
+        String body = (String)config.get('body');
+        String recipientField = (String)config.get('recipientField');
+
+        if (String.isBlank(subject)) {
+            subject = 'BehaviorIQ Alert: Action Required';
+        }
+        if (String.isBlank(body)) {
+            body = 'A record requires your attention. Please review in Salesforce.';
+        }
+
+        // Determine the object type from the first record ID
+        Schema.SObjectType sType = recordIds[0].getSObjectType();
+        String objectName = sType.getDescribe().getName();
+
+        // Build query to get recipient information
+        String queryFields = 'Id';
+        if (objectName == 'Case') {
+            queryFields = 'Id, CaseNumber, Subject, Account.Name, Account.OwnerId, OwnerId';
+        } else {
+            queryFields = 'Id, OwnerId';
+        }
+
+        String soql = 'SELECT ' + queryFields + ' FROM ' + objectName + ' WHERE Id IN :recordIds';
+        List<SObject> records;
+        try {
+            records = Database.query(soql);
+        } catch (Exception e) {
+            for (Id recId : recordIds) {
+                addLog(recId, ACTION_EMAIL_NOTIFICATION, null, null, STATUS_FAILED, 'Query failed: ' + e.getMessage());
+            }
+            throw new AuraHandledException('Failed to query records for email notification: ' + e.getMessage());
+        }
+
+        List<Messaging.SingleEmailMessage> emails = new List<Messaging.SingleEmailMessage>();
+        Map<Id, String> recordToRecipient = new Map<Id, String>();
+
+        for (SObject rec : records) {
+            Id recipientId;
+
+            // Determine recipient based on config or defaults
+            if (String.isNotBlank(recipientField) && recipientField.contains('.')) {
+                // Handle relationship field like 'Account.OwnerId'
+                List<String> fieldParts = recipientField.split('\\.');
+                SObject related = rec.getSObject(fieldParts[0]);
+                if (related != null) {
+                    recipientId = (Id)related.get(fieldParts[1]);
+                }
+            }
+
+            // Fallback to record owner
+            if (recipientId == null) {
+                recipientId = (Id)rec.get('OwnerId');
+            }
+
+            if (recipientId == null) continue;
+
+            // Build personalized email body
+            String personalizedBody = body;
+            if (objectName == 'Case') {
+                String caseNumber = (String)rec.get('CaseNumber');
+                String caseSubject = (String)rec.get('Subject');
+                SObject account = rec.getSObject('Account');
+                String accountName = account != null ? (String)account.get('Name') : 'Unknown Account';
+
+                personalizedBody = body + '\n\n' +
+                    'Case Number: ' + caseNumber + '\n' +
+                    'Subject: ' + caseSubject + '\n' +
+                    'Account: ' + accountName + '\n' +
+                    'Record Link: ' + URL.getOrgDomainUrl().toExternalForm() + '/' + rec.Id;
+            } else {
+                personalizedBody = body + '\n\nRecord Link: ' + URL.getOrgDomainUrl().toExternalForm() + '/' + rec.Id;
+            }
+
+            Messaging.SingleEmailMessage email = new Messaging.SingleEmailMessage();
+            email.setTargetObjectId(recipientId);
+            email.setSubject(subject);
+            email.setPlainTextBody(personalizedBody);
+            email.setSaveAsActivity(false);
+            emails.add(email);
+
+            recordToRecipient.put(rec.Id, String.valueOf(recipientId));
+        }
+
+        if (emails.isEmpty()) {
+            for (Id recId : recordIds) {
+                addLog(recId, ACTION_EMAIL_NOTIFICATION, null, null, STATUS_FAILED, 'No valid recipients found');
+            }
+            return;
+        }
+
+        try {
+            Messaging.SendEmailResult[] results = Messaging.sendEmail(emails, false);
+
+            Integer idx = 0;
+            for (SObject rec : records) {
+                if (idx < results.size()) {
+                    if (results[idx].isSuccess()) {
+                        addLog(rec.Id, ACTION_EMAIL_NOTIFICATION, null,
+                               'Email sent to: ' + recordToRecipient.get(rec.Id), STATUS_SUCCESS, null);
+                    } else {
+                        String errorMsg = '';
+                        for (Messaging.SendEmailError err : results[idx].getErrors()) {
+                            errorMsg += err.getMessage() + '; ';
+                        }
+                        addLog(rec.Id, ACTION_EMAIL_NOTIFICATION, null, null, STATUS_FAILED, errorMsg);
+                    }
+                    idx++;
+                }
+            }
+        } catch (Exception e) {
+            for (Id recId : recordIds) {
+                addLog(recId, ACTION_EMAIL_NOTIFICATION, null, null, STATUS_FAILED, e.getMessage());
+            }
+            throw new AuraHandledException('Failed to send email notifications: ' + e.getMessage());
+        }
+    }
+
+    /**
+     * @description Creates renewal opportunities from expiring contracts.
+     * Links the new opportunity to the contract's account with appropriate naming.
+     */
+    private void createRenewalOpportunities(List<Id> recordIds, Map<String, Object> config) {
+        if (recordIds.isEmpty()) return;
+
+        if (!Schema.sObjectType.Opportunity.isCreateable()) {
+            throw new AuraHandledException('Insufficient permissions to create Opportunities.');
+        }
+
+        // Get config values
+        String oppNameTemplate = (String)config.get('opportunityName');
+        String stageName = (String)config.get('stageName');
+        String closeDateOffset = (String)config.get('closeDate');
+        String oppType = (String)config.get('type');
+
+        if (String.isBlank(oppNameTemplate)) {
+            oppNameTemplate = 'Renewal - {ContractNumber}';
+        }
+        if (String.isBlank(stageName)) {
+            stageName = 'Prospecting';
+        }
+
+        // Calculate close date (default +30 days)
+        Integer daysOffset = 30;
+        if (String.isNotBlank(closeDateOffset)) {
+            try {
+                daysOffset = Integer.valueOf(closeDateOffset.replace('+', '').trim());
+            } catch (Exception e) {
+                daysOffset = 30;
+            }
+        }
+        Date closeDate = Date.today().addDays(daysOffset);
+
+        // Query contracts to get account and contract details
+        String soql = 'SELECT Id, ContractNumber, AccountId, Account.Name, EndDate FROM Contract WHERE Id IN :recordIds';
+        List<Contract> contracts;
+        try {
+            contracts = Database.query(soql);
+        } catch (Exception e) {
+            for (Id recId : recordIds) {
+                addLog(recId, ACTION_OPPORTUNITY_CREATION, null, null, STATUS_FAILED, 'Query failed: ' + e.getMessage());
+            }
+            throw new AuraHandledException('Failed to query contracts: ' + e.getMessage());
+        }
+
+        List<Opportunity> opportunities = new List<Opportunity>();
+        Map<Id, Contract> contractMap = new Map<Id, Contract>();
+
+        for (Contract c : contracts) {
+            contractMap.put(c.Id, c);
+
+            // Build opportunity name from template
+            String oppName = oppNameTemplate
+                .replace('{ContractNumber}', c.ContractNumber != null ? c.ContractNumber : 'N/A')
+                .replace('{AccountName}', c.Account != null && c.Account.Name != null ? c.Account.Name : 'Unknown');
+
+            // Truncate if too long
+            if (oppName.length() > 120) {
+                oppName = oppName.substring(0, 117) + '...';
+            }
+
+            Opportunity opp = new Opportunity(
+                Name = oppName,
+                AccountId = c.AccountId,
+                StageName = stageName,
+                CloseDate = closeDate,
+                ContractId = c.Id
+            );
+
+            if (String.isNotBlank(oppType)) {
+                opp.Type = oppType;
+            }
+
+            opportunities.add(opp);
+        }
+
+        if (opportunities.isEmpty()) {
+            return;
+        }
+
+        try {
+            // Insert opportunities directly - we already checked isCreateable() at the start
+            // Using stripInaccessible before insert can cause issues if it strips required fields
+            Database.SaveResult[] results = Database.insert(opportunities, false);
+
+            for (Integer i = 0; i < results.size(); i++) {
+                Id contractId = contracts[i].Id;
+
+                if (results[i].isSuccess()) {
+                    addLog(
+                        contractId,
+                        ACTION_OPPORTUNITY_CREATION,
+                        null,
+                        'Opportunity Created: ' + results[i].getId(),
+                        STATUS_SUCCESS,
+                        null
+                    );
+                } else {
+                    String errorMsg = '';
+                    for (Database.Error err : results[i].getErrors()) {
+                        errorMsg += err.getMessage() + '; ';
+                    }
+                    addLog(contractId, ACTION_OPPORTUNITY_CREATION, null, null, STATUS_FAILED, errorMsg);
+                }
+            }
+        } catch (Exception e) {
+            for (Id recId : recordIds) {
+                addLog(recId, ACTION_OPPORTUNITY_CREATION, null, null, STATUS_FAILED, e.getMessage());
+            }
+            throw new AuraHandledException('Failed to create renewal opportunities: ' + e.getMessage());
+        }
     }
 
     // --- AUDIT LOGGING ---

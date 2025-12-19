@@ -10,7 +10,11 @@
       "Bash(sf sobject describe:*)",
       "Bash(sf project delete:*)",
       "Bash(sf org display:*)",
-      "Bash(sf data query:*)"
+      "Bash(sf data query:*)",
+      "Bash(sfdx force:apex:test:run:*)",
+      "Bash(sfdx apex run:*)",
+      "Bash(echo:*)",
+      "Bash(sfdx force:source:deploy:*)"
     ]
   }
 }

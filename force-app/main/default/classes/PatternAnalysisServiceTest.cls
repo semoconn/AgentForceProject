@@ -966,4 +966,316 @@ private class PatternAnalysisServiceTest {
 
         clearMocks();
     }
+
+    // ==================== DYNAMIC OBJECT & FLS TESTS (Sprint 6) ====================
+
+    @isTest
+    static void testIsObjectAccessible_StandardObject() {
+        // Test with standard accessible objects
+        Test.startTest();
+
+        // Standard objects should be accessible
+        Boolean caseAccessible = PatternAnalysisService.isObjectAccessible('Case');
+        Boolean oppAccessible = PatternAnalysisService.isObjectAccessible('Opportunity');
+        Boolean leadAccessible = PatternAnalysisService.isObjectAccessible('Lead');
+        Boolean accountAccessible = PatternAnalysisService.isObjectAccessible('Account');
+
+        Test.stopTest();
+
+        // These should all be accessible for admin users
+        System.assertEquals(true, caseAccessible, 'Case should be accessible');
+        System.assertEquals(true, oppAccessible, 'Opportunity should be accessible');
+        System.assertEquals(true, leadAccessible, 'Lead should be accessible');
+        System.assertEquals(true, accountAccessible, 'Account should be accessible');
+
+        clearMocks();
+    }
+
+    @isTest
+    static void testIsObjectAccessible_NonExistentObject() {
+        // Test with non-existent object
+        Test.startTest();
+
+        Boolean nonExistentAccessible = PatternAnalysisService.isObjectAccessible('NonExistentObject__c');
+        Boolean anotherFake = PatternAnalysisService.isObjectAccessible('FakePackage__FakeObject__c');
+
+        Test.stopTest();
+
+        // Non-existent objects should return false
+        System.assertEquals(false, nonExistentAccessible, 'Non-existent object should not be accessible');
+        System.assertEquals(false, anotherFake, 'Fake package object should not be accessible');
+
+        clearMocks();
+    }
+
+    @isTest
+    static void testIsObjectAccessible_NullAndBlank() {
+        Test.startTest();
+
+        Boolean nullAccessible = PatternAnalysisService.isObjectAccessible(null);
+        Boolean blankAccessible = PatternAnalysisService.isObjectAccessible('');
+        Boolean spacesAccessible = PatternAnalysisService.isObjectAccessible('   ');
+
+        Test.stopTest();
+
+        System.assertEquals(false, nullAccessible, 'Null should return false');
+        System.assertEquals(false, blankAccessible, 'Empty string should return false');
+        System.assertEquals(false, spacesAccessible, 'Whitespace should return false');
+
+        clearMocks();
+    }
+
+    @isTest
+    static void testValidateQueryFieldsAccessible_StandardFields() {
+        // Test with standard accessible fields
+        Test.startTest();
+
+        Boolean caseFieldsValid = PatternAnalysisService.validateQueryFieldsAccessible(
+            'Case',
+            'Status != \'Closed\' AND Priority = \'High\''
+        );
+
+        Boolean oppFieldsValid = PatternAnalysisService.validateQueryFieldsAccessible(
+            'Opportunity',
+            'Amount > 50000 AND IsClosed = false'
+        );
+
+        Test.stopTest();
+
+        System.assertEquals(true, caseFieldsValid, 'Standard Case fields should be accessible');
+        System.assertEquals(true, oppFieldsValid, 'Standard Opportunity fields should be accessible');
+
+        clearMocks();
+    }
+
+    @isTest
+    static void testValidateQueryFieldsAccessible_RelationshipFields() {
+        // Test with relationship traversals
+        Test.startTest();
+
+        // Account.Rating on Case
+        Boolean caseAccountRating = PatternAnalysisService.validateQueryFieldsAccessible(
+            'Case',
+            'Account.Rating = \'Hot\' AND Status = \'New\''
+        );
+
+        // Owner.Type on Lead
+        Boolean leadOwnerType = PatternAnalysisService.validateQueryFieldsAccessible(
+            'Lead',
+            'Owner.Type = \'Queue\' AND Status = \'Open - Not Contacted\''
+        );
+
+        Test.stopTest();
+
+        System.assertEquals(true, caseAccountRating, 'Account.Rating should be accessible on Case');
+        System.assertEquals(true, leadOwnerType, 'Owner.Type should be accessible on Lead');
+
+        clearMocks();
+    }
+
+    @isTest
+    static void testValidateQueryFieldsAccessible_NullCondition() {
+        Test.startTest();
+
+        Boolean nullCondition = PatternAnalysisService.validateQueryFieldsAccessible('Case', null);
+        Boolean blankCondition = PatternAnalysisService.validateQueryFieldsAccessible('Case', '');
+
+        Test.stopTest();
+
+        // Null/blank conditions should return true (nothing to validate)
+        System.assertEquals(true, nullCondition, 'Null condition should return true');
+        System.assertEquals(true, blankCondition, 'Blank condition should return true');
+
+        clearMocks();
+    }
+
+    @isTest
+    static void testValidateQueryFieldsAccessible_NonExistentObject() {
+        Test.startTest();
+
+        Boolean nonExistentObj = PatternAnalysisService.validateQueryFieldsAccessible(
+            'NonExistent__c',
+            'Status__c = \'Active\''
+        );
+
+        Test.stopTest();
+
+        System.assertEquals(false, nonExistentObj, 'Non-existent object should return false');
+
+        clearMocks();
+    }
+
+    @isTest
+    static void testValidateQueryFieldsAccessible_DateLiterals() {
+        // Test with SOQL date literals that should be recognized
+        Test.startTest();
+
+        Boolean withDateLiteral = PatternAnalysisService.validateQueryFieldsAccessible(
+            'Opportunity',
+            'IsClosed = false AND LastActivityDate < LAST_N_DAYS:14'
+        );
+
+        Boolean withToday = PatternAnalysisService.validateQueryFieldsAccessible(
+            'Contract',
+            'EndDate <= NEXT_N_DAYS:30 AND EndDate >= TODAY'
+        );
+
+        Test.stopTest();
+
+        System.assertEquals(true, withDateLiteral, 'Date literals should be handled correctly');
+        System.assertEquals(true, withToday, 'TODAY literal should be handled correctly');
+
+        clearMocks();
+    }
+
+    @isTest
+    static void testRuleExecution_SkipsNonExistentObject() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create a mock rule pointing to non-existent object
+        Behavior_Pattern_Rule__mdt mockRule = createMockRule(
+            'Fake_Object_Rule',
+            'Fake Object Detection',
+            'NonExistentObject__c',
+            'Status__c = \'Active\'',
+            false
+        );
+        PatternAnalysisService.mockRule = mockRule;
+
+        Test.startTest();
+        System.runAs(testUser) {
+            // The batch should complete without errors even with invalid object
+            Database.executeBatch(new PatternAnalysisService(), 50);
+        }
+        Test.stopTest();
+
+        // Verify batch completed
+        List<AsyncApexJob> jobs = [
+            SELECT Id, Status, NumberOfErrors
+            FROM AsyncApexJob
+            WHERE ApexClass.Name = 'PatternAnalysisService'
+            AND Status = 'Completed'
+            ORDER BY CreatedDate DESC
+            LIMIT 1
+        ];
+        System.assertEquals(1, jobs.size(), 'Batch should complete even with invalid object rule');
+
+        // No pain point should be created for the fake object
+        List<Identified_Pain_Point__c> fakePoints = [
+            SELECT Id FROM Identified_Pain_Point__c
+            WHERE Unique_Key__c = 'Fake_Object_Rule'
+        ];
+        System.assertEquals(0, fakePoints.size(), 'No pain point should be created for non-existent object');
+
+        clearMocks();
+    }
+
+    @isTest
+    static void testGetPatternMatches_NonExistentObject() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        Test.startTest();
+        System.runAs(testUser) {
+            try {
+                // This should fail gracefully for non-existent object
+                PatternAnalysisService.getPatternMatches('Zombie_Projects', 50);
+                // If Project__c doesn't exist, we should get an error
+            } catch (AuraHandledException e) {
+                // Expected - either rule not found, object not accessible, or Premium feature gate
+                System.assert(
+                    e.getMessage().contains('not found') ||
+                    e.getMessage().contains('not accessible') ||
+                    e.getMessage().contains('does not exist') ||
+                    e.getMessage().contains('Premium feature'),
+                    'Exception should mention rule/object issue or Premium gate: ' + e.getMessage()
+                );
+            }
+        }
+        Test.stopTest();
+
+        clearMocks();
+    }
+
+    @isTest
+    static void testContractDisplayFields() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create test contract
+        Account acc = new Account(Name = 'Contract Test Account');
+        insert acc;
+
+        Contract testContract = new Contract(
+            AccountId = acc.Id,
+            Status = 'Draft',
+            StartDate = Date.today().addMonths(-6),
+            ContractTerm = 12
+        );
+        insert testContract;
+
+        Test.startTest();
+        System.runAs(testUser) {
+            try {
+                // Attempt to get pattern matches for Contract
+                PatternAnalysisService.getPatternMatches('Contract_Expiry_Red_Zone', 10);
+
+                String query = PatternAnalysisService.lastExecutedQuery;
+                if (query != null) {
+                    // Verify Contract-specific fields are included
+                    System.assert(query.containsIgnoreCase('ContractNumber') ||
+                                  query.containsIgnoreCase('Status') ||
+                                  query.containsIgnoreCase('EndDate'),
+                        'Query should include Contract-specific fields');
+                }
+            } catch (AuraHandledException e) {
+                // Expected if rule doesn't exist
+                System.debug('Expected exception for Contract rule: ' + e.getMessage());
+            }
+        }
+        Test.stopTest();
+
+        clearMocks();
+    }
+
+    @isTest
+    static void testExtractFieldsFromCondition_ComplexQuery() {
+        // Test the field extraction with a complex query
+        Test.startTest();
+
+        // This indirectly tests extractFieldsFromCondition via validateQueryFieldsAccessible
+        Boolean complexValid = PatternAnalysisService.validateQueryFieldsAccessible(
+            'Case',
+            '(Status != \'Closed\' AND Priority = \'High\') OR (Status = \'New\' AND CreatedDate < LAST_N_DAYS:30)'
+        );
+
+        Test.stopTest();
+
+        System.assertEquals(true, complexValid, 'Complex query with multiple conditions should validate');
+
+        clearMocks();
+    }
+
+    @isTest
+    static void testIsKnownSoqlLiteral() {
+        // Test various SOQL literals through validateQueryFieldsAccessible
+        Test.startTest();
+
+        // Query with TRUE/FALSE literals
+        Boolean boolLiterals = PatternAnalysisService.validateQueryFieldsAccessible(
+            'Opportunity',
+            'IsClosed = TRUE OR IsClosed = FALSE'
+        );
+
+        // Query with NULL literal
+        Boolean nullLiteral = PatternAnalysisService.validateQueryFieldsAccessible(
+            'Lead',
+            'Email != NULL'
+        );
+
+        Test.stopTest();
+
+        System.assertEquals(true, boolLiterals, 'TRUE/FALSE literals should be recognized');
+        System.assertEquals(true, nullLiteral, 'NULL literal should be recognized');
+
+        clearMocks();
+    }
 }

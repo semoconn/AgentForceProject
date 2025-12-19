@@ -26,6 +26,16 @@
                 <default>false</default>
                 <label>Field Update</label>
             </value>
+            <value>
+                <fullName>Email_Notification</fullName>
+                <default>false</default>
+                <label>Email Notification</label>
+            </value>
+            <value>
+                <fullName>Opportunity_Creation</fullName>
+                <default>false</default>
+                <label>Opportunity Creation</label>
+            </value>
         </valueSetDefinition>
     </valueSet>
 </CustomField>
