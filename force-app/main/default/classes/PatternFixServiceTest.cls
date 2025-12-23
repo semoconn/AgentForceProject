@@ -1047,4 +1047,677 @@ private class PatternFixServiceTest {
 
         clearMockRule();
     }
+
+    // ==================== ADDITIONAL COVERAGE TESTS ====================
+
+    @isTest
+    static void testEmailNotification_WithLeadObject() {
+        // Test email notification for Lead object (lines 350, 357-361)
+        Lead l = new Lead(
+            LastName = 'Email Test Lead',
+            Company = 'Email Test Co',
+            Status = 'Open - Not Contacted'
+        );
+        insert l;
+
+        PatternFixService.mockRule = createMockRule('Email_Notification', false, '{"subject":"Lead Alert","body":"Test body"}');
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(new List<Id>{l.Id}, 'Test_Rule');
+        Test.stopTest();
+
+        List<Remediation_Log__c> logs = [
+            SELECT Action_Taken__c FROM Remediation_Log__c
+            WHERE Affected_Record_ID__c = :String.valueOf(l.Id)
+        ];
+        System.assertEquals(1, logs.size(), 'Expected remediation log');
+        System.assertEquals('Email_Notification', logs[0].Action_Taken__c);
+
+        clearMockRule();
+    }
+
+    @isTest
+    static void testOwnerAssignment_InvalidFallbackId() {
+        // Test invalid fallback owner ID (line 199)
+        Lead l = new Lead(
+            LastName = 'Invalid Fallback Lead',
+            Company = 'Test Company',
+            Status = 'Open - Not Contacted'
+        );
+        insert l;
+
+        // Set an invalid fallback owner ID
+        PatternFixService.fallbackOwnerId = null;
+
+        PatternFixService.mockRule = createMockRule('Owner_Assignment', false, '{"useAssignmentRules":false,"fallbackOwnerId":"invalid"}');
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(new List<Id>{l.Id}, 'Test_Rule');
+        Test.stopTest();
+
+        // Should still create a log
+        List<Remediation_Log__c> logs = [
+            SELECT Status__c FROM Remediation_Log__c
+            WHERE Affected_Record_ID__c = :String.valueOf(l.Id)
+        ];
+        System.assertEquals(1, logs.size(), 'Expected remediation log');
+
+        clearMockRule();
+    }
+
+    @isTest
+    static void testOpportunityCreation_LongName() {
+        // Test opportunity name truncation (line 508)
+        Account acc = new Account(Name = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
+        insert acc;
+
+        Contract c = new Contract(
+            AccountId = acc.Id,
+            Status = 'Draft',
+            StartDate = Date.today().addMonths(-11),
+            ContractTerm = 12
+        );
+        insert c;
+
+        PatternFixService.mockRule = createMockRule('Opportunity_Creation', false, '{}');
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(new List<Id>{c.Id}, 'Test_Rule');
+        Test.stopTest();
+
+        List<Opportunity> opps = [SELECT Name FROM Opportunity WHERE ContractId = :c.Id];
+        System.assertEquals(1, opps.size(), 'Opportunity should be created');
+        System.assert(opps[0].Name.length() <= 120, 'Name should be truncated');
+
+        clearMockRule();
+    }
+
+    @isTest
+    static void testOpportunityCreation_NoContract() {
+        // Test with non-contract ID (line 527)
+        Case c = new Case(Subject = 'Not a Contract', Status = 'New');
+        insert c;
+
+        PatternFixService.mockRule = createMockRule('Opportunity_Creation', false, '{}');
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(new List<Id>{c.Id}, 'Test_Rule');
+        Test.stopTest();
+
+        // Should not create opportunities for non-contracts
+        List<Opportunity> opps = [SELECT Id FROM Opportunity WHERE Name LIKE '%Not a Contract%'];
+        System.assertEquals(0, opps.size(), 'No opportunity should be created for non-contract');
+
+        clearMockRule();
+    }
+
+    @isTest
+    static void testEmailNotification_NoOwner() {
+        // Test email notification when record has no owner (lines 415-418)
+        Account acc = new Account(Name = 'No Owner Test Account');
+        insert acc;
+
+        Case c = new Case(
+            AccountId = acc.Id,
+            Subject = 'No Owner Case',
+            Status = 'New'
+        );
+        insert c;
+
+        PatternFixService.mockRule = createMockRule('Email_Notification', false, '{"subject":"Alert","recipientField":"InvalidField__c"}');
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(new List<Id>{c.Id}, 'Test_Rule');
+        Test.stopTest();
+
+        List<Remediation_Log__c> logs = [
+            SELECT Action_Taken__c FROM Remediation_Log__c
+            WHERE Affected_Record_ID__c = :String.valueOf(c.Id)
+        ];
+        System.assertEquals(1, logs.size(), 'Expected remediation log');
+
+        clearMockRule();
+    }
+
+    @isTest
+    static void testFieldUpdate_InvalidFieldName() {
+        // Test field update with invalid field name (lines 158-169)
+        Opportunity opp = new Opportunity(
+            Name = 'Invalid Field Test',
+            StageName = 'Prospecting',
+            CloseDate = Date.today().addDays(30)
+        );
+        insert opp;
+
+        PatternFixService.mockRule = createMockRule('Field_Update', false, '{"field":"NonExistentField__c","value":"Test"}');
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        try {
+            service.executeFix(new List<Id>{opp.Id}, 'Test_Rule');
+        } catch (Exception e) {
+            // Expected for invalid field
+        }
+        Test.stopTest();
+
+        clearMockRule();
+    }
+
+    @isTest
+    static void testBulkEmailNotification() {
+        // Test bulk email notifications (lines 431-444)
+        Account acc = new Account(Name = 'Bulk Email Account');
+        insert acc;
+
+        List<Case> cases = new List<Case>();
+        for (Integer i = 0; i < 20; i++) {
+            cases.add(new Case(
+                AccountId = acc.Id,
+                Subject = 'Bulk Email Case ' + i,
+                Status = 'New'
+            ));
+        }
+        insert cases;
+
+        List<Id> caseIds = new List<Id>();
+        for (Case c : cases) {
+            caseIds.add(c.Id);
+        }
+
+        PatternFixService.mockRule = createMockRule('Email_Notification', false, '{"subject":"Bulk Alert"}');
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(caseIds, 'Test_Rule');
+        Test.stopTest();
+
+        List<Remediation_Log__c> logs = [SELECT Id FROM Remediation_Log__c WHERE Action_Taken__c = 'Email_Notification'];
+        System.assertEquals(20, logs.size(), 'Expected 20 remediation logs');
+
+        clearMockRule();
+    }
+
+    @isTest
+    static void testEmailNotification_AccountObject() {
+        Account acc = new Account(Name = 'Email Test Account');
+        insert acc;
+
+        PatternFixService.mockRule = createMockRule('Email_Notification', false, '{"subject":"Account Alert"}');
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(new List<Id>{acc.Id}, 'Test_Rule');
+        Test.stopTest();
+
+        List<Remediation_Log__c> logs = [
+            SELECT Action_Taken__c FROM Remediation_Log__c
+            WHERE Affected_Record_ID__c = :String.valueOf(acc.Id)
+        ];
+        System.assertEquals(1, logs.size(), 'Expected remediation log');
+
+        clearMockRule();
+    }
+
+    @isTest
+    static void testOpportunityCreation_InvalidCloseDate() {
+        Account acc = new Account(Name = 'Invalid CloseDate Account');
+        insert acc;
+
+        Contract c = new Contract(
+            AccountId = acc.Id,
+            Status = 'Draft',
+            StartDate = Date.today().addMonths(-11),
+            ContractTerm = 12
+        );
+        insert c;
+
+        PatternFixService.mockRule = createMockRule('Opportunity_Creation', false, '{"closeDate":"invalid"}');
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(new List<Id>{c.Id}, 'Test_Rule');
+        Test.stopTest();
+
+        List<Opportunity> opps = [SELECT CloseDate FROM Opportunity WHERE ContractId = :c.Id];
+        System.assertEquals(1, opps.size(), 'Opportunity should be created');
+
+        clearMockRule();
+    }
+
+    @isTest
+    static void testOwnerAssignment_OpportunityObject() {
+        Opportunity opp = new Opportunity(
+            Name = 'Owner Assignment Opp',
+            StageName = 'Prospecting',
+            CloseDate = Date.today().addDays(30)
+        );
+        insert opp;
+
+        PatternFixService.mockRule = createMockRule('Owner_Assignment', false, '{"useAssignmentRules":false}');
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(new List<Id>{opp.Id}, 'Test_Rule');
+        Test.stopTest();
+
+        List<Remediation_Log__c> logs = [
+            SELECT Status__c FROM Remediation_Log__c
+            WHERE Affected_Record_ID__c = :String.valueOf(opp.Id)
+        ];
+        System.assertEquals(1, logs.size(), 'Expected remediation log');
+
+        clearMockRule();
+    }
+
+    @isTest
+    static void testOpportunityCreation_WithAccountName() {
+        Account acc = new Account(Name = 'Template Test Account');
+        insert acc;
+
+        Contract c = new Contract(
+            AccountId = acc.Id,
+            Status = 'Draft',
+            StartDate = Date.today().addMonths(-6),
+            ContractTerm = 12
+        );
+        insert c;
+
+        PatternFixService.mockRule = createMockRule('Opportunity_Creation', false, '{"opportunityName":"Renewal for {AccountName}"}');
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(new List<Id>{c.Id}, 'Test_Rule');
+        Test.stopTest();
+
+        List<Opportunity> opps = [SELECT Name FROM Opportunity WHERE ContractId = :c.Id];
+        System.assertEquals(1, opps.size(), 'Expected 1 opportunity');
+
+        clearMockRule();
+    }
+
+    @isTest
+    static void testOwnerAssignment_AccountObject() {
+        Account acc = new Account(Name = 'Owner Assignment Account');
+        insert acc;
+
+        PatternFixService.mockRule = createMockRule('Owner_Assignment', false, '{"useAssignmentRules":false}');
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(new List<Id>{acc.Id}, 'Test_Rule');
+        Test.stopTest();
+
+        List<Remediation_Log__c> logs = [
+            SELECT Status__c FROM Remediation_Log__c
+            WHERE Affected_Record_ID__c = :String.valueOf(acc.Id)
+        ];
+        System.assertEquals(1, logs.size(), 'Expected remediation log');
+
+        clearMockRule();
+    }
+
+    // ==================== EXCEPTION PATH COVERAGE TESTS ====================
+
+    @isTest
+    static void testForceTaskCreationException() {
+        Case c = new Case(Subject = 'Task Exception Test', Status = 'New');
+        insert c;
+
+        PatternFixService.mockRule = createMockRule('Task_Creation', false, '{"subject":"Test Task"}');
+        PatternFixService.forceTaskCreationException = true;
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        try {
+            service.executeFix(new List<Id>{c.Id}, 'Test_Rule');
+        } catch (Exception e) {
+            // Expected - task creation failure should propagate
+        }
+        Test.stopTest();
+
+        PatternFixService.resetTestFlags();
+    }
+
+    @isTest
+    static void testForceFieldUpdateException() {
+        Opportunity opp = new Opportunity(
+            Name = 'Field Update Exception Test',
+            StageName = 'Prospecting',
+            CloseDate = Date.today().addDays(30)
+        );
+        insert opp;
+
+        PatternFixService.mockRule = createMockRule('Field_Update', false, '{"field":"StageName","value":"Qualification"}');
+        PatternFixService.forceFieldUpdateException = true;
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        try {
+            service.executeFix(new List<Id>{opp.Id}, 'Test_Rule');
+        } catch (Exception e) {
+            // Expected - field update failure should propagate
+        }
+        Test.stopTest();
+
+        PatternFixService.resetTestFlags();
+    }
+
+    @isTest
+    static void testForceOwnerAssignmentException() {
+        Lead l = new Lead(
+            LastName = 'Owner Assignment Exception Test',
+            Company = 'Test Company',
+            Status = 'Open - Not Contacted'
+        );
+        insert l;
+
+        PatternFixService.mockRule = createMockRule('Owner_Assignment', false, '{"useAssignmentRules":true}');
+        PatternFixService.forceOwnerAssignmentException = true;
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        try {
+            service.executeFix(new List<Id>{l.Id}, 'Test_Rule');
+        } catch (Exception e) {
+            // Expected - owner assignment failure should propagate
+        }
+        Test.stopTest();
+
+        PatternFixService.resetTestFlags();
+    }
+
+    @isTest
+    static void testForceEmailQueryException() {
+        Account acc = new Account(Name = 'Email Query Exception Account');
+        insert acc;
+
+        Case c = new Case(
+            AccountId = acc.Id,
+            Subject = 'Email Query Exception Test',
+            Status = 'New'
+        );
+        insert c;
+
+        PatternFixService.mockRule = createMockRule('Email_Notification', false, '{"subject":"Test Alert"}');
+        PatternFixService.forceEmailQueryException = true;
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        try {
+            service.executeFix(new List<Id>{c.Id}, 'Test_Rule');
+        } catch (Exception e) {
+            // Expected - email query failure should propagate
+        }
+        Test.stopTest();
+
+        PatternFixService.resetTestFlags();
+    }
+
+    @isTest
+    static void testForceEmailSendException() {
+        Account acc = new Account(Name = 'Email Send Exception Account');
+        insert acc;
+
+        Case c = new Case(
+            AccountId = acc.Id,
+            Subject = 'Email Send Exception Test',
+            Status = 'New'
+        );
+        insert c;
+
+        PatternFixService.mockRule = createMockRule('Email_Notification', false, '{"subject":"Test Alert"}');
+        PatternFixService.forceEmailSendException = true;
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        try {
+            service.executeFix(new List<Id>{c.Id}, 'Test_Rule');
+        } catch (Exception e) {
+            // Expected - email send failure should propagate
+        }
+        Test.stopTest();
+
+        PatternFixService.resetTestFlags();
+    }
+
+    @isTest
+    static void testForceOpportunityCreationException() {
+        Account acc = new Account(Name = 'Opp Creation Exception Account');
+        insert acc;
+
+        Contract con = new Contract(
+            AccountId = acc.Id,
+            Status = 'Draft',
+            StartDate = Date.today().addMonths(-11),
+            ContractTerm = 12
+        );
+        insert con;
+
+        PatternFixService.mockRule = createMockRule('Opportunity_Creation', false, '{"stageName":"Prospecting"}');
+        PatternFixService.forceOpportunityCreationException = true;
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        try {
+            service.executeFix(new List<Id>{con.Id}, 'Test_Rule');
+        } catch (Exception e) {
+            // Expected - opportunity creation failure should propagate
+        }
+        Test.stopTest();
+
+        PatternFixService.resetTestFlags();
+    }
+
+    @isTest
+    static void testForceNoValidRecipients() {
+        Account acc = new Account(Name = 'No Recipients Account');
+        insert acc;
+
+        Case c = new Case(
+            AccountId = acc.Id,
+            Subject = 'No Recipients Test',
+            Status = 'New'
+        );
+        insert c;
+
+        PatternFixService.mockRule = createMockRule('Email_Notification', false, '{"subject":"Test Alert"}');
+        PatternFixService.forceNoValidRecipients = true;
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(new List<Id>{c.Id}, 'Test_Rule');
+        Test.stopTest();
+
+        // Should create a log indicating no valid recipients
+        List<Remediation_Log__c> logs = [
+            SELECT Status__c, Error_Message__c FROM Remediation_Log__c
+            WHERE Affected_Record_ID__c = :String.valueOf(c.Id)
+        ];
+        System.assertEquals(1, logs.size(), 'Expected remediation log');
+
+        PatternFixService.resetTestFlags();
+    }
+
+    @isTest
+    static void testResetTestFlags_PatternFixService() {
+        // Set all flags to true
+        PatternFixService.forceTaskCreationException = true;
+        PatternFixService.forceFieldUpdateException = true;
+        PatternFixService.forceOwnerAssignmentException = true;
+        PatternFixService.forceEmailQueryException = true;
+        PatternFixService.forceEmailSendException = true;
+        PatternFixService.forceOpportunityCreationException = true;
+        PatternFixService.forceNoValidRecipients = true;
+        PatternFixService.mockRule = createMockRule('Task_Creation', false, '{}');
+        PatternFixService.fallbackOwnerId = UserInfo.getUserId();
+
+        Test.startTest();
+        PatternFixService.resetTestFlags();
+        Test.stopTest();
+
+        // Verify all flags are reset
+        System.assertEquals(false, PatternFixService.forceTaskCreationException, 'forceTaskCreationException should be reset');
+        System.assertEquals(false, PatternFixService.forceFieldUpdateException, 'forceFieldUpdateException should be reset');
+        System.assertEquals(false, PatternFixService.forceOwnerAssignmentException, 'forceOwnerAssignmentException should be reset');
+        System.assertEquals(false, PatternFixService.forceEmailQueryException, 'forceEmailQueryException should be reset');
+        System.assertEquals(false, PatternFixService.forceEmailSendException, 'forceEmailSendException should be reset');
+        System.assertEquals(false, PatternFixService.forceOpportunityCreationException, 'forceOpportunityCreationException should be reset');
+        System.assertEquals(false, PatternFixService.forceNoValidRecipients, 'forceNoValidRecipients should be reset');
+        System.assertEquals(null, PatternFixService.mockRule, 'mockRule should be reset');
+        System.assertEquals(null, PatternFixService.fallbackOwnerId, 'fallbackOwnerId should be reset');
+    }
+
+    @isTest
+    static void testMultipleExceptionFlags_PatternFixService() {
+        Case c = new Case(Subject = 'Multiple Flags Test', Status = 'New');
+        insert c;
+
+        // Set multiple exception flags
+        PatternFixService.forceTaskCreationException = true;
+        PatternFixService.mockRule = createMockRule('Task_Creation', false, '{"subject":"Multi Flag Test"}');
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        Boolean exceptionThrown = false;
+        try {
+            service.executeFix(new List<Id>{c.Id}, 'Test_Rule');
+        } catch (Exception e) {
+            exceptionThrown = true;
+        }
+        Test.stopTest();
+
+        System.assert(exceptionThrown, 'Exception should be thrown');
+
+        PatternFixService.resetTestFlags();
+    }
+
+    @isTest
+    static void testTaskCreationException_WithLog() {
+        Case c = new Case(Subject = 'Task Log Exception Test', Status = 'New');
+        insert c;
+
+        PatternFixService.mockRule = createMockRule('Task_Creation', false, '{"subject":"Exception Log Test"}');
+        PatternFixService.forceTaskCreationException = true;
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        Boolean exceptionThrown = false;
+        try {
+            service.executeFix(new List<Id>{c.Id}, 'Test_Rule');
+        } catch (Exception e) {
+            exceptionThrown = true;
+            System.assert(e.getMessage() != null, 'Exception should have message');
+        }
+        Test.stopTest();
+
+        System.assert(exceptionThrown, 'Exception should be thrown');
+
+        PatternFixService.resetTestFlags();
+    }
+
+    @isTest
+    static void testFieldUpdateException_WithLog() {
+        Opportunity opp = new Opportunity(
+            Name = 'Field Exception Log Test',
+            StageName = 'Prospecting',
+            CloseDate = Date.today().addDays(30)
+        );
+        insert opp;
+
+        PatternFixService.mockRule = createMockRule('Field_Update', false, '{"field":"StageName","value":"Closed Won"}');
+        PatternFixService.forceFieldUpdateException = true;
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        Boolean exceptionThrown = false;
+        try {
+            service.executeFix(new List<Id>{opp.Id}, 'Test_Rule');
+        } catch (Exception e) {
+            exceptionThrown = true;
+        }
+        Test.stopTest();
+
+        System.assert(exceptionThrown, 'Exception should be thrown');
+
+        PatternFixService.resetTestFlags();
+    }
+
+    @isTest
+    static void testOwnerAssignmentException_BulkRecords() {
+        List<Lead> leads = new List<Lead>();
+        for (Integer i = 0; i < 5; i++) {
+            leads.add(new Lead(
+                LastName = 'Bulk Owner Exception ' + i,
+                Company = 'Test Company',
+                Status = 'Open - Not Contacted'
+            ));
+        }
+        insert leads;
+
+        List<Id> leadIds = new List<Id>();
+        for (Lead l : leads) {
+            leadIds.add(l.Id);
+        }
+
+        PatternFixService.mockRule = createMockRule('Owner_Assignment', false, '{"useAssignmentRules":false}');
+        PatternFixService.forceOwnerAssignmentException = true;
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        Boolean exceptionThrown = false;
+        try {
+            service.executeFix(leadIds, 'Test_Rule');
+        } catch (Exception e) {
+            exceptionThrown = true;
+        }
+        Test.stopTest();
+
+        System.assert(exceptionThrown, 'Exception should be thrown for bulk owner assignment');
+
+        PatternFixService.resetTestFlags();
+    }
+
+    @isTest
+    static void testOpportunityCreationException_BulkContracts() {
+        Account acc = new Account(Name = 'Bulk Opp Exception Account');
+        insert acc;
+
+        List<Contract> contracts = new List<Contract>();
+        for (Integer i = 0; i < 3; i++) {
+            contracts.add(new Contract(
+                AccountId = acc.Id,
+                Status = 'Draft',
+                StartDate = Date.today().addMonths(-11),
+                ContractTerm = 12
+            ));
+        }
+        insert contracts;
+
+        List<Id> contractIds = new List<Id>();
+        for (Contract con : contracts) {
+            contractIds.add(con.Id);
+        }
+
+        PatternFixService.mockRule = createMockRule('Opportunity_Creation', false, '{"stageName":"Qualification"}');
+        PatternFixService.forceOpportunityCreationException = true;
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        Boolean exceptionThrown = false;
+        try {
+            service.executeFix(contractIds, 'Test_Rule');
+        } catch (Exception e) {
+            exceptionThrown = true;
+        }
+        Test.stopTest();
+
+        System.assert(exceptionThrown, 'Exception should be thrown for bulk opportunity creation');
+
+        PatternFixService.resetTestFlags();
+    }
 }

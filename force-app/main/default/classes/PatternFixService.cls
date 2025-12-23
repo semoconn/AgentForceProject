@@ -24,6 +24,31 @@ public with sharing class PatternFixService {
     @TestVisible
     private static Behavior_Pattern_Rule__mdt mockRule;
 
+    // @TestVisible exception triggers for comprehensive test coverage
+    @TestVisible private static Boolean forceTaskCreationException = false;
+    @TestVisible private static Boolean forceFieldUpdateException = false;
+    @TestVisible private static Boolean forceOwnerAssignmentException = false;
+    @TestVisible private static Boolean forceEmailQueryException = false;
+    @TestVisible private static Boolean forceEmailSendException = false;
+    @TestVisible private static Boolean forceOpportunityCreationException = false;
+    @TestVisible private static Boolean forceNoValidRecipients = false;
+
+    /**
+     * @description Resets all test exception flags. Call this in test cleanup.
+     */
+    @TestVisible
+    private static void resetTestFlags() {
+        forceTaskCreationException = false;
+        forceFieldUpdateException = false;
+        forceOwnerAssignmentException = false;
+        forceEmailQueryException = false;
+        forceEmailSendException = false;
+        forceOpportunityCreationException = false;
+        forceNoValidRecipients = false;
+        mockRule = null;
+        fallbackOwnerId = null;
+    }
+
     // Instance variable to track rule name for logging
     private String currentRuleName;
 
@@ -107,6 +132,10 @@ public with sharing class PatternFixService {
         }
 
         try {
+            // Test hook for exception coverage
+            if (Test.isRunningTest() && forceTaskCreationException) {
+                throw new DmlException('Forced test exception for task creation');
+            }
             List<SObject> insertedTasks = Security.stripInaccessible(AccessType.CREATABLE, tasks).getRecords();
             insert insertedTasks;
 
@@ -149,6 +178,10 @@ public with sharing class PatternFixService {
         }
 
         try {
+            // Test hook for exception coverage
+            if (Test.isRunningTest() && forceFieldUpdateException) {
+                throw new DmlException('Forced test exception for field update');
+            }
             update Security.stripInaccessible(AccessType.UPDATABLE, records).getRecords();
 
             // Log successful field updates
@@ -211,6 +244,10 @@ public with sharing class PatternFixService {
         }
 
         try {
+            // Test hook for exception coverage
+            if (Test.isRunningTest() && forceOwnerAssignmentException) {
+                throw new DmlException('Forced test exception for owner assignment');
+            }
             // Configure DML options for assignment rules
             Database.DMLOptions dmlOpts = new Database.DMLOptions();
 
@@ -284,6 +321,7 @@ public with sharing class PatternFixService {
             }
 
         } catch (Exception e) {
+            // Test hook can force this path
             // Log failures for all records
             for (Id recId : recordIds) {
                 String originalOwnerId = originalRecords.containsKey(recId)
@@ -353,6 +391,10 @@ public with sharing class PatternFixService {
         String soql = 'SELECT ' + queryFields + ' FROM ' + objectName + ' WHERE Id IN :recordIds';
         List<SObject> records;
         try {
+            // Test hook for exception coverage
+            if (Test.isRunningTest() && forceEmailQueryException) {
+                throw new QueryException('Forced test exception for email query');
+            }
             records = Database.query(soql);
         } catch (Exception e) {
             for (Id recId : recordIds) {
@@ -411,7 +453,8 @@ public with sharing class PatternFixService {
             recordToRecipient.put(rec.Id, String.valueOf(recipientId));
         }
 
-        if (emails.isEmpty()) {
+        // Test hook for no valid recipients coverage
+        if (emails.isEmpty() || (Test.isRunningTest() && forceNoValidRecipients)) {
             for (Id recId : recordIds) {
                 addLog(recId, ACTION_EMAIL_NOTIFICATION, null, null, STATUS_FAILED, 'No valid recipients found');
             }
@@ -419,6 +462,10 @@ public with sharing class PatternFixService {
         }
 
         try {
+            // Test hook for exception coverage
+            if (Test.isRunningTest() && forceEmailSendException) {
+                throw new System.EmailException('Forced test exception for email send');
+            }
             Messaging.SendEmailResult[] results = Messaging.sendEmail(emails, false);
 
             Integer idx = 0;
@@ -528,6 +575,10 @@ public with sharing class PatternFixService {
         }
 
         try {
+            // Test hook for exception coverage
+            if (Test.isRunningTest() && forceOpportunityCreationException) {
+                throw new DmlException('Forced test exception for opportunity creation');
+            }
             // Insert opportunities directly - we already checked isCreateable() at the start
             // Using stripInaccessible before insert can cause issues if it strips required fields
             Database.SaveResult[] results = Database.insert(opportunities, false);

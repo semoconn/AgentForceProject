@@ -12,6 +12,38 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
     @TestVisible private static BehaviorIQ_Configuration__c mockConfig;
     @TestVisible private static String lastExecutedQuery;
 
+    // @TestVisible exception triggers for comprehensive test coverage
+    // These allow tests to exercise exception handling paths that are otherwise unreachable
+    @TestVisible private static Boolean forceSnapshotDeleteException = false;
+    @TestVisible private static Boolean forceQueryException = false;
+    @TestVisible private static Boolean forceUpsertException = false;
+    @TestVisible private static Boolean forceSnapshotInsertException = false;
+    @TestVisible private static Boolean forceObjectAccessException = false;
+    @TestVisible private static Boolean forceConfigQueryException = false;
+    @TestVisible private static Boolean forceDynamicFieldsException = false;
+    @TestVisible private static Boolean forcePatternMatchQueryException = false;
+    @TestVisible private static Boolean forcePatternMatchGeneralException = false;
+    @TestVisible private static Boolean forceObjectNotAccessible = false;
+    @TestVisible private static Boolean forceFLSCheckFailure = false;
+
+    /**
+     * @description Resets all test exception flags. Call this in test cleanup.
+     */
+    @TestVisible
+    private static void resetTestFlags() {
+        forceSnapshotDeleteException = false;
+        forceQueryException = false;
+        forceUpsertException = false;
+        forceSnapshotInsertException = false;
+        forceObjectAccessException = false;
+        forceConfigQueryException = false;
+        forceDynamicFieldsException = false;
+        forcePatternMatchQueryException = false;
+        forcePatternMatchGeneralException = false;
+        forceObjectNotAccessible = false;
+        forceFLSCheckFailure = false;
+    }
+
     private Set<String> dismissedPainPointKeys;
     private BehaviorIQ_Configuration__c cachedConfig;
     private List<Behavior_Snapshot__c> pendingSnapshots;
@@ -35,6 +67,10 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
         // This ensures atomic operation - delete and insert happen in same job, no race condition
         if (Schema.sObjectType.Behavior_Snapshot__c.isDeletable()) {
             try {
+                // Test hook for exception coverage
+                if (Test.isRunningTest() && forceSnapshotDeleteException) {
+                    throw new DmlException('Forced test exception for snapshot deletion');
+                }
                 List<Behavior_Snapshot__c> todaysSnapshots = [
                     SELECT Id FROM Behavior_Snapshot__c
                     WHERE Snapshot_Date__c = TODAY
@@ -75,13 +111,15 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
 
         // 3. Dynamic Object Existence Check (for custom objects that may not be installed)
         String objectApiName = rule.Object_API_Name__c;
-        if (!isObjectAccessible(objectApiName)) {
+        // Test hook for object accessibility path coverage
+        if ((Test.isRunningTest() && forceObjectNotAccessible) || !isObjectAccessible(objectApiName)) {
             System.debug(LoggingLevel.INFO, 'Skipping rule [' + rule.DeveloperName + ']: Object ' + objectApiName + ' is not accessible or does not exist.');
             return;
         }
 
         // 4. FLS Check for fields referenced in query condition
-        if (!validateQueryFieldsAccessible(objectApiName, rule.Query_Condition__c)) {
+        // Test hook for FLS check failure path coverage
+        if ((Test.isRunningTest() && forceFLSCheckFailure) || !validateQueryFieldsAccessible(objectApiName, rule.Query_Condition__c)) {
             System.debug(LoggingLevel.WARN, 'Skipping rule [' + rule.DeveloperName + ']: One or more required fields are not accessible.');
             return;
         }
@@ -98,6 +136,10 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
         List<SObject> detectedRecords = new List<SObject>();
 
         try {
+            // Test hook for exception coverage
+            if (Test.isRunningTest() && forceQueryException) {
+                throw new QueryException('Forced test exception for query execution');
+            }
             // NOTE: We rely on the Admin's rule definition being correct.
             // Using Database.query without SECURITY_ENFORCED allows the engine to see
             // records the current user might not, which is intended for system monitoring.
@@ -140,6 +182,10 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
         }
 
         try {
+            // Test hook for exception coverage
+            if (Test.isRunningTest() && forceObjectAccessException) {
+                throw new System.TypeException('Forced test exception for object accessibility check');
+            }
             // Use getGlobalDescribe() for dynamic/weak reference - doesn't crash if object doesn't exist
             Map<String, Schema.SObjectType> globalDescribe = Schema.getGlobalDescribe();
             // Schema.getGlobalDescribe() keys are case-insensitive in Apex, but use lowercase for consistency
@@ -442,6 +488,10 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
         // that needs to read admin configuration regardless of running user's FLS
         if (Schema.sObjectType.BehaviorIQ_Configuration__c.isAccessible()) {
             try {
+                // Test hook for exception coverage
+                if (Test.isRunningTest() && forceConfigQueryException) {
+                    throw new QueryException('Forced test exception for config query');
+                }
                 List<BehaviorIQ_Configuration__c> configs = [
                     SELECT Id, Stale_Case_Threshold__c, Stale_Opportunity_Threshold__c
                     FROM BehaviorIQ_Configuration__c
@@ -483,6 +533,10 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
         );
 
         try {
+            // Test hook for exception coverage
+            if (Test.isRunningTest() && forceUpsertException) {
+                throw new DmlException('Forced test exception for pain point upsert');
+            }
             SObjectAccessDecision securityDecision = Security.stripInaccessible(AccessType.UPSERTABLE, new List<Identified_Pain_Point__c>{pp});
             List<SObject> upsertedRecords = securityDecision.getRecords();
             Database.UpsertResult[] results = Database.upsert(upsertedRecords, Identified_Pain_Point__c.Unique_Key__c, false);
@@ -521,6 +575,10 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
         }
 
         try {
+            // Test hook for exception coverage
+            if (Test.isRunningTest() && forceSnapshotInsertException) {
+                throw new DmlException('Forced test exception for snapshot insert');
+            }
             SObjectAccessDecision securityDecision = Security.stripInaccessible(AccessType.CREATABLE, pendingSnapshots);
             Database.insert(securityDecision.getRecords(), false);
         } catch (Exception e) {
@@ -663,6 +721,13 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
         System.debug(LoggingLevel.INFO, 'Full query: ' + queryString);
 
         try {
+            // Test hooks for exception coverage
+            if (Test.isRunningTest() && forcePatternMatchQueryException) {
+                throw new QueryException('Forced test QueryException for pattern match');
+            }
+            if (Test.isRunningTest() && forcePatternMatchGeneralException) {
+                throw new System.TypeException('Forced test general exception for pattern match');
+            }
             List<SObject> results = Database.query(queryString);
 
             // Apply field-level security by stripping inaccessible fields
@@ -735,6 +800,10 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
         List<String> fields = new List<String>{ 'Id' };
 
         try {
+            // Test hook for exception coverage
+            if (Test.isRunningTest() && forceDynamicFieldsException) {
+                throw new System.TypeException('Forced test exception for dynamic fields');
+            }
             Map<String, Schema.SObjectType> globalDescribe = Schema.getGlobalDescribe();
             // Use lowercase for case-insensitive lookup
             Schema.SObjectType sObjType = globalDescribe.get(objectApiName.toLowerCase());

@@ -230,4 +230,179 @@ private class WorkflowAnalyticsControllerTest {
         System.assertEquals(true, result.isPremium, 'Should identify Premium user');
         System.assert(result.metrics.size() > 0, 'Should return metrics including Active anomalies');
     }
+
+    // ==================== ADDITIONAL COVERAGE TESTS ====================
+
+    @isTest
+    static void testRunAutoFix_StaleOpportunity() {
+        // Test stale opportunity fix path (lines 140-141, 215-234)
+        Account acc = new Account(Name = 'Opp Test Account');
+        insert acc;
+
+        Opportunity opp = new Opportunity(
+            Name = 'Test Stale Opp',
+            StageName = 'Prospecting',
+            CloseDate = Date.today().addDays(30),
+            AccountId = acc.Id
+        );
+        insert opp;
+
+        List<String> recordIds = new List<String>{String.valueOf(opp.Id)};
+
+        Test.startTest();
+        WorkflowAnalyticsController.AutoFixResult result = WorkflowAnalyticsController.runAutoFix(recordIds, 'Stale Opportunity');
+        Test.stopTest();
+
+        System.assertNotEquals(null, result, 'Result should not be null');
+        System.assertEquals(1, result.fixedCount, 'Should have fixed 1 record');
+
+        List<Task> tasks = [SELECT Id FROM Task WHERE WhatId = :opp.Id];
+        System.assertEquals(1, tasks.size(), 'Task should be created for stale opportunity');
+    }
+
+    @isTest
+    static void testRunAutoFix_InvalidId() {
+        // Test invalid ID format handling (lines 114-118)
+        List<String> recordIds = new List<String>{'invalid-id-format'};
+
+        Test.startTest();
+        try {
+            WorkflowAnalyticsController.runAutoFix(recordIds, 'Stale Case');
+            System.assert(false, 'Should throw exception for invalid ID');
+        } catch (AuraHandledException e) {
+            System.assert(e.getMessage().contains('Invalid Record ID') || 
+                          e.getMessage().contains('Script-thrown'),
+                'Exception should mention invalid ID');
+        }
+        Test.stopTest();
+    }
+
+    @isTest
+    static void testRunAutoFix_MetadataFallback() {
+        // Test metadata-driven fix fallback (line 148)
+        Case c = [SELECT Id FROM Case LIMIT 1];
+        List<String> recordIds = new List<String>{String.valueOf(c.Id)};
+
+        Test.startTest();
+        try {
+            WorkflowAnalyticsController.runAutoFix(recordIds, 'Custom_Pattern_Type');
+            // If PatternFixService succeeds, test passes
+        } catch (AuraHandledException e) {
+            // Expected if metadata rule doesn't exist
+            System.assert(e.getMessage().contains('Auto-Fix') || 
+                          e.getMessage().contains('not found') ||
+                          e.getMessage().contains('Script-thrown'),
+                'Exception should be from auto-fix logic');
+        }
+        Test.stopTest();
+    }
+
+    @isTest
+    static void testGetDashboardData_EmptyMetrics() {
+        // Test empty metrics fallback (lines 322-330)
+        // Delete all pain points to trigger empty state
+        delete [SELECT Id FROM Identified_Pain_Point__c];
+
+        Test.startTest();
+        WorkflowAnalyticsController.DashboardDataWrapper result = WorkflowAnalyticsController.getDashboardData();
+        Test.stopTest();
+
+        System.assertNotEquals(null, result, 'Result should not be null');
+        System.assertNotEquals(null, result.metrics, 'Metrics should not be null');
+        // When empty, should fall back to stale opportunities metric
+    }
+
+    @isTest
+    static void testGetMetrics_DismissedStatus() {
+        // Test dismissed status metric (lines 313-314)
+        // Create a dismissed pain point
+        Identified_Pain_Point__c dismissedPP = new Identified_Pain_Point__c(
+            Name = 'Dismissed Test',
+            Object_API_Name__c = 'Case',
+            Status__c = 'Dismissed',
+            Impact_Score__c = 50,
+            Occurrences__c = 5,
+            Unique_Key__c = 'Dismissed_Test_Key'
+        );
+        insert dismissedPP;
+
+        Test.startTest();
+        WorkflowAnalyticsController.DashboardDataWrapper result = WorkflowAnalyticsController.getDashboardData();
+        Test.stopTest();
+
+        System.assertNotEquals(null, result.metrics, 'Metrics should not be null');
+    }
+
+    @isTest
+    static void testMetricWrapper() {
+        // Test MetricWrapper constructor
+        Test.startTest();
+        WorkflowAnalyticsController.MetricWrapper metric = 
+            new WorkflowAnalyticsController.MetricWrapper('Test Label', 100, '+5%', 'alert', 'test_key');
+        Test.stopTest();
+
+        System.assertEquals('Test Label', metric.label);
+        System.assertEquals(100, metric.count);
+        System.assertEquals('+5%', metric.trend);
+        System.assertEquals('alert', metric.type);
+        System.assertEquals('test_key', metric.key);
+    }
+
+    @isTest
+    static void testDashboardDataWrapper() {
+        // Test DashboardDataWrapper constructor
+        Test.startTest();
+        WorkflowAnalyticsController.DashboardDataWrapper wrapper = 
+            new WorkflowAnalyticsController.DashboardDataWrapper();
+        Test.stopTest();
+
+        System.assertEquals(false, wrapper.isPremium);
+        System.assertNotEquals(null, wrapper.metrics);
+        System.assertNotEquals(null, wrapper.recentLogs);
+    }
+
+    @isTest
+    static void testAutoFixResult() {
+        // Test AutoFixResult constructor
+        List<Id> testIds = new List<Id>();
+        Case c = [SELECT Id FROM Case LIMIT 1];
+        testIds.add(c.Id);
+
+        Test.startTest();
+        WorkflowAnalyticsController.AutoFixResult result = 
+            new WorkflowAnalyticsController.AutoFixResult('Test message', testIds);
+        Test.stopTest();
+
+        System.assertEquals('Test message', result.message);
+        System.assertEquals(1, result.fixedCount);
+        System.assertEquals(1, result.fixedRecordIds.size());
+    }
+
+    @isTest
+    static void testTopAction() {
+        // Test TopAction class
+        Test.startTest();
+        WorkflowAnalyticsController.TopAction action = new WorkflowAnalyticsController.TopAction();
+        action.id = 'test_id';
+        action.actionName = 'Test Action';
+        action.objectName = 'Account';
+        action.count = 50;
+        Test.stopTest();
+
+        System.assertEquals('test_id', action.id);
+        System.assertEquals('Test Action', action.actionName);
+        System.assertEquals('Account', action.objectName);
+        System.assertEquals(50, action.count);
+    }
+
+    @isTest
+    static void testGetRecentLogs_WithData() {
+        // Logs are created in testSetup
+        Test.startTest();
+        List<Behavior_Log__c> logs = WorkflowAnalyticsController.getRecentLogs();
+        Test.stopTest();
+
+        System.assertNotEquals(null, logs, 'Logs should not be null');
+        System.assert(logs.size() > 0, 'Should return logs from test setup');
+    }
 }
