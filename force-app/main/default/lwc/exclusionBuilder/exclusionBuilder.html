@@ -1,0 +1,199 @@
+<template>
+    <lightning-card icon-name="utility:shield" title="Safety Exclusions">
+        <div slot="actions">
+            <lightning-button-icon
+                icon-name="utility:refresh"
+                alternative-text="Refresh"
+                title="Refresh"
+                onclick={handleRefresh}
+                class="slds-m-right_x-small">
+            </lightning-button-icon>
+        </div>
+
+        <div class="slds-p-horizontal_medium slds-p-bottom_medium">
+            <p class="slds-text-body_small slds-text-color_weak slds-m-bottom_medium">
+                Define exclusion rules to protect specific records from BehaviorIQ pattern detection.
+                Records matching these criteria will be excluded from analysis.
+            </p>
+
+            <template if:true={isLoading}>
+                <div class="slds-is-relative" style="height: 150px;">
+                    <lightning-spinner alternative-text="Loading..." size="medium" variant="brand"></lightning-spinner>
+                </div>
+            </template>
+
+            <template if:false={isLoading}>
+                <!-- Rule Builder Section -->
+                <div class="slds-box slds-box_x-small slds-theme_shade slds-m-bottom_medium rule-builder-box">
+                    <h3 class="slds-text-heading_small slds-m-bottom_small">
+                        <lightning-icon icon-name="utility:add" size="x-small" class="slds-m-right_x-small"></lightning-icon>
+                        Add New Rule
+                    </h3>
+
+                    <div class="slds-grid slds-gutters slds-wrap">
+                        <!-- Object Selector -->
+                        <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-4 slds-m-bottom_small">
+                            <lightning-combobox
+                                name="objectSelect"
+                                label="Object"
+                                placeholder="Select Object"
+                                options={objectOptions}
+                                value={selectedObject}
+                                onchange={handleObjectChange}
+                                variant="label-stacked">
+                            </lightning-combobox>
+                        </div>
+
+                        <!-- Field Selector -->
+                        <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-4 slds-m-bottom_small">
+                            <lightning-combobox
+                                name="fieldSelect"
+                                label="Field"
+                                placeholder="Select Field"
+                                options={fieldOptions}
+                                value={selectedField}
+                                onchange={handleFieldChange}
+                                disabled={isFieldDisabled}
+                                variant="label-stacked">
+                            </lightning-combobox>
+                        </div>
+
+                        <!-- Operator Selector -->
+                        <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-4 slds-m-bottom_small">
+                            <lightning-combobox
+                                name="operatorSelect"
+                                label="Operator"
+                                placeholder="Select Operator"
+                                options={operatorOptions}
+                                value={selectedOperator}
+                                onchange={handleOperatorChange}
+                                disabled={isOperatorDisabled}
+                                variant="label-stacked">
+                            </lightning-combobox>
+                        </div>
+
+                        <!-- Value Input (Dynamic) -->
+                        <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-4 slds-m-bottom_small">
+                            <!-- Text Input -->
+                            <template if:true={showTextInput}>
+                                <lightning-input
+                                    type="text"
+                                    label="Value"
+                                    placeholder="Enter value"
+                                    value={selectedValue}
+                                    onchange={handleValueChange}
+                                    variant="label-stacked">
+                                </lightning-input>
+                            </template>
+
+                            <!-- Picklist Input -->
+                            <template if:true={showPicklistInput}>
+                                <lightning-combobox
+                                    name="picklistValue"
+                                    label="Value"
+                                    placeholder="Select Value"
+                                    options={picklistOptions}
+                                    value={selectedValue}
+                                    onchange={handleValueChange}
+                                    variant="label-stacked">
+                                </lightning-combobox>
+                            </template>
+
+                            <!-- Boolean Input -->
+                            <template if:true={showBooleanInput}>
+                                <lightning-combobox
+                                    name="booleanValue"
+                                    label="Value"
+                                    placeholder="Select Value"
+                                    options={booleanOptions}
+                                    value={selectedValue}
+                                    onchange={handleBooleanChange}
+                                    variant="label-stacked">
+                                </lightning-combobox>
+                            </template>
+
+                            <!-- No Value Needed -->
+                            <template if:false={showValueInput}>
+                                <template if:true={selectedOperator}>
+                                    <div class="slds-form-element">
+                                        <label class="slds-form-element__label">Value</label>
+                                        <div class="slds-form-element__control">
+                                            <span class="slds-text-body_small slds-text-color_weak">(not required)</span>
+                                        </div>
+                                    </div>
+                                </template>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- Add Rule Button -->
+                    <div class="slds-grid slds-grid_align-end slds-m-top_small">
+                        <lightning-button
+                            variant="brand"
+                            label="Add Rule"
+                            icon-name="utility:add"
+                            onclick={handleAddRule}
+                            disabled={isAddDisabled}>
+                        </lightning-button>
+                    </div>
+                </div>
+
+                <!-- Current Rules Table -->
+                <div class="slds-section slds-is-open">
+                    <h3 class="slds-section__title slds-theme_shade">
+                        <span class="slds-truncate slds-p-horizontal_small" title="Current Rules">
+                            <lightning-icon icon-name="utility:filterList" size="x-small" class="slds-m-right_x-small"></lightning-icon>
+                            Current Exclusion Rules ({rules.length})
+                        </span>
+                    </h3>
+
+                    <div class="slds-section__content">
+                        <template if:true={hasRules}>
+                            <lightning-datatable
+                                key-field="id"
+                                data={rules}
+                                columns={columns}
+                                onrowaction={handleRowAction}
+                                hide-checkbox-column
+                                show-row-number-column>
+                            </lightning-datatable>
+                        </template>
+
+                        <template if:false={hasRules}>
+                            <div class="slds-illustration slds-illustration_small slds-p-around_medium slds-align_absolute-center">
+                                <div class="slds-text-longform">
+                                    <h3 class="slds-text-heading_medium">No Exclusion Rules</h3>
+                                    <p class="slds-text-body_regular">
+                                        Add rules above to exclude specific records from pattern detection.
+                                    </p>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- Footer Actions -->
+                <div class="slds-grid slds-grid_align-spread slds-m-top_medium slds-p-top_small slds-border_top">
+                    <lightning-button
+                        label="Clear All"
+                        title="Remove all exclusion rules"
+                        icon-name="utility:delete"
+                        onclick={handleClearAll}
+                        disabled={isClearDisabled}>
+                    </lightning-button>
+
+                    <lightning-button
+                        variant="brand"
+                        label="Save Configuration"
+                        icon-name="utility:save"
+                        onclick={handleSave}
+                        disabled={isSaveDisabled}>
+                        <template if:true={isSaving}>
+                            <lightning-spinner alternative-text="Saving..." size="small"></lightning-spinner>
+                        </template>
+                    </lightning-button>
+                </div>
+            </template>
+        </div>
+    </lightning-card>
+</template>
