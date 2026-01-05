@@ -26,4 +26,8 @@
         <field>Is_Premium__c</field>
         <value xsi:type="xsd:boolean">true</value>
     </values>
+    <values>
+        <field>Cost_Per_Incident__c</field>
+        <value xsi:type="xsd:double">150</value>
+    </values>
 </CustomMetadata>

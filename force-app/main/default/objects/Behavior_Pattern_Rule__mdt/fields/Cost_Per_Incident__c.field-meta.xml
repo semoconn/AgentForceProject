@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Cost_Per_Incident__c</fullName>
+    <description>Estimated cost or risk value per detected incident. Used to calculate ROI and display "Estimated Savings" on the dashboard. For example, a stale opportunity might have a Cost_Per_Incident of $500 representing at-risk revenue.</description>
+    <externalId>false</externalId>
+    <fieldManageability>SubscriberControlled</fieldManageability>
+    <inlineHelpText>Estimated cost/risk per incident for ROI calculations (e.g., $500 for at-risk opportunity)</inlineHelpText>
+    <label>Cost Per Incident</label>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>2</scale>
+    <type>Number</type>
+</CustomField>

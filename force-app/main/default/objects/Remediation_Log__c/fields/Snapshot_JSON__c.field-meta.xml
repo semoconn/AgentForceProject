@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Snapshot_JSON__c</fullName>
+    <description>Full JSON snapshot of the record state before remediation was applied. Used for future "Undo" functionality. Contains all field values that were present on the record at the time of the fix.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>JSON snapshot of the original record state before this fix was applied.</inlineHelpText>
+    <label>Snapshot JSON</label>
+    <length>131072</length>
+    <trackTrending>false</trackTrending>
+    <type>LongTextArea</type>
+    <visibleLines>6</visibleLines>
+</CustomField>

@@ -165,10 +165,22 @@ public with sharing class PatternFixService {
         if (String.isBlank(field)) return;
 
         Schema.SObjectType sType = recordIds[0].getSObjectType();
+        String objectName = sType.getDescribe().getName();
 
-        // Query original values for audit logging
-        String soql = 'SELECT Id, ' + String.escapeSingleQuotes(field) + ' FROM ' + sType.getDescribe().getName() + ' WHERE Id IN :recordIds';
+        // Query all accessible fields for full snapshot (for undo capability)
+        // Ensure the target field is always included for logging original value
+        String snapshotFields = getSnapshotFieldsForObject(objectName);
+        if (!snapshotFields.containsIgnoreCase(field)) {
+            snapshotFields = String.escapeSingleQuotes(field) + ', ' + snapshotFields;
+        }
+        String soql = 'SELECT ' + snapshotFields + ' FROM ' + objectName + ' WHERE Id IN :recordIds';
         Map<Id, SObject> originalRecords = new Map<Id, SObject>(Database.query(soql));
+
+        // Create snapshot JSON map for each record
+        Map<Id, String> recordSnapshots = new Map<Id, String>();
+        for (Id recId : originalRecords.keySet()) {
+            recordSnapshots.put(recId, JSON.serialize(originalRecords.get(recId)));
+        }
 
         List<SObject> records = new List<SObject>();
         for (Id recId : recordIds) {
@@ -184,20 +196,22 @@ public with sharing class PatternFixService {
             }
             update Security.stripInaccessible(AccessType.UPDATABLE, records).getRecords();
 
-            // Log successful field updates
+            // Log successful field updates with full snapshot
             for (Id recId : recordIds) {
                 String originalValue = originalRecords.containsKey(recId)
                     ? String.valueOf(originalRecords.get(recId).get(field))
                     : null;
-                addLog(recId, ACTION_FIELD_UPDATE, originalValue, val, STATUS_SUCCESS, null);
+                String snapshot = recordSnapshots.get(recId);
+                addLogWithSnapshot(recId, ACTION_FIELD_UPDATE, originalValue, val, STATUS_SUCCESS, null, snapshot);
             }
         } catch (Exception e) {
-            // Log failures
+            // Log failures with snapshot (even failed attempts should be logged for audit)
             for (Id recId : recordIds) {
                 String originalValue = originalRecords.containsKey(recId)
                     ? String.valueOf(originalRecords.get(recId).get(field))
                     : null;
-                addLog(recId, ACTION_FIELD_UPDATE, originalValue, val, STATUS_FAILED, e.getMessage());
+                String snapshot = recordSnapshots.get(recId);
+                addLogWithSnapshot(recId, ACTION_FIELD_UPDATE, originalValue, val, STATUS_FAILED, e.getMessage(), snapshot);
             }
             throw new AuraHandledException('Failed to update fields: ' + e.getMessage());
         }
@@ -212,9 +226,20 @@ public with sharing class PatternFixService {
         Schema.SObjectType sType = recordIds[0].getSObjectType();
         String objectName = sType.getDescribe().getName();
 
-        // Query original owner values for audit logging
-        String soql = 'SELECT Id, OwnerId FROM ' + objectName + ' WHERE Id IN :recordIds';
+        // Query all accessible fields for full snapshot (for undo capability)
+        // Ensure OwnerId is always included for owner assignment logic
+        String snapshotFields = getSnapshotFieldsForObject(objectName);
+        if (!snapshotFields.containsIgnoreCase('OwnerId')) {
+            snapshotFields = 'OwnerId, ' + snapshotFields;
+        }
+        String soql = 'SELECT ' + snapshotFields + ' FROM ' + objectName + ' WHERE Id IN :recordIds';
         Map<Id, SObject> originalRecords = new Map<Id, SObject>(Database.query(soql));
+
+        // Create snapshot JSON map for each record
+        Map<Id, String> recordSnapshots = new Map<Id, String>();
+        for (Id recId : originalRecords.keySet()) {
+            recordSnapshots.put(recId, JSON.serialize(originalRecords.get(recId)));
+        }
 
         // Check if we should use assignment rules (from config or default to true for Lead/Case)
         Boolean useAssignmentRules = true;
@@ -285,16 +310,18 @@ public with sharing class PatternFixService {
                         safetyObj.put('OwnerId', effectiveFallback);
                         safetyNetUpdates.add(safetyObj);
                     } else {
-                        // Log successful assignment
-                        addLog(recId, ACTION_OWNER_ASSIGNMENT, originalOwnerId, String.valueOf(newOwnerId), STATUS_SUCCESS, null);
+                        // Log successful assignment with snapshot
+                        String snapshot = recordSnapshots.get(recId);
+                        addLogWithSnapshot(recId, ACTION_OWNER_ASSIGNMENT, originalOwnerId, String.valueOf(newOwnerId), STATUS_SUCCESS, null, snapshot);
                     }
                 } else {
-                    // Log failure
+                    // Log failure with snapshot
                     String errorMsg = '';
                     for (Database.Error err : results[i].getErrors()) {
                         errorMsg += err.getMessage() + '; ';
                     }
-                    addLog(recId, ACTION_OWNER_ASSIGNMENT, originalOwnerId, null, STATUS_FAILED, errorMsg);
+                    String snapshot = recordSnapshots.get(recId);
+                    addLogWithSnapshot(recId, ACTION_OWNER_ASSIGNMENT, originalOwnerId, null, STATUS_FAILED, errorMsg, snapshot);
                 }
             }
 
@@ -305,29 +332,31 @@ public with sharing class PatternFixService {
                 for (Integer i = 0; i < safetyResults.size(); i++) {
                     Id recId = safetyNetUpdates[i].Id;
                     String originalOwnerId = String.valueOf(originalRecords.get(recId).get('OwnerId'));
+                    String snapshot = recordSnapshots.get(recId);
 
                     if (safetyResults[i].isSuccess()) {
-                        addLog(recId, ACTION_OWNER_ASSIGNMENT, originalOwnerId, String.valueOf(effectiveFallback), STATUS_SUCCESS,
-                               'Safety net applied - assigned to fallback owner');
+                        addLogWithSnapshot(recId, ACTION_OWNER_ASSIGNMENT, originalOwnerId, String.valueOf(effectiveFallback), STATUS_SUCCESS,
+                               'Safety net applied - assigned to fallback owner', snapshot);
                     } else {
                         String errorMsg = '';
                         for (Database.Error err : safetyResults[i].getErrors()) {
                             errorMsg += err.getMessage() + '; ';
                         }
-                        addLog(recId, ACTION_OWNER_ASSIGNMENT, originalOwnerId, null, STATUS_FAILED,
-                               'Safety net failed: ' + errorMsg);
+                        addLogWithSnapshot(recId, ACTION_OWNER_ASSIGNMENT, originalOwnerId, null, STATUS_FAILED,
+                               'Safety net failed: ' + errorMsg, snapshot);
                     }
                 }
             }
 
         } catch (Exception e) {
             // Test hook can force this path
-            // Log failures for all records
+            // Log failures for all records with snapshots
             for (Id recId : recordIds) {
                 String originalOwnerId = originalRecords.containsKey(recId)
                     ? String.valueOf(originalRecords.get(recId).get('OwnerId'))
                     : null;
-                addLog(recId, ACTION_OWNER_ASSIGNMENT, originalOwnerId, null, STATUS_FAILED, e.getMessage());
+                String snapshot = recordSnapshots.get(recId);
+                addLogWithSnapshot(recId, ACTION_OWNER_ASSIGNMENT, originalOwnerId, null, STATUS_FAILED, e.getMessage(), snapshot);
             }
             throw new AuraHandledException('Failed to assign owner: ' + e.getMessage());
         }
@@ -615,9 +644,25 @@ public with sharing class PatternFixService {
 
     /**
      * @description Creates a remediation log entry and adds it to pending logs.
+     * Overloaded version without snapshot for backward compatibility.
      */
     private void addLog(Id affectedRecordId, String actionTaken, String originalValue,
                         String newValue, String status, String errorMessage) {
+        addLogWithSnapshot(affectedRecordId, actionTaken, originalValue, newValue, status, errorMessage, null);
+    }
+
+    /**
+     * @description Creates a remediation log entry with full record snapshot for undo capability.
+     * @param affectedRecordId The ID of the record that was modified
+     * @param actionTaken The type of action performed
+     * @param originalValue The original field value (truncated to 255 chars)
+     * @param newValue The new field value (truncated to 255 chars)
+     * @param status Success or Failed
+     * @param errorMessage Error details if failed
+     * @param snapshotJson Full JSON snapshot of the record before modification
+     */
+    private void addLogWithSnapshot(Id affectedRecordId, String actionTaken, String originalValue,
+                        String newValue, String status, String errorMessage, String snapshotJson) {
         // Check create permission
         if (!Schema.sObjectType.Remediation_Log__c.isCreateable()) {
             return; // Silently skip logging if no permission
@@ -635,6 +680,12 @@ public with sharing class PatternFixService {
 
         if (String.isNotBlank(errorMessage)) {
             log.Error_Message__c = errorMessage;
+        }
+
+        // Store full snapshot for future undo capability
+        if (String.isNotBlank(snapshotJson)) {
+            // Truncate if exceeds field limit (131072 chars for Long Text Area)
+            log.Snapshot_JSON__c = truncateValue(snapshotJson, 131072);
         }
 
         pendingLogs.add(log);
@@ -662,5 +713,63 @@ public with sharing class PatternFixService {
     private String truncateValue(String value, Integer maxLength) {
         if (value == null) return null;
         return value.length() > maxLength ? value.substring(0, maxLength) : value;
+    }
+
+    /**
+     * @description Returns a comma-separated list of accessible fields for snapshot capture.
+     * Includes all accessible, queryable fields for the given object to enable full undo capability.
+     * @param objectApiName The API name of the object
+     * @return Comma-separated list of field names for SOQL query
+     */
+    private String getSnapshotFieldsForObject(String objectApiName) {
+        List<String> fields = new List<String>{ 'Id' };
+
+        try {
+            Map<String, Schema.SObjectType> globalDescribe = Schema.getGlobalDescribe();
+            Schema.SObjectType sObjType = globalDescribe.get(objectApiName.toLowerCase());
+
+            if (sObjType == null) {
+                return 'Id';
+            }
+
+            Map<String, Schema.SObjectField> fieldMap = sObjType.getDescribe().fields.getMap();
+
+            for (String fieldName : fieldMap.keySet()) {
+                Schema.DescribeFieldResult fieldDescribe = fieldMap.get(fieldName).getDescribe();
+
+                // Include fields that are:
+                // - Accessible (FLS check)
+                // - Not a compound field (like Address which can't be queried directly)
+                // - Standard and custom fields
+                if (fieldDescribe.isAccessible() && !fieldDescribe.isNamePointing()) {
+                    String fieldType = String.valueOf(fieldDescribe.getType());
+
+                    // Skip compound address and geolocation fields
+                    if (fieldType == 'ADDRESS' || fieldType == 'LOCATION') {
+                        continue;
+                    }
+
+                    // Skip base64 fields (too large for snapshots)
+                    if (fieldType == 'BASE64') {
+                        continue;
+                    }
+
+                    fields.add(fieldDescribe.getName());
+                }
+            }
+
+            // Remove duplicates and 'Id' if it got added twice
+            Set<String> uniqueFields = new Set<String>(fields);
+            uniqueFields.remove('id'); // Remove lowercase duplicate if present
+            if (!uniqueFields.contains('Id')) {
+                uniqueFields.add('Id');
+            }
+
+            return String.join(new List<String>(uniqueFields), ', ');
+
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'Error getting snapshot fields for ' + objectApiName + ': ' + e.getMessage());
+            return 'Id';
+        }
     }
 }

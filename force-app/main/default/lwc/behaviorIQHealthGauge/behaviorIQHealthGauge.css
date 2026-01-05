@@ -1,0 +1,213 @@
+/* Health Gauge Container */
+.gauge-container {
+    display: flex;
+    justify-content: center;
+    padding: 0;
+}
+
+.gauge-card {
+    background: #ffffff;
+    border-radius: 0.75rem;
+    padding: 1.5rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    text-align: center;
+    width: 100%;
+}
+
+/* Gauge Wrapper - Contains the semi-circle */
+/* Height must be exactly half the circle diameter (90px) plus a bit for the arc thickness */
+.gauge-wrapper {
+    position: relative;
+    width: 180px;
+    height: 90px;
+    margin: 0 auto 1rem;
+}
+
+/* Base semi-circle (gray track) */
+/* Conic gradient from 270deg (left) clockwise to 90deg (right) = top semi-circle */
+.gauge-track {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 180px;
+    height: 180px;
+    border-radius: 50%;
+    background: conic-gradient(
+        from 270deg at 50% 50%,
+        #e5e7eb 0deg,
+        #e5e7eb 180deg,
+        transparent 180deg,
+        transparent 360deg
+    );
+}
+
+/* Colored progress - fills from left to right */
+.gauge-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 180px;
+    height: 180px;
+    border-radius: 50%;
+    background: conic-gradient(
+        from 270deg at 50% 50%,
+        var(--gauge-color, #2e844a) 0deg,
+        var(--gauge-color, #2e844a) var(--fill-angle, 0deg),
+        transparent var(--fill-angle, 0deg),
+        transparent 360deg
+    );
+}
+
+/* Inner white circle to create donut effect - clipped to top semi-circle only */
+.gauge-inner {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    width: 140px;
+    height: 140px;
+    border-radius: 50%;
+    background: #ffffff;
+    z-index: 5;
+    clip-path: inset(0 0 50% 0);
+}
+
+/* Center with score - positioned in the visible part */
+.gauge-center {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 140px;
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 20;
+}
+
+/* Score Display */
+.gauge-center span {
+    font-size: 2.25rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.percent-sign {
+    font-size: 1rem;
+    font-weight: 500;
+    opacity: 0.7;
+}
+
+/* Score Color Classes */
+.score-green {
+    color: #2e844a;
+}
+
+.score-orange {
+    color: #dd7a01;
+}
+
+.score-red {
+    color: #ba0517;
+}
+
+/* Gauge Labels (0 and 100) */
+.gauge-labels {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: space-between;
+    padding: 0 5px;
+    font-size: 0.7rem;
+    color: #706e6b;
+    font-weight: 500;
+    z-index: 15;
+}
+
+/* Status Section */
+.status-section {
+    margin-bottom: 1rem;
+}
+
+.status-section h2 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin: 0 0 0.25rem 0;
+}
+
+.status-subtitle {
+    font-size: 0.75rem;
+    color: #706e6b;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 0;
+}
+
+/* Status Text Color Classes */
+.status-green {
+    color: #2e844a;
+}
+
+.status-orange {
+    color: #dd7a01;
+}
+
+.status-red {
+    color: #ba0517;
+}
+
+/* Breakdown Section */
+.breakdown-section {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #e5e7eb;
+}
+
+.breakdown-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.5rem;
+    min-width: 60px;
+}
+
+.breakdown-item.high {
+    background: rgba(186, 5, 23, 0.1);
+}
+
+.breakdown-item.medium {
+    background: rgba(221, 122, 1, 0.1);
+}
+
+.breakdown-item.low {
+    background: rgba(46, 132, 74, 0.1);
+}
+
+.breakdown-count {
+    font-size: 1.25rem;
+    font-weight: 700;
+}
+
+.breakdown-item.high .breakdown-count {
+    color: #ba0517;
+}
+
+.breakdown-item.medium .breakdown-count {
+    color: #dd7a01;
+}
+
+.breakdown-item.low .breakdown-count {
+    color: #2e844a;
+}
+
+.breakdown-label {
+    font-size: 0.65rem;
+    color: #706e6b;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}

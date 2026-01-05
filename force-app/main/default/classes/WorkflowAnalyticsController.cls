@@ -46,29 +46,128 @@ public with sharing class WorkflowAnalyticsController {
 
     // --- EXISTING METHODS (Preserved) ---
 
+    /**
+     * @description Wrapper class for pain points with ROI data.
+     * Uses the original SObject plus additional ROI fields for LWC binding.
+     */
+    public class PainPointWithROI {
+        @AuraEnabled public Id Id;
+        @AuraEnabled public String Name;
+        @AuraEnabled public String ObjectApiName;
+        @AuraEnabled public Decimal ImpactScore;
+        @AuraEnabled public String Status;
+        @AuraEnabled public String Description;
+        @AuraEnabled public Decimal Occurrences;
+        @AuraEnabled public String ExampleRecords;
+        @AuraEnabled public String UniqueKey;
+        @AuraEnabled public Decimal EstimatedSavings;
+        @AuraEnabled public Decimal CostPerIncident;
+
+        public PainPointWithROI(Identified_Pain_Point__c pp, Decimal costPerIncident) {
+            this.Id = pp.Id;
+            this.Name = pp.Name;
+            this.ObjectApiName = pp.Object_API_Name__c;
+            this.ImpactScore = pp.Impact_Score__c;
+            this.Status = pp.Status__c;
+            this.Description = pp.Description__c;
+            this.Occurrences = pp.Occurrences__c;
+            this.ExampleRecords = pp.Example_Records__c;
+            this.UniqueKey = pp.Unique_Key__c;
+            this.CostPerIncident = costPerIncident != null ? costPerIncident : 0;
+            // Calculate estimated savings: occurrences * cost per incident
+            this.EstimatedSavings = (pp.Occurrences__c != null && costPerIncident != null)
+                ? pp.Occurrences__c * costPerIncident
+                : 0;
+        }
+    }
+
     @AuraEnabled(cacheable=true)
-    public static List<Identified_Pain_Point__c> getPainPoints() {
+    public static List<PainPointWithROI> getPainPoints() {
         if (!Schema.sObjectType.Identified_Pain_Point__c.isAccessible()) {
             throw new AuraHandledException('Insufficient permissions to view Pain Points.');
         }
 
         try {
             List<Identified_Pain_Point__c> points = [
-                SELECT Id, Name, Object_API_Name__c, Impact_Score__c, Status__c, Description__c, Occurrences__c, Example_Records__c
+                SELECT Id, Name, Object_API_Name__c, Impact_Score__c, Status__c, Description__c, Occurrences__c, Example_Records__c, Unique_Key__c
                 FROM Identified_Pain_Point__c
                 WHERE Status__c = 'New'
                 ORDER BY Impact_Score__c DESC
                 LIMIT 50
             ];
-            
+
             // Enforce Security on the result set
             SObjectAccessDecision decision = Security.stripInaccessible(AccessType.READABLE, points);
-            return (List<Identified_Pain_Point__c>) decision.getRecords();
+            List<Identified_Pain_Point__c> securedPoints = (List<Identified_Pain_Point__c>) decision.getRecords();
+
+            // Build ROI data by fetching cost per incident from metadata and configuration
+            Map<String, Decimal> ruleCostMap = getRuleCostMap();
+
+            // Convert to wrapper with ROI data
+            List<PainPointWithROI> results = new List<PainPointWithROI>();
+            for (Identified_Pain_Point__c pp : securedPoints) {
+                Decimal costPerIncident = ruleCostMap.get(pp.Unique_Key__c);
+                results.add(new PainPointWithROI(pp, costPerIncident));
+            }
+
+            return results;
 
         } catch (Exception e) {
             System.debug(LoggingLevel.ERROR, 'getPainPoints Error: ' + e.getMessage());
             throw new AuraHandledException('Error retrieving analytics data. Please check logs.');
         }
+    }
+
+    /**
+     * @description Builds a map of rule DeveloperName to Cost_Per_Incident value.
+     * Prioritizes user overrides from BehaviorIQ_Configuration__c over metadata defaults.
+     * @return Map of rule DeveloperName to cost value
+     */
+    private static Map<String, Decimal> getRuleCostMap() {
+        Map<String, Decimal> costMap = new Map<String, Decimal>();
+
+        // 1. Load defaults from metadata
+        try {
+            for (Behavior_Pattern_Rule__mdt rule : [
+                SELECT DeveloperName, Cost_Per_Incident__c
+                FROM Behavior_Pattern_Rule__mdt
+            ]) {
+                if (rule.Cost_Per_Incident__c != null) {
+                    costMap.put(rule.DeveloperName, rule.Cost_Per_Incident__c);
+                }
+            }
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'Unable to load rule costs from metadata: ' + e.getMessage());
+        }
+
+        // 2. Apply user overrides from configuration
+        try {
+            if (Schema.sObjectType.BehaviorIQ_Configuration__c.isAccessible()) {
+                List<BehaviorIQ_Configuration__c> configs = [
+                    SELECT Cost_Override__c
+                    FROM BehaviorIQ_Configuration__c
+                    LIMIT 1
+                ];
+
+                if (!configs.isEmpty() && String.isNotBlank(configs[0].Cost_Override__c)) {
+                    Map<String, Object> overrides = (Map<String, Object>)JSON.deserializeUntyped(configs[0].Cost_Override__c);
+                    for (String ruleName : overrides.keySet()) {
+                        Object value = overrides.get(ruleName);
+                        if (value instanceof Decimal) {
+                            costMap.put(ruleName, (Decimal)value);
+                        } else if (value instanceof Integer) {
+                            costMap.put(ruleName, Decimal.valueOf((Integer)value));
+                        } else if (value instanceof Double) {
+                            costMap.put(ruleName, Decimal.valueOf((Double)value));
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'Unable to load cost overrides from configuration: ' + e.getMessage());
+        }
+
+        return costMap;
     }
 
     /**
@@ -387,15 +486,118 @@ public with sharing class WorkflowAnalyticsController {
     public static System_Health_Log__c getSystemHealth() {
         try {
             List<System_Health_Log__c> logs = [
-                SELECT Id, Job_Name__c, Status__c, CreatedDate 
-                FROM System_Health_Log__c 
+                SELECT Id, Job_Name__c, Status__c, CreatedDate
+                FROM System_Health_Log__c
                 WITH SECURITY_ENFORCED
-                ORDER BY CreatedDate DESC 
-                LIMIT 1 
+                ORDER BY CreatedDate DESC
+                LIMIT 1
             ];
             return logs.isEmpty() ? null : logs[0];
         } catch (Exception e) {
             return null;
+        }
+    }
+
+    // --- NEW: Org Health Score Gamification Engine ---
+
+    /**
+     * @description Wrapper for health score with status text
+     */
+    public class HealthScoreResult {
+        @AuraEnabled public Integer score { get; set; }
+        @AuraEnabled public String status { get; set; }
+        @AuraEnabled public Integer highCount { get; set; }
+        @AuraEnabled public Integer mediumCount { get; set; }
+        @AuraEnabled public Integer lowCount { get; set; }
+
+        public HealthScoreResult(Integer score, String status, Integer highCount, Integer mediumCount, Integer lowCount) {
+            this.score = score;
+            this.status = status;
+            this.highCount = highCount;
+            this.mediumCount = mediumCount;
+            this.lowCount = lowCount;
+        }
+    }
+
+    /**
+     * @description Calculates the Org Health Score based on active pain points.
+     * Gamification scoring: Start at 100, deduct points based on severity.
+     * - High Severity (Cost >= $1000): -10 points each, cap at -30
+     * - Medium Severity (Cost $100-$999): -5 points each, cap at -20
+     * - Low Severity (Cost < $100 or tasks): -1 point each
+     * Floor: 0 (score cannot go negative)
+     * @return HealthScoreResult containing score (0-100), status text, and breakdown counts
+     */
+    @AuraEnabled(cacheable=true)
+    public static HealthScoreResult getHealthScore() {
+        if (!Schema.sObjectType.Identified_Pain_Point__c.isAccessible()) {
+            return new HealthScoreResult(100, 'Healthy', 0, 0, 0);
+        }
+
+        try {
+            Integer score = 100;
+            Integer highCount = 0;
+            Integer mediumCount = 0;
+            Integer lowCount = 0;
+
+            // Build cost map from metadata
+            Map<String, Decimal> ruleCostMap = getRuleCostMap();
+
+            // Get active pain points
+            List<Identified_Pain_Point__c> activePoints = [
+                SELECT Id, Unique_Key__c, Occurrences__c, Object_API_Name__c
+                FROM Identified_Pain_Point__c
+                WHERE Status__c = 'New' OR Status__c = 'Active'
+                WITH SECURITY_ENFORCED
+                LIMIT 100
+            ];
+
+            // Calculate deductions based on severity
+            Integer highDeduction = 0;
+            Integer mediumDeduction = 0;
+            Integer lowDeduction = 0;
+
+            for (Identified_Pain_Point__c pp : activePoints) {
+                Decimal costPerIncident = ruleCostMap.get(pp.Unique_Key__c);
+                String objName = pp.Object_API_Name__c != null ? pp.Object_API_Name__c.toLowerCase() : '';
+
+                // Determine severity based on cost or object type
+                if (costPerIncident != null && costPerIncident >= 1000) {
+                    // High Severity: Contract Expiry, High-Value Ghosting
+                    highCount++;
+                    highDeduction = Math.min(highDeduction + 10, 30);
+                } else if (costPerIncident != null && costPerIncident >= 100) {
+                    // Medium Severity: Stale Opps, Stale Cases
+                    mediumCount++;
+                    mediumDeduction = Math.min(mediumDeduction + 5, 20);
+                } else {
+                    // Low Severity: Tasks, uncategorized
+                    lowCount++;
+                    lowDeduction += 1;
+                }
+            }
+
+            // Apply deductions
+            score = score - highDeduction - mediumDeduction - lowDeduction;
+
+            // Floor at 0
+            score = Math.max(score, 0);
+
+            // Determine status text
+            String status;
+            if (score > 80) {
+                status = 'Your Org is Healthy';
+            } else if (score >= 50) {
+                status = 'Needs Attention';
+            } else {
+                status = 'Critical Issues Found';
+            }
+
+            return new HealthScoreResult(score, status, highCount, mediumCount, lowCount);
+
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'getHealthScore Error: ' + e.getMessage());
+            return new HealthScoreResult(100, 'Healthy', 0, 0, 0);
         }
     }
 }

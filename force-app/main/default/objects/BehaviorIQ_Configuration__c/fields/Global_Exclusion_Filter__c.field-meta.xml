@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Global_Exclusion_Filter__c</fullName>
+    <description>JSON map of per-object exclusion filters. Format: {"Account": "Type != 'VIP'", "Lead": "Rating != 'Hot'"}. These conditions are automatically appended to pattern detection queries to protect sensitive records from automation.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>JSON map of exclusion filters by object. Example: {"Account": "Type != 'Strategic'", "Lead": "Rating != 'Hot'"}</inlineHelpText>
+    <label>Global Exclusion Filter</label>
+    <length>32768</length>
+    <trackTrending>false</trackTrending>
+    <type>LongTextArea</type>
+    <visibleLines>5</visibleLines>
+</CustomField>

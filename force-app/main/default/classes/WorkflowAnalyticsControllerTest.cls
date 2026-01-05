@@ -61,13 +61,15 @@ private class WorkflowAnalyticsControllerTest {
     static void testGetPainPoints() {
         // We do NOT update status to 'Active' here anymore, as 'New' is the valid schema value.
         // The Controller has been updated to query for 'New'.
-        
+
         Test.startTest();
-        List<Identified_Pain_Point__c> results = WorkflowAnalyticsController.getPainPoints();
+        List<WorkflowAnalyticsController.PainPointWithROI> results = WorkflowAnalyticsController.getPainPoints();
         Test.stopTest();
 
         System.assertNotEquals(null, results, 'Results should not be null');
         System.assertEquals(1, results.size(), 'Should return 1 pain point');
+        // Verify ROI fields are populated (may be 0 if no cost configured)
+        System.assertNotEquals(null, results[0].EstimatedSavings, 'EstimatedSavings should not be null');
     }
 
     @isTest
@@ -404,5 +406,153 @@ private class WorkflowAnalyticsControllerTest {
 
         System.assertNotEquals(null, logs, 'Logs should not be null');
         System.assert(logs.size() > 0, 'Should return logs from test setup');
+    }
+
+    // ==================== HEALTH SCORE TESTS ====================
+
+    @isTest
+    static void testGetHealthScore_WithPainPoints() {
+        // Pain points created in testSetup
+        Test.startTest();
+        WorkflowAnalyticsController.HealthScoreResult result = WorkflowAnalyticsController.getHealthScore();
+        Test.stopTest();
+
+        System.assertNotEquals(null, result, 'Result should not be null');
+        System.assert(result.score >= 0 && result.score <= 100, 'Score should be between 0 and 100');
+        System.assertNotEquals(null, result.status, 'Status should not be null');
+    }
+
+    @isTest
+    static void testGetHealthScore_NoPainPoints() {
+        // Delete all pain points
+        delete [SELECT Id FROM Identified_Pain_Point__c];
+
+        Test.startTest();
+        WorkflowAnalyticsController.HealthScoreResult result = WorkflowAnalyticsController.getHealthScore();
+        Test.stopTest();
+
+        System.assertEquals(100, result.score, 'Score should be 100 with no pain points');
+        System.assertEquals('Your Org is Healthy', result.status, 'Status should indicate healthy org');
+        System.assertEquals(0, result.highCount, 'High count should be 0');
+        System.assertEquals(0, result.mediumCount, 'Medium count should be 0');
+        System.assertEquals(0, result.lowCount, 'Low count should be 0');
+    }
+
+    @isTest
+    static void testGetHealthScore_HighSeverity() {
+        // Create pain points that will be categorized
+        delete [SELECT Id FROM Identified_Pain_Point__c];
+
+        List<Identified_Pain_Point__c> points = new List<Identified_Pain_Point__c>();
+        for (Integer i = 0; i < 4; i++) {
+            points.add(new Identified_Pain_Point__c(
+                Name = 'Test Pain Point ' + i,
+                Object_API_Name__c = 'Opportunity',
+                Status__c = 'New',
+                Impact_Score__c = 100,
+                Unique_Key__c = 'Test_Key_' + i,
+                Occurrences__c = 1
+            ));
+        }
+        insert points;
+
+        Test.startTest();
+        WorkflowAnalyticsController.HealthScoreResult result = WorkflowAnalyticsController.getHealthScore();
+        Test.stopTest();
+
+        // With 4 pain points (low severity since no matching cost metadata), score should be 96
+        System.assert(result.score < 100, 'Score should be reduced by issues');
+        System.assert(result.score >= 0, 'Score should be non-negative');
+    }
+
+    @isTest
+    static void testGetHealthScore_MixedSeverity() {
+        // Create mixed severity pain points
+        delete [SELECT Id FROM Identified_Pain_Point__c];
+
+        List<Identified_Pain_Point__c> points = new List<Identified_Pain_Point__c>();
+
+        // High severity (Cost_Per_Incident >= 1000)
+        points.add(new Identified_Pain_Point__c(
+            Name = 'High Severity',
+            Object_API_Name__c = 'Contract',
+            Status__c = 'New',
+            Impact_Score__c = 100,
+            Unique_Key__c = 'Contract_Expiry_Red_Zone',
+            Occurrences__c = 1
+        ));
+
+        // Medium severity (Cost 100-999)
+        points.add(new Identified_Pain_Point__c(
+            Name = 'Medium Severity',
+            Object_API_Name__c = 'Opportunity',
+            Status__c = 'New',
+            Impact_Score__c = 70,
+            Unique_Key__c = 'Stale_Opp_90',
+            Occurrences__c = 1
+        ));
+
+        // Low severity (no cost configured)
+        points.add(new Identified_Pain_Point__c(
+            Name = 'Low Severity',
+            Object_API_Name__c = 'Task',
+            Status__c = 'New',
+            Impact_Score__c = 30,
+            Unique_Key__c = 'Unknown_Rule',
+            Occurrences__c = 1
+        ));
+
+        insert points;
+
+        Test.startTest();
+        WorkflowAnalyticsController.HealthScoreResult result = WorkflowAnalyticsController.getHealthScore();
+        Test.stopTest();
+
+        System.assertNotEquals(null, result, 'Result should not be null');
+        System.assert(result.score < 100, 'Score should be less than 100');
+        System.assert(result.highCount > 0 || result.mediumCount > 0 || result.lowCount > 0,
+            'Should have at least some severity counts');
+    }
+
+    @isTest
+    static void testGetHealthScore_CriticalStatus() {
+        // Create enough issues to drop below 50
+        // Since test keys won't match metadata, all will be "low" severity (-1 each)
+        // Need 51+ low severity items to drop below 50
+        delete [SELECT Id FROM Identified_Pain_Point__c];
+
+        List<Identified_Pain_Point__c> points = new List<Identified_Pain_Point__c>();
+        for (Integer i = 0; i < 55; i++) {
+            points.add(new Identified_Pain_Point__c(
+                Name = 'Critical Issue ' + i,
+                Object_API_Name__c = 'Task',
+                Status__c = 'New',
+                Impact_Score__c = 20,
+                Unique_Key__c = 'Critical_Test_Key_' + i,
+                Occurrences__c = 1
+            ));
+        }
+        insert points;
+
+        Test.startTest();
+        WorkflowAnalyticsController.HealthScoreResult result = WorkflowAnalyticsController.getHealthScore();
+        Test.stopTest();
+
+        System.assert(result.score < 50, 'Score should be below 50 for critical status');
+        System.assertEquals('Critical Issues Found', result.status, 'Status should indicate critical issues');
+    }
+
+    @isTest
+    static void testHealthScoreResult_Constructor() {
+        Test.startTest();
+        WorkflowAnalyticsController.HealthScoreResult result =
+            new WorkflowAnalyticsController.HealthScoreResult(75, 'Needs Attention', 2, 3, 5);
+        Test.stopTest();
+
+        System.assertEquals(75, result.score);
+        System.assertEquals('Needs Attention', result.status);
+        System.assertEquals(2, result.highCount);
+        System.assertEquals(3, result.mediumCount);
+        System.assertEquals(5, result.lowCount);
     }
 }

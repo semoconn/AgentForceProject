@@ -461,10 +461,74 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
             queryCondition = queryCondition.replaceAll(daysPattern, daysReplacement);
         }
 
+        // Apply Safety Exclusions (per-object filters from configuration)
+        String exclusionCondition = getExclusionCondition(rule.Object_API_Name__c, config);
+        if (String.isNotBlank(exclusionCondition)) {
+            queryCondition = '(' + queryCondition + ') AND ' + exclusionCondition;
+        }
+
         // Debug logging for troubleshooting query construction
         System.debug(LoggingLevel.DEBUG, 'getEffectiveQuery - Rule: ' + ruleName + ', Final condition: ' + queryCondition);
 
         return queryCondition;
+    }
+
+    /**
+     * @description Retrieves the exclusion condition for a specific object from the JSON configuration.
+     * Parses the Global_Exclusion_Filter__c field which stores per-object filters as JSON.
+     * Example config: {"Account": "Type != 'VIP'", "Lead": "Rating != 'Hot'"}
+     * @param objectApiName The API name of the object to get exclusion for
+     * @param config The configuration record containing exclusion settings
+     * @return The exclusion condition for this object, or null if none defined
+     */
+    @TestVisible
+    private String getExclusionCondition(String objectApiName, BehaviorIQ_Configuration__c config) {
+        if (config == null || String.isBlank(objectApiName)) {
+            return null;
+        }
+
+        String exclusionJson = config.Global_Exclusion_Filter__c;
+        if (String.isBlank(exclusionJson)) {
+            return null;
+        }
+
+        try {
+            Map<String, Object> exclusionMap = (Map<String, Object>)JSON.deserializeUntyped(exclusionJson);
+
+            // Look for exact match first, then case-insensitive match
+            if (exclusionMap.containsKey(objectApiName)) {
+                String condition = (String)exclusionMap.get(objectApiName);
+                if (String.isNotBlank(condition)) {
+                    // Validate that the exclusion fields are accessible before using
+                    if (validateQueryFieldsAccessible(objectApiName, condition)) {
+                        System.debug(LoggingLevel.INFO, 'Applying exclusion filter for ' + objectApiName + ': ' + condition);
+                        return '(' + condition + ')';
+                    } else {
+                        System.debug(LoggingLevel.WARN, 'Exclusion filter skipped for ' + objectApiName + ': fields not accessible');
+                    }
+                }
+            }
+
+            // Try case-insensitive lookup
+            for (String key : exclusionMap.keySet()) {
+                if (key.equalsIgnoreCase(objectApiName)) {
+                    String condition = (String)exclusionMap.get(key);
+                    if (String.isNotBlank(condition)) {
+                        if (validateQueryFieldsAccessible(objectApiName, condition)) {
+                            System.debug(LoggingLevel.INFO, 'Applying exclusion filter for ' + objectApiName + ': ' + condition);
+                            return '(' + condition + ')';
+                        } else {
+                            System.debug(LoggingLevel.WARN, 'Exclusion filter skipped for ' + objectApiName + ': fields not accessible');
+                        }
+                    }
+                    break;
+                }
+            }
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'Failed to parse exclusion filter JSON: ' + e.getMessage());
+        }
+
+        return null;
     }
 
     /**
@@ -493,7 +557,7 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
                     throw new QueryException('Forced test exception for config query');
                 }
                 List<BehaviorIQ_Configuration__c> configs = [
-                    SELECT Id, Stale_Case_Threshold__c, Stale_Opportunity_Threshold__c
+                    SELECT Id, Stale_Case_Threshold__c, Stale_Opportunity_Threshold__c, Global_Exclusion_Filter__c
                     FROM BehaviorIQ_Configuration__c
                     LIMIT 1
                 ];

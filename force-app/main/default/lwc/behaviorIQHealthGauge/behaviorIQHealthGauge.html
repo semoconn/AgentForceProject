@@ -1,0 +1,49 @@
+<template>
+    <div class="gauge-container">
+        <!-- Main Gauge Card -->
+        <div class="gauge-card">
+            <!-- Gauge Visual -->
+            <div class="gauge-wrapper">
+                <!-- Gray background track (semi-circle) -->
+                <div class="gauge-track"></div>
+                <!-- Colored progress arc -->
+                <div class="gauge-fill" style={gaugeStyle}></div>
+                <!-- Inner white circle for donut effect -->
+                <div class="gauge-inner"></div>
+                <!-- Center with score -->
+                <div class="gauge-center">
+                    <span class={scoreClass}>{displayScore}<span class="percent-sign">%</span></span>
+                </div>
+                <!-- Gauge Labels -->
+                <div class="gauge-labels">
+                    <span class="label-left">0</span>
+                    <span class="label-right">100</span>
+                </div>
+            </div>
+
+            <!-- Status Text -->
+            <div class="status-section">
+                <h2 class={statusClass}>{statusText}</h2>
+                <p class="status-subtitle">Org Health Score</p>
+            </div>
+
+            <!-- Breakdown Stats -->
+            <template if:true={hasBreakdown}>
+                <div class="breakdown-section">
+                    <div class="breakdown-item high">
+                        <span class="breakdown-count">{highCount}</span>
+                        <span class="breakdown-label">High</span>
+                    </div>
+                    <div class="breakdown-item medium">
+                        <span class="breakdown-count">{mediumCount}</span>
+                        <span class="breakdown-label">Medium</span>
+                    </div>
+                    <div class="breakdown-item low">
+                        <span class="breakdown-count">{lowCount}</span>
+                        <span class="breakdown-label">Low</span>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+</template>

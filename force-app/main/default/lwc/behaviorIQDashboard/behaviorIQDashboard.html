@@ -47,13 +47,11 @@
             </div>
         </div>
 
-        <!-- METRICS BAR (FIXED) -->
-        <!-- Added slds-wrap and updated loop item sizing for responsiveness -->
+        <!-- METRICS BAR -->
         <div class="slds-grid slds-wrap slds-gutters slds-m-bottom_medium">
             <template for:each={metrics} for:item="metric">
                 <div key={metric.id} class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2 slds-large-size_1-of-4 slds-m-bottom_small">
                     <div class="metric-card shadow-card">
-                        <!-- FIXED: Use class={metric.cssClass} instead of data-class -->
                         <div class={metric.cssClass}>
                             <lightning-icon icon-name={metric.icon} size="medium" variant="inverse"></lightning-icon>
                         </div>
@@ -108,10 +106,22 @@
                                             <div class="slds-media__body">
                                                 <div class="slds-grid slds-grid_vertical-align-center">
                                                     <h3 class="slds-text-heading_small slds-m-right_small">{point.Name}</h3>
-                                                    <lightning-badge label={point.Object_API_Name__c} class="slds-badge_lightest"></lightning-badge>
+                                                    <lightning-badge label={point.ObjectApiName} class="slds-badge_lightest"></lightning-badge>
+                                                    <!-- ROI Value Card - Shows estimated savings when configured -->
+                                                    <template if:true={point.EstimatedSavings}>
+                                                        <span class="slds-badge slds-badge_inverse slds-m-left_small roi-badge">
+                                                            <lightning-icon icon-name="utility:moneybag" size="xx-small" class="slds-m-right_xx-small"></lightning-icon>
+                                                            At Risk: <lightning-formatted-number value={point.EstimatedSavings} format-style="currency" currency-code="USD" maximum-fraction-digits="0"></lightning-formatted-number>
+                                                        </span>
+                                                    </template>
                                                 </div>
-                                                <p class="slds-text-body_small slds-m-top_xx-small">{point.Description__c}</p>
-                                                <p class="slds-text-color_weak slds-text-body_small">Impact Score: {point.Impact_Score__c}</p>
+                                                <p class="slds-text-body_small slds-m-top_xx-small">{point.Description}</p>
+                                                <div class="slds-grid slds-grid_vertical-align-center slds-text-color_weak slds-text-body_small">
+                                                    <span class="slds-m-right_medium">{point.Occurrences} records affected</span>
+                                                    <template if:true={point.CostPerIncident}>
+                                                        <span>@ <lightning-formatted-number value={point.CostPerIncident} format-style="currency" currency-code="USD" maximum-fraction-digits="0"></lightning-formatted-number>/incident</span>
+                                                    </template>
+                                                </div>
                                             </div>
                                         </div>
 
@@ -124,31 +134,31 @@
                                                 class="slds-m-right_x-small"
                                                 title={autoFixButtonTitle}
                                                 onclick={handleAutoFix}
-                                                data-id={point.Example_Records__c}
-                                                data-type={point.Object_API_Name__c}
-                                                data-key={point.Unique_Key__c}
+                                                data-id={point.ExampleRecords}
+                                                data-type={point.ObjectApiName}
+                                                data-key={point.UniqueKey}
                                                 data-label={point.Name}
                                                 disabled={isFixDisabled}>
                                             </lightning-button-icon>
 
-                                            <lightning-button-icon 
-                                                icon-name="utility:preview" 
-                                                variant="border-filled" 
+                                            <lightning-button-icon
+                                                icon-name="utility:preview"
+                                                variant="border-filled"
                                                 class="slds-m-right_x-small"
-                                                alternative-text="View Details" 
+                                                alternative-text="View Details"
                                                 title="View Solution Guide"
                                                 onclick={handleViewDetails}
                                                 data-id={point.Id}>
                                             </lightning-button-icon>
 
-                                            <lightning-button-icon 
-                                                icon-name="utility:close" 
-                                                variant="bare" 
-                                                alternative-text="Dismiss" 
+                                            <lightning-button-icon
+                                                icon-name="utility:close"
+                                                variant="bare"
+                                                alternative-text="Dismiss"
                                                 title="Dismiss Suggestion"
                                                 onclick={handleDismiss}
                                                 data-id={point.Id}
-                                                data-key={point.Unique_Key__c}>
+                                                data-key={point.UniqueKey}>
                                             </lightning-button-icon>
                                         </div>
                                     </div>
@@ -168,6 +178,11 @@
                         </template>
                     </div>
                 </lightning-card>
+
+                <!-- Health Gauge - Below Active Insights -->
+                <div class="slds-m-top_medium">
+                    <c-behavior-i-q-health-gauge></c-behavior-i-q-health-gauge>
+                </div>
             </div>
 
             <!-- Right Column: Leaderboard & Feed -->
@@ -252,8 +267,8 @@
                     <div class="slds-modal__content slds-p-around_medium">
                         <div class="slds-text-align_center slds-m-bottom_medium">
                             <div class="slds-text-heading_small slds-m-bottom_x-small">Issue Detected:</div>
-                            <div class="slds-text-heading_medium"><strong>{selectedRow.Object_API_Name__c} Anomaly</strong></div>
-                            <p class="slds-text-color_weak slds-m-top_x-small">{selectedRow.Description__c}</p>
+                            <div class="slds-text-heading_medium"><strong>{selectedRow.ObjectApiName} Anomaly</strong></div>
+                            <p class="slds-text-color_weak slds-m-top_x-small">{selectedRow.Description}</p>
                         </div>
 
                         <div class="slds-box slds-theme_shade slds-theme_alert-texture">
@@ -265,19 +280,19 @@
                             </ol>
                         </div>
                     </div>
-                    
+
                     <footer class="slds-modal__footer slds-grid slds-grid_align-spread">
                         <lightning-button label="Close" onclick={closeSolutionModal}></lightning-button>
-                        
+
                         <template if:true={isPremium}>
-                            <lightning-button 
-                                variant="brand" 
-                                label="Run Auto-Fix" 
-                                icon-name="utility:magicwand" 
-                                onclick={handleAutoFix} 
+                            <lightning-button
+                                variant="brand"
+                                label="Run Auto-Fix"
+                                icon-name="utility:magicwand"
+                                onclick={handleAutoFix}
                                 title="Resolve this issue automatically"
-                                data-id={selectedRow.Example_Records__c}
-                                data-type={selectedRow.Object_API_Name__c}>
+                                data-id={selectedRow.ExampleRecords}
+                                data-type={selectedRow.ObjectApiName}>
                             </lightning-button>
                         </template>
                         <template if:false={isPremium}>

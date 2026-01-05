@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Cost_Override__c</fullName>
+    <description>JSON map of per-rule cost overrides. These values take precedence over the default Cost_Per_Incident__c in Behavior_Pattern_Rule__mdt. Format: {"Stale_Opp_90": 750, "Stale_Case_30": 100}</description>
+    <externalId>false</externalId>
+    <inlineHelpText>JSON map of cost overrides by rule. Example: {"Stale_Opp_90": 750, "Stale_Case_30": 100}</inlineHelpText>
+    <label>Cost Override</label>
+    <length>32768</length>
+    <trackTrending>false</trackTrending>
+    <type>LongTextArea</type>
+    <visibleLines>4</visibleLines>
+</CustomField>

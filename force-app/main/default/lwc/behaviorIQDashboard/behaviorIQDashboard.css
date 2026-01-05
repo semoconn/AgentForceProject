@@ -154,3 +154,36 @@
     color: #1a1a1a;
     border: 1px solid #d37c26;
 }
+
+/* --- ROI VALUE BADGE --- */
+.roi-badge {
+    background: linear-gradient(135deg, #c23934 0%, #e65100 100%);
+    color: white;
+    padding: 4px 10px;
+    border-radius: 1rem;
+    font-weight: 600;
+    font-size: 0.75rem;
+    display: inline-flex;
+    align-items: center;
+    box-shadow: 0 2px 4px rgba(194, 57, 52, 0.3);
+}
+
+.roi-badge lightning-icon {
+    --slds-c-icon-color-foreground-default: white;
+}
+
+/* Recommendation Row Enhancement */
+.recommendation-row {
+    border-left: 3px solid transparent;
+    transition: all 0.2s ease;
+}
+
+.recommendation-row:hover {
+    border-left-color: #0176d3;
+    background-color: #f8f9fa;
+}
+
+/* --- HEALTH GAUGE INTEGRATION --- */
+c-behavior-i-q-health-gauge {
+    display: block;
+}

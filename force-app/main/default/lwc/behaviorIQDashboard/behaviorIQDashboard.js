@@ -129,8 +129,8 @@ export default class BehaviorIQDashboard extends LightningElement {
     get filteredPainPoints() {
         if (!this.allPainPoints) return [];
         switch (this.currentFilter) {
-            case 'Active': return this.allPainPoints.filter(item => item.Status__c !== 'Dismissed' && item.Status__c !== 'Resolved');
-            case 'Dismissed': return this.allPainPoints.filter(item => item.Status__c === 'Dismissed' || item.Status__c === 'Resolved');
+            case 'Active': return this.allPainPoints.filter(item => item.Status !== 'Dismissed' && item.Status !== 'Resolved');
+            case 'Dismissed': return this.allPainPoints.filter(item => item.Status === 'Dismissed' || item.Status === 'Resolved');
             default: return this.allPainPoints;
         }
     }
@@ -163,8 +163,8 @@ export default class BehaviorIQDashboard extends LightningElement {
         if (!this.isPremium) { this.handlePremiumClick(); return; }
 
         // Get pain point info from button data attributes or selected row
-        let objectApiName = event.currentTarget.dataset.type || (this.selectedRow ? this.selectedRow.Object_API_Name__c : null);
-        let uniqueKey = event.currentTarget.dataset.key || (this.selectedRow ? this.selectedRow.Unique_Key__c : null);
+        let objectApiName = event.currentTarget.dataset.type || (this.selectedRow ? this.selectedRow.ObjectApiName : null);
+        let uniqueKey = event.currentTarget.dataset.key || (this.selectedRow ? this.selectedRow.UniqueKey : null);
         let ruleLabel = event.currentTarget.dataset.label || (this.selectedRow ? this.selectedRow.Name : null);
 
         if (!objectApiName) {
@@ -193,8 +193,8 @@ export default class BehaviorIQDashboard extends LightningElement {
     handleDirectFix(event) {
         if (!this.isPremium) { this.handlePremiumClick(); return; }
 
-        let rawId = event.currentTarget.dataset.id || (this.selectedRow ? this.selectedRow.Example_Records__c : null);
-        let objectApiName = event.currentTarget.dataset.type || (this.selectedRow ? this.selectedRow.Object_API_Name__c : null);
+        let rawId = event.currentTarget.dataset.id || (this.selectedRow ? this.selectedRow.ExampleRecords : null);
+        let objectApiName = event.currentTarget.dataset.type || (this.selectedRow ? this.selectedRow.ObjectApiName : null);
 
         if (!rawId) return this.showToast('Error', 'No target record ID found.', 'error');
 
@@ -274,7 +274,7 @@ export default class BehaviorIQDashboard extends LightningElement {
         const rowId = event.currentTarget.dataset.id; 
         this.selectedRow = this.allPainPoints.find(row => row.Id === rowId);
         if (this.selectedRow) {
-            this.solutionSteps = this.getStepsForType(this.selectedRow.Object_API_Name__c);
+            this.solutionSteps = this.getStepsForType(this.selectedRow.ObjectApiName);
             this.isSolutionModalOpen = true;
         }
     }
