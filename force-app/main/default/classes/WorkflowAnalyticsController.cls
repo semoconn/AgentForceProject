@@ -498,6 +498,24 @@ public with sharing class WorkflowAnalyticsController {
         }
     }
 
+    /**
+     * @description Returns the total count of Behavior_Log__c records analyzed.
+     * Used by the dashboard to display dynamic "Events Analyzed" metric instead of hardcoded values.
+     * @return Integer count of all behavior log records, or 0 if none exist or on error
+     */
+    @AuraEnabled(cacheable=true)
+    public static Integer getTotalEventsAnalyzed() {
+        try {
+            if (!Schema.sObjectType.Behavior_Log__c.isAccessible()) {
+                return 0;
+            }
+            return [SELECT COUNT() FROM Behavior_Log__c WITH SECURITY_ENFORCED];
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'getTotalEventsAnalyzed error: ' + e.getMessage());
+            return 0;
+        }
+    }
+
     // --- NEW: Org Health Score Gamification Engine ---
 
     /**

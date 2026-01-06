@@ -555,4 +555,28 @@ private class WorkflowAnalyticsControllerTest {
         System.assertEquals(3, result.mediumCount);
         System.assertEquals(5, result.lowCount);
     }
+
+    // ==================== TOTAL EVENTS ANALYZED TESTS ====================
+
+    @isTest
+    static void testGetTotalEventsAnalyzed_WithData() {
+        // 8 behavior logs created in testSetup
+        Test.startTest();
+        Integer count = WorkflowAnalyticsController.getTotalEventsAnalyzed();
+        Test.stopTest();
+
+        System.assertEquals(8, count, 'Should return 8 events from test setup');
+    }
+
+    @isTest
+    static void testGetTotalEventsAnalyzed_NoData() {
+        // Delete all behavior logs
+        delete [SELECT Id FROM Behavior_Log__c];
+
+        Test.startTest();
+        Integer count = WorkflowAnalyticsController.getTotalEventsAnalyzed();
+        Test.stopTest();
+
+        System.assertEquals(0, count, 'Should return 0 when no events exist');
+    }
 }

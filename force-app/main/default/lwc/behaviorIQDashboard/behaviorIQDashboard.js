@@ -7,6 +7,7 @@ import getPainPoints from '@salesforce/apex/WorkflowAnalyticsController.getPainP
 import runAutoFix from '@salesforce/apex/WorkflowAnalyticsController.runAutoFix';
 import dismissSuggestion from '@salesforce/apex/WorkflowAnalyticsController.dismissSuggestion';
 import getDashboardData from '@salesforce/apex/WorkflowAnalyticsController.getDashboardData';
+import getTotalEventsAnalyzed from '@salesforce/apex/WorkflowAnalyticsController.getTotalEventsAnalyzed';
 
 export default class BehaviorIQDashboard extends LightningElement {
     @track allPainPoints = [];
@@ -41,6 +42,21 @@ export default class BehaviorIQDashboard extends LightningElement {
 
     _wiredPainPointsResult;
     _wiredDashboardResult;
+    _wiredEventsResult;
+    @track totalEventsAnalyzed = 0;
+
+    // 0. Load Total Events Analyzed (Dynamic ROI metric)
+    @wire(getTotalEventsAnalyzed)
+    wiredEvents(result) {
+        this._wiredEventsResult = result;
+        if (result.data !== undefined) {
+            this.totalEventsAnalyzed = result.data;
+            this.updateMetricsWithDynamicData();
+        } else if (result.error) {
+            console.error('Error loading events count:', result.error);
+            this.totalEventsAnalyzed = 0;
+        }
+    }
 
     // 1. Load Dashboard Data & Force 4-Card Layout
     @wire(getDashboardData)
@@ -48,45 +64,80 @@ export default class BehaviorIQDashboard extends LightningElement {
         this._wiredDashboardResult = result;
         if (result.data) {
             this.isPremium = result.data.isPremium;
-            
+
             // Map Logs
             this.recentLogs = result.data.recentLogs.map(log => ({
                 ...log,
                 UserName: log.User__r ? log.User__r.Name : 'System'
             }));
 
-            // --- CRITICAL FIX: FORCE 4 METRICS IF DATA IS MISSING ---
-            // If the backend returns the old "active_anomalies" or empty, we use default values to match the screenshot.
-            let rawMetrics = result.data.metrics || [];
-            const hasNewMetrics = rawMetrics.some(m => m.key === 'events_analyzed');
-
-            if (!hasNewMetrics) {
-                // Mock data to match your requested screenshot
-                this.metrics = [
-                    { id: '1', label: 'Events Analyzed', value: '12,450', key: 'events_analyzed' },
-                    { id: '2', label: 'Active Users', value: '48', key: 'active_users' },
-                    { id: '3', label: 'Objects Monitored', value: '6', key: 'objects_monitored' },
-                    { id: '4', label: 'Last Scan', value: 'Today, 2:00 AM', key: 'last_scan' }
-                ];
-            } else {
-                // Use actual backend data
-                this.metrics = rawMetrics.map((m, index) => ({
-                    id: String(index + 1),
-                    label: m.label,
-                    value: m.count,
-                    key: m.key
-                }));
-            }
-
-            // Apply Icons and Colors
-            this.metrics = this.metrics.map(m => ({
-                ...m,
-                icon: this.getMetricIcon(m.key),
-                cssClass: this.getMetricClass(m.key)
-            }));
+            // Build metrics with dynamic data
+            this.updateMetricsWithDynamicData();
 
         } else if (result.error) {
             console.error('Error loading dashboard:', result.error);
+        }
+    }
+
+    /**
+     * @description Updates the metrics array with real dynamic data from Apex.
+     * Replaces hardcoded demo values with actual counts from the database.
+     */
+    updateMetricsWithDynamicData() {
+        // Format the events count with thousands separator
+        const formattedEventsCount = this.totalEventsAnalyzed.toLocaleString();
+
+        // Calculate active users from recent logs (unique users in last 30 days)
+        const uniqueUsers = new Set(this.recentLogs.map(log => log.User__c)).size;
+
+        // Calculate objects monitored from recent logs
+        const uniqueObjects = new Set(this.recentLogs.map(log => log.Object_API_Name__c)).size;
+
+        // Format last scan time
+        const lastScanTime = this.recentLogs.length > 0
+            ? this.formatLastScan(this.recentLogs[0].CreatedDate)
+            : 'No data';
+
+        // Build metrics with real data (fallback to sensible defaults if no data)
+        this.metrics = [
+            { id: '1', label: 'Events Analyzed', value: formattedEventsCount || '0', key: 'events_analyzed' },
+            { id: '2', label: 'Active Users', value: String(uniqueUsers || 0), key: 'active_users' },
+            { id: '3', label: 'Objects Monitored', value: String(uniqueObjects || 0), key: 'objects_monitored' },
+            { id: '4', label: 'Last Scan', value: lastScanTime, key: 'last_scan' }
+        ];
+
+        // Apply Icons and Colors
+        this.metrics = this.metrics.map(m => ({
+            ...m,
+            icon: this.getMetricIcon(m.key),
+            cssClass: this.getMetricClass(m.key)
+        }));
+    }
+
+    /**
+     * @description Formats a datetime into a human-readable "Last Scan" string.
+     * @param {string} dateTimeString - ISO datetime string
+     * @returns {string} Formatted string like "Today, 2:00 PM" or "Dec 15, 3:30 PM"
+     */
+    formatLastScan(dateTimeString) {
+        if (!dateTimeString) return 'No data';
+
+        const scanDate = new Date(dateTimeString);
+        const today = new Date();
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+
+        const timeOptions = { hour: 'numeric', minute: '2-digit', hour12: true };
+        const timeStr = scanDate.toLocaleTimeString('en-US', timeOptions);
+
+        if (scanDate.toDateString() === today.toDateString()) {
+            return `Today, ${timeStr}`;
+        } else if (scanDate.toDateString() === yesterday.toDateString()) {
+            return `Yesterday, ${timeStr}`;
+        } else {
+            const dateOptions = { month: 'short', day: 'numeric' };
+            const dateStr = scanDate.toLocaleDateString('en-US', dateOptions);
+            return `${dateStr}, ${timeStr}`;
         }
     }
 
@@ -148,13 +199,14 @@ export default class BehaviorIQDashboard extends LightningElement {
     filterActive() { this.currentFilter = 'Active'; }
     filterDismissed() { this.currentFilter = 'Dismissed'; }
 
-    handleRefresh() { 
+    handleRefresh() {
         this.isLoading = true;
         Promise.all([
             refreshApex(this._wiredDashboardResult),
-            refreshApex(this._wiredPainPointsResult)
-        ]).then(() => { 
-            this.isLoading = false; 
+            refreshApex(this._wiredPainPointsResult),
+            refreshApex(this._wiredEventsResult)
+        ]).then(() => {
+            this.isLoading = false;
             this.showToast('Success', 'Dashboard refreshed', 'success');
         });
     }
