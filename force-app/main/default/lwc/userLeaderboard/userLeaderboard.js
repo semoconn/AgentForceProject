@@ -1,6 +1,7 @@
 import { LightningElement, wire, track } from 'lwc';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 import getLeaderboardData from '@salesforce/apex/UserLeaderboardController.getLeaderboardData';
+import nudgeUser from '@salesforce/apex/UserLeaderboardController.nudgeUser';
 
 export default class UserLeaderboard extends LightningElement {
     @track leaderboardData = [];
@@ -109,7 +110,23 @@ export default class UserLeaderboard extends LightningElement {
     }
 
     handleNudge(event) {
-        this.showToast('Success', 'Nudge sent! (This feature is a placeholder)', 'success');
+        const userId = event.target.dataset.userId;
+        if (!userId) {
+            this.showToast('Error', 'Unable to identify user.', 'error');
+            return;
+        }
+
+        nudgeUser({ userId: userId })
+            .then((result) => {
+                this.showToast('Success', result || 'Nudge sent successfully!', 'success');
+            })
+            .catch((error) => {
+                let message = 'Failed to send nudge.';
+                if (error.body && error.body.message) {
+                    message = error.body.message;
+                }
+                this.showToast('Error', message, 'error');
+            });
     }
 
     handleUpgradeClick() {

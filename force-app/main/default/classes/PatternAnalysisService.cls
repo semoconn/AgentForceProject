@@ -87,7 +87,7 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
         // Fetch all defined rules from Metadata
         return [
             SELECT DeveloperName, MasterLabel, Object_API_Name__c, Query_Condition__c,
-                   Is_Premium__c, Threshold_Default__c
+                   Is_Premium__c, Threshold_Default__c, Cost_Per_Incident__c
             FROM Behavior_Pattern_Rule__mdt
         ];
     }
@@ -157,13 +157,18 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
                 exampleIds.add(detectedRecords[i].Id);
             }
 
+            // Calculate financial impact using Cost_Per_Incident__c
+            Decimal costPerIncident = rule.Cost_Per_Incident__c != null ? rule.Cost_Per_Incident__c : 0;
+            Decimal totalImpact = count * costPerIncident;
+
             upsertPainPoint(
                 rule.DeveloperName,
                 rule.MasterLabel,
                 'Automated detection for ' + rule.Object_API_Name__c,
                 rule.Object_API_Name__c,
                 count,
-                JSON.serialize(exampleIds)
+                JSON.serialize(exampleIds),
+                totalImpact
             );
         }
     }
@@ -583,14 +588,14 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
 
     // --- HELPER METHODS ---
 
-    private void upsertPainPoint(String key, String label, String description, String obj, Integer count, String examples) {
+    private void upsertPainPoint(String key, String label, String description, String obj, Integer count, String examples, Decimal totalImpact) {
         Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
             Unique_Key__c = key,
             Name = label,
             Description__c = description,
             Object_API_Name__c = obj,
             Occurrences__c = count,
-            Impact_Score__c = count * 10,
+            Impact_Score__c = totalImpact,
             Example_Records__c = examples,
             Last_Detected__c = System.now(),
             Status__c = 'New'
@@ -608,7 +613,7 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
             // Create snapshot if running in batch context and upsert succeeded
             if (createSnapshots && !results.isEmpty() && results[0].isSuccess()) {
                 Id painPointId = results[0].getId();
-                createSnapshot(key, count, count * 10, painPointId);
+                createSnapshot(key, count, totalImpact, painPointId);
             }
         } catch (Exception e) {
             System.debug(LoggingLevel.ERROR, 'Upsert failed: ' + e.getMessage());
@@ -619,7 +624,7 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
      * @description Creates a snapshot record to track historical trend data.
      * Only called when running in batch context to avoid overhead during real-time operations.
      */
-    private void createSnapshot(String metricName, Integer recordCount, Integer impactScore, Id painPointId) {
+    private void createSnapshot(String metricName, Integer recordCount, Decimal impactScore, Id painPointId) {
         Behavior_Snapshot__c snapshot = new Behavior_Snapshot__c(
             Snapshot_Date__c = Date.today(),
             Metric_Name__c = metricName,
@@ -714,7 +719,7 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
         // Fetch the rule from metadata
         List<Behavior_Pattern_Rule__mdt> rules = [
             SELECT DeveloperName, MasterLabel, Object_API_Name__c, Query_Condition__c,
-                   Is_Premium__c, Threshold_Default__c
+                   Is_Premium__c, Threshold_Default__c, Cost_Per_Incident__c
             FROM Behavior_Pattern_Rule__mdt
             WHERE DeveloperName = :ruleDeveloperName
             LIMIT 1

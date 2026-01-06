@@ -187,4 +187,51 @@ public with sharing class UserLeaderboardController {
         }
         return LicenseService.isPremium();
     }
+
+    /**
+     * @description Sends a nudge notification to a user via Task creation.
+     * Creates a Task assigned to the user with a reminder about open items.
+     * @param userId The Id of the user to nudge
+     * @return String - Success or error message
+     */
+    @AuraEnabled
+    public static String nudgeUser(Id userId) {
+        try {
+            // Validate input
+            if (userId == null) {
+                throw new AuraHandledException('User ID is required.');
+            }
+
+            // Verify the user exists
+            List<User> users = [SELECT Id, Name FROM User WHERE Id = :userId AND IsActive = true LIMIT 1];
+            if (users.isEmpty()) {
+                throw new AuraHandledException('User not found or inactive.');
+            }
+
+            // Create a Task for the user
+            Task nudgeTask = new Task(
+                OwnerId = userId,
+                Subject = 'BehaviorIQ Notice: Action Required',
+                Description = 'BehaviorIQ Notice: You have open items requiring attention. Please check your dashboard.',
+                Status = 'Not Started',
+                Priority = 'Normal',
+                ActivityDate = Date.today().addDays(3)
+            );
+            insert nudgeTask;
+
+            return 'Nudge sent to ' + users[0].Name;
+        } catch (AuraHandledException e) {
+            throw e;
+        } catch (DmlException e) {
+            String msg = 'Failed to create nudge task: ' + e.getDmlMessage(0);
+            AuraHandledException ahe = new AuraHandledException(msg);
+            ahe.setMessage(msg);
+            throw ahe;
+        } catch (Exception e) {
+            String msg = 'An error occurred while sending the nudge: ' + e.getMessage();
+            AuraHandledException ahe = new AuraHandledException(msg);
+            ahe.setMessage(msg);
+            throw ahe;
+        }
+    }
 }

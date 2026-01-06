@@ -89,7 +89,7 @@ private class UserLeaderboardControllerTest {
     @isTest
     static void testSecurityEnforcement_NoAccess() {
         User standardUser = [SELECT Id FROM User WHERE Alias = 'bstd' LIMIT 1];
-        
+
         System.runAs(standardUser) {
             UserLeaderboardController.forcePremiumContext = true;
 
@@ -102,6 +102,71 @@ private class UserLeaderboardControllerTest {
             // because standard user likely has no access to behavior logs
             System.assertNotEquals(null, result, 'Result should not be null');
             System.assertEquals(0, result.entries.size(), 'Should return 0 entries due to lack of permission');
+        }
+    }
+
+    @isTest
+    static void testNudgeUser_Success() {
+        User admin = [SELECT Id FROM User WHERE Alias = 'badmin' LIMIT 1];
+        User targetUser = [SELECT Id, Name FROM User WHERE Alias = 'bstd' LIMIT 1];
+
+        System.runAs(admin) {
+            Test.startTest();
+            String result = UserLeaderboardController.nudgeUser(targetUser.Id);
+            Test.stopTest();
+
+            System.assert(result.contains('Nudge sent'), 'Should return success message');
+
+            // Verify Task was created
+            List<Task> tasks = [SELECT Id, Subject, OwnerId FROM Task WHERE OwnerId = :targetUser.Id AND Subject LIKE '%BehaviorIQ%'];
+            System.assertEquals(1, tasks.size(), 'Should create one task');
+            System.assertEquals('BehaviorIQ Notice: Action Required', tasks[0].Subject, 'Task subject should match');
+        }
+    }
+
+    @isTest
+    static void testNudgeUser_NullUserId() {
+        User admin = [SELECT Id FROM User WHERE Alias = 'badmin' LIMIT 1];
+
+        System.runAs(admin) {
+            Test.startTest();
+            Boolean exceptionThrown = false;
+            try {
+                UserLeaderboardController.nudgeUser(null);
+            } catch (AuraHandledException e) {
+                exceptionThrown = true;
+                // AuraHandledException.getMessage() may return 'Script-thrown exception'
+                // The actual message is set via setMessage() but may not be accessible in tests
+            } catch (Exception e) {
+                exceptionThrown = true;
+            }
+            Test.stopTest();
+
+            System.assert(exceptionThrown, 'Should have thrown an exception for null user ID');
+        }
+    }
+
+    @isTest
+    static void testNudgeUser_InvalidUser() {
+        User admin = [SELECT Id FROM User WHERE Alias = 'badmin' LIMIT 1];
+        // Use a fake User ID that doesn't exist
+        Id fakeUserId = '005000000000000AAA';
+
+        System.runAs(admin) {
+            Test.startTest();
+            Boolean exceptionThrown = false;
+            try {
+                UserLeaderboardController.nudgeUser(fakeUserId);
+            } catch (AuraHandledException e) {
+                exceptionThrown = true;
+                // AuraHandledException.getMessage() may return 'Script-thrown exception'
+                // The actual message is set via setMessage() but may not be accessible in tests
+            } catch (Exception e) {
+                exceptionThrown = true;
+            }
+            Test.stopTest();
+
+            System.assert(exceptionThrown, 'Should have thrown an exception for invalid user');
         }
     }
 }

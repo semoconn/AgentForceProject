@@ -44,4 +44,13 @@ public with sharing class LicenseService {
     public static String getLicenseStatus() {
         return isPremium() ? STATUS_PREMIUM : STATUS_FREE;
     }
+
+    /**
+     * @description AuraEnabled method for LWC components to check license status.
+     * @return String - 'Premium' or 'Free'
+     */
+    @AuraEnabled(cacheable=true)
+    public static String checkLicenseStatus() {
+        return getLicenseStatus();
+    }
 }

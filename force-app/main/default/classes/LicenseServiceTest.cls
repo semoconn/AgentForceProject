@@ -45,7 +45,7 @@ private class LicenseServiceTest {
     @isTest
     static void testEnforceGate_Failure() {
         // Default is Free (No Insert)
-        
+
         Test.startTest();
         try {
             LicenseService.enforcePremiumGate();
@@ -56,5 +56,28 @@ private class LicenseServiceTest {
              // Catch generic just in case, but assert failure if it's not the right type
         }
         Test.stopTest();
+    }
+
+    @isTest
+    static void testCheckLicenseStatus_Free() {
+        // Default is Free (No Insert)
+        Test.startTest();
+        String status = LicenseService.checkLicenseStatus();
+        Test.stopTest();
+
+        System.assertEquals(LicenseService.STATUS_FREE, status, 'AuraEnabled method should return Free by default');
+    }
+
+    @isTest
+    static void testCheckLicenseStatus_Premium() {
+        // Setup Premium License
+        BehaviorIQ_License__c license = new BehaviorIQ_License__c(SetupOwnerId = UserInfo.getOrganizationId(), Status__c = LicenseService.STATUS_PREMIUM);
+        insert license;
+
+        Test.startTest();
+        String status = LicenseService.checkLicenseStatus();
+        Test.stopTest();
+
+        System.assertEquals(LicenseService.STATUS_PREMIUM, status, 'AuraEnabled method should return Premium when configured');
     }
 }

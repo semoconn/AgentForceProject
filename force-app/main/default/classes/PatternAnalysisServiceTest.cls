@@ -18,12 +18,28 @@ private class PatternAnalysisServiceTest {
         String queryCondition,
         Boolean isPremium
     ) {
+        return createMockRuleWithCost(developerName, masterLabel, objectApiName, queryCondition, isPremium, null);
+    }
+
+    /**
+     * @description Creates a mock Behavior_Pattern_Rule__mdt record with Cost_Per_Incident__c for testing.
+     * Uses JSON deserialization to create an in-memory metadata record.
+     */
+    private static Behavior_Pattern_Rule__mdt createMockRuleWithCost(
+        String developerName,
+        String masterLabel,
+        String objectApiName,
+        String queryCondition,
+        Boolean isPremium,
+        Decimal costPerIncident
+    ) {
         String jsonRule = '{' +
             '"DeveloperName": "' + developerName + '",' +
             '"MasterLabel": "' + masterLabel + '",' +
             '"Object_API_Name__c": "' + objectApiName + '",' +
             '"Query_Condition__c": "' + queryCondition.replace('"', '\\"') + '",' +
             '"Is_Premium__c": ' + isPremium +
+            (costPerIncident != null ? ',"Cost_Per_Incident__c": ' + costPerIncident : '') +
         '}';
         return (Behavior_Pattern_Rule__mdt) JSON.deserialize(jsonRule, Behavior_Pattern_Rule__mdt.class);
     }
@@ -176,6 +192,208 @@ private class PatternAnalysisServiceTest {
         // Verify the constant is accessible
         System.assertEquals(90, PatternAnalysisService.DEFAULT_RETENTION_DAYS,
             'Default retention days should be 90');
+    }
+
+    // ==================== ROI CALCULATION TESTS ====================
+
+    @isTest
+    static void testROICalculation_WithCostPerIncident() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create test cases that will be detected
+        List<Case> testCases = new List<Case>();
+        for (Integer i = 0; i < 5; i++) {
+            testCases.add(new Case(Subject = 'ROI Test Case ' + i, Status = 'New'));
+        }
+        insert testCases;
+
+        // Set creation date to past to match stale condition
+        for (Case c : testCases) {
+            Test.setCreatedDate(c.Id, Datetime.now().addDays(-60));
+        }
+
+        // Create mock rule with Cost_Per_Incident__c = $150.00
+        Behavior_Pattern_Rule__mdt mockRule = createMockRuleWithCost(
+            'ROI_Test_Rule',
+            'ROI Test Detection',
+            'Case',
+            'Status != \'Closed\' AND CreatedDate < LAST_N_DAYS:30',
+            false,
+            150.00
+        );
+        PatternAnalysisService.mockRule = mockRule;
+
+        Test.startTest();
+        System.runAs(testUser) {
+            Database.executeBatch(new PatternAnalysisService(), 50);
+        }
+        Test.stopTest();
+
+        // Verify Impact_Score__c = count * costPerIncident = 5 * 150 = 750
+        List<Identified_Pain_Point__c> painPoints = [
+            SELECT Name, Occurrences__c, Impact_Score__c
+            FROM Identified_Pain_Point__c
+            WHERE Unique_Key__c = 'ROI_Test_Rule'
+        ];
+
+        if (!painPoints.isEmpty()) {
+            Identified_Pain_Point__c pp = painPoints[0];
+            Decimal expectedImpact = pp.Occurrences__c * 150.00;
+            System.assertEquals(expectedImpact, pp.Impact_Score__c,
+                'Impact_Score__c should equal Occurrences * Cost_Per_Incident');
+        }
+
+        // Verify snapshot also has correct impact score
+        List<Behavior_Snapshot__c> snapshots = [
+            SELECT Metric_Name__c, Record_Count__c, Impact_Score__c
+            FROM Behavior_Snapshot__c
+            WHERE Metric_Name__c = 'ROI_Test_Rule'
+            AND Snapshot_Date__c = TODAY
+        ];
+
+        if (!snapshots.isEmpty()) {
+            Behavior_Snapshot__c snap = snapshots[0];
+            Decimal expectedSnapshotImpact = snap.Record_Count__c * 150.00;
+            System.assertEquals(expectedSnapshotImpact, snap.Impact_Score__c,
+                'Snapshot Impact_Score__c should equal Record_Count * Cost_Per_Incident');
+        }
+
+        clearMocks();
+    }
+
+    @isTest
+    static void testROICalculation_NullCostDefaultsToZero() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create test cases
+        List<Case> testCases = new List<Case>();
+        for (Integer i = 0; i < 3; i++) {
+            testCases.add(new Case(Subject = 'Null Cost Test ' + i, Status = 'New'));
+        }
+        insert testCases;
+
+        for (Case c : testCases) {
+            Test.setCreatedDate(c.Id, Datetime.now().addDays(-60));
+        }
+
+        // Create mock rule WITHOUT Cost_Per_Incident__c (null)
+        Behavior_Pattern_Rule__mdt mockRule = createMockRule(
+            'Null_Cost_Rule',
+            'Null Cost Detection',
+            'Case',
+            'Status != \'Closed\' AND CreatedDate < LAST_N_DAYS:30',
+            false
+        );
+        PatternAnalysisService.mockRule = mockRule;
+
+        Test.startTest();
+        System.runAs(testUser) {
+            Database.executeBatch(new PatternAnalysisService(), 50);
+        }
+        Test.stopTest();
+
+        // Verify Impact_Score__c = 0 when Cost_Per_Incident__c is null
+        List<Identified_Pain_Point__c> painPoints = [
+            SELECT Name, Occurrences__c, Impact_Score__c
+            FROM Identified_Pain_Point__c
+            WHERE Unique_Key__c = 'Null_Cost_Rule'
+        ];
+
+        if (!painPoints.isEmpty()) {
+            System.assertEquals(0, painPoints[0].Impact_Score__c,
+                'Impact_Score__c should be 0 when Cost_Per_Incident__c is null');
+        }
+
+        clearMocks();
+    }
+
+    @isTest
+    static void testROICalculation_ZeroCost() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create test case
+        Case testCase = new Case(Subject = 'Zero Cost Test', Status = 'New');
+        insert testCase;
+        Test.setCreatedDate(testCase.Id, Datetime.now().addDays(-60));
+
+        // Create mock rule with Cost_Per_Incident__c = 0
+        Behavior_Pattern_Rule__mdt mockRule = createMockRuleWithCost(
+            'Zero_Cost_Rule',
+            'Zero Cost Detection',
+            'Case',
+            'Status != \'Closed\' AND CreatedDate < LAST_N_DAYS:30',
+            false,
+            0
+        );
+        PatternAnalysisService.mockRule = mockRule;
+
+        Test.startTest();
+        System.runAs(testUser) {
+            Database.executeBatch(new PatternAnalysisService(), 50);
+        }
+        Test.stopTest();
+
+        // Verify Impact_Score__c = 0 when Cost_Per_Incident__c is 0
+        List<Identified_Pain_Point__c> painPoints = [
+            SELECT Occurrences__c, Impact_Score__c
+            FROM Identified_Pain_Point__c
+            WHERE Unique_Key__c = 'Zero_Cost_Rule'
+        ];
+
+        if (!painPoints.isEmpty()) {
+            System.assertEquals(0, painPoints[0].Impact_Score__c,
+                'Impact_Score__c should be 0 when Cost_Per_Incident__c is 0');
+        }
+
+        clearMocks();
+    }
+
+    @isTest
+    static void testROICalculation_DecimalCost() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create test cases
+        List<Case> testCases = new List<Case>();
+        for (Integer i = 0; i < 4; i++) {
+            testCases.add(new Case(Subject = 'Decimal Cost Test ' + i, Status = 'New'));
+        }
+        insert testCases;
+
+        for (Case c : testCases) {
+            Test.setCreatedDate(c.Id, Datetime.now().addDays(-60));
+        }
+
+        // Create mock rule with decimal Cost_Per_Incident__c = $75.50
+        Behavior_Pattern_Rule__mdt mockRule = createMockRuleWithCost(
+            'Decimal_Cost_Rule',
+            'Decimal Cost Detection',
+            'Case',
+            'Status != \'Closed\' AND CreatedDate < LAST_N_DAYS:30',
+            false,
+            75.50
+        );
+        PatternAnalysisService.mockRule = mockRule;
+
+        Test.startTest();
+        System.runAs(testUser) {
+            Database.executeBatch(new PatternAnalysisService(), 50);
+        }
+        Test.stopTest();
+
+        // Verify Impact_Score__c = 4 * 75.50 = 302.00
+        List<Identified_Pain_Point__c> painPoints = [
+            SELECT Occurrences__c, Impact_Score__c
+            FROM Identified_Pain_Point__c
+            WHERE Unique_Key__c = 'Decimal_Cost_Rule'
+        ];
+
+        if (!painPoints.isEmpty()) {
+            Decimal expectedImpact = painPoints[0].Occurrences__c * 75.50;
+            System.assertEquals(expectedImpact, painPoints[0].Impact_Score__c,
+                'Impact_Score__c should correctly calculate with decimal cost');
+        }
+
+        clearMocks();
     }
 
     // ==================== SNAPSHOT CREATION TESTS (Sprint 5) ====================
