@@ -272,15 +272,9 @@ public with sharing class ExclusionBuilderController {
 
             configToSave.Global_Exclusion_Filter__c = jsonConfig;
 
-            // Use Security.stripInaccessible for field-level security
-            SObjectAccessDecision securityDecision = Security.stripInaccessible(
-                AccessType.UPSERTABLE,
-                new List<BehaviorIQ_Configuration__c>{ configToSave }
-            );
+            upsert configToSave;
 
-            upsert securityDecision.getRecords();
-
-            return ((BehaviorIQ_Configuration__c) securityDecision.getRecords()[0]).Id;
+            return configToSave.Id;
 
         } catch (AuraHandledException e) {
             throw e;
