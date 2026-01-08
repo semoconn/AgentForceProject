@@ -14,7 +14,31 @@
       "Bash(sfdx force:apex:test:run:*)",
       "Bash(sfdx apex run:*)",
       "Bash(echo:*)",
-      "Bash(sfdx force:source:deploy:*)"
+      "Bash(sfdx force:source:deploy:*)",
+      "Bash(find:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd visual Exclusion Builder LWC for v1.0\n\nIntroduces a user-friendly Lightning Web Component that allows Admins to build\nJSON exclusion rules visually without manual JSON editing. The component\ndynamically adapts to the org''s schema by fetching objects, fields, and\npicklist values at runtime.\n\nFeatures:\n- ExclusionBuilderController.cls with 4 Apex methods for schema metadata\n- Smart input rendering \\(picklist dropdown, boolean toggle, text input\\)\n- Field-type-aware operator filtering\n- Datatable display of current rules with remove action\n- Saves to BehaviorIQ_Configuration__c.Global_Exclusion_Filter__c\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push:*)",
+      "Bash(sf org list:*)",
+      "Bash(git commit:*)",
+      "Bash(grep:*)",
+      "Bash(paste:*)",
+      "Bash(sf project retrieve start:*)",
+      "Bash(pushd:*)",
+      "Bash(popd)",
+      "Bash(\"C:\\\\Program Files\\\\sf\\\\bin\\\\sf.cmd\" project retrieve start --metadata \"Layout:Behavior_Pattern_Rule__mdt-Behavior Pattern Rule Layout\" --target-dir \"c:\\\\Users\\\\Admin\\\\BeahviorIQ SF App\\\\AgentForceProject\")",
+      "Bash(sf apex list:*)",
+      "Bash(sf apex get test:*)",
+      "Bash(powershell -command \"Expand-Archive -Path unpackaged.zip -DestinationPath . -Force\")",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nReplace hardcoded dashboard metrics with dynamic data for ROI demonstration\n\n- Add getTotalEventsAnalyzed\\(\\) Apex method to query real Behavior_Log__c count\n- Wire dynamic data in behaviorIQDashboard LWC replacing static \"12,450\" value\n- Calculate Active Users and Objects Monitored from actual log data\n- Format Last Scan timestamp dynamically with \"Today/Yesterday\" logic\n- Add test coverage for new getTotalEventsAnalyzed method\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(sf org create:*)",
+      "Bash(sf config set:*)",
+      "Bash(sf org open:*)",
+      "Bash(sf org login:*)",
+      "Bash(sf project deploy:*)",
+      "Bash(sf org assign permset:*)",
+      "Bash(del:*)",
+      "Bash(dir:*)"
     ]
   }
 }

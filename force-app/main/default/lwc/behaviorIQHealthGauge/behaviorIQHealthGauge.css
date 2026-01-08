@@ -145,6 +145,31 @@
     margin: 0;
 }
 
+/* Total At Risk Display */
+.total-at-risk {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    margin-top: 0.75rem;
+    padding: 0.5rem 1rem;
+    background: linear-gradient(135deg, rgba(186, 5, 23, 0.08) 0%, rgba(221, 122, 1, 0.08) 100%);
+    border-radius: 0.5rem;
+    border: 1px solid rgba(186, 5, 23, 0.15);
+}
+
+.at-risk-label {
+    font-size: 0.75rem;
+    color: #706e6b;
+    font-weight: 500;
+}
+
+.total-at-risk lightning-formatted-number {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #ba0517;
+}
+
 /* Status Text Color Classes */
 .status-green {
     color: #2e844a;

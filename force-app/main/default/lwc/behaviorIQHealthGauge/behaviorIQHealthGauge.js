@@ -7,6 +7,7 @@ export default class BehaviorIQHealthGauge extends LightningElement {
     @track highCount = 0;
     @track mediumCount = 0;
     @track lowCount = 0;
+    @track totalAtRisk = 0;
     @track isLoaded = false;
 
     // Animated display score (starts at 0 and animates to actual score)
@@ -20,6 +21,7 @@ export default class BehaviorIQHealthGauge extends LightningElement {
             this.highCount = data.highCount || 0;
             this.mediumCount = data.mediumCount || 0;
             this.lowCount = data.lowCount || 0;
+            this.totalAtRisk = data.totalAtRisk || 0;
             this.isLoaded = true;
 
             // Trigger animation after data loads
@@ -108,5 +110,10 @@ export default class BehaviorIQHealthGauge extends LightningElement {
     // Show breakdown only if there are any issues
     get hasBreakdown() {
         return this.highCount > 0 || this.mediumCount > 0 || this.lowCount > 0;
+    }
+
+    // Show total at risk only if there is risk
+    get hasTotalAtRisk() {
+        return this.totalAtRisk > 0;
     }
 }

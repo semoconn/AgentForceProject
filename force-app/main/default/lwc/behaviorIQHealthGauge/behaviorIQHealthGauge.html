@@ -25,6 +25,13 @@
             <div class="status-section">
                 <h2 class={statusClass}>{statusText}</h2>
                 <p class="status-subtitle">Org Health Score</p>
+                <template if:true={hasTotalAtRisk}>
+                    <div class="total-at-risk">
+                        <lightning-icon icon-name="utility:moneybag" size="x-small" class="slds-m-right_xx-small"></lightning-icon>
+                        <span class="at-risk-label">Total at Risk:</span>
+                        <lightning-formatted-number value={totalAtRisk} format-style="currency" currency-code="USD" maximum-fraction-digits="0"></lightning-formatted-number>
+                    </div>
+                </template>
             </div>
 
             <!-- Breakdown Stats -->

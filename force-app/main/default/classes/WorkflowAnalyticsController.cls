@@ -49,6 +49,10 @@ public with sharing class WorkflowAnalyticsController {
     /**
      * @description Wrapper class for pain points with ROI data.
      * Uses the original SObject plus additional ROI fields for LWC binding.
+     *
+     * ROI Calculation Strategy:
+     * - Opportunity/Contract: Use stored Impact_Score__c (cumulative value from actual record amounts)
+     * - Other objects (Case, Lead, etc.): Calculate from Occurrences * CostPerIncident
      */
     public class PainPointWithROI {
         @AuraEnabled public Id Id;
@@ -74,10 +78,19 @@ public with sharing class WorkflowAnalyticsController {
             this.ExampleRecords = pp.Example_Records__c;
             this.UniqueKey = pp.Unique_Key__c;
             this.CostPerIncident = costPerIncident != null ? costPerIncident : 0;
-            // Calculate estimated savings: occurrences * cost per incident
-            this.EstimatedSavings = (pp.Occurrences__c != null && costPerIncident != null)
-                ? pp.Occurrences__c * costPerIncident
-                : 0;
+
+            // For Opportunity and Contract, Impact_Score__c holds the cumulative actual value at risk
+            // For other objects, calculate from occurrences * cost per incident
+            String objName = pp.Object_API_Name__c != null ? pp.Object_API_Name__c.toLowerCase() : '';
+            if (objName == 'opportunity' || objName == 'contract') {
+                // Use stored cumulative value (sum of actual Opportunity.Amount or Contract value)
+                this.EstimatedSavings = pp.Impact_Score__c != null ? pp.Impact_Score__c : 0;
+            } else {
+                // Calculate: occurrences * cost per incident
+                this.EstimatedSavings = (pp.Occurrences__c != null && costPerIncident != null)
+                    ? pp.Occurrences__c * costPerIncident
+                    : 0;
+            }
         }
     }
 
@@ -88,12 +101,12 @@ public with sharing class WorkflowAnalyticsController {
         }
 
         try {
+            // Return ALL statuses so LWC can filter by Active/Dismissed tabs
             List<Identified_Pain_Point__c> points = [
                 SELECT Id, Name, Object_API_Name__c, Impact_Score__c, Status__c, Description__c, Occurrences__c, Example_Records__c, Unique_Key__c
                 FROM Identified_Pain_Point__c
-                WHERE Status__c = 'New'
                 ORDER BY Impact_Score__c DESC
-                LIMIT 50
+                LIMIT 100
             ];
 
             // Enforce Security on the result set
@@ -104,6 +117,8 @@ public with sharing class WorkflowAnalyticsController {
             Map<String, Decimal> ruleCostMap = getRuleCostMap();
 
             // Convert to wrapper with ROI data
+            // For Opportunity and Contract objects, use stored Impact_Score (cumulative value)
+            // For other objects, calculate from occurrences * cost per incident
             List<PainPointWithROI> results = new List<PainPointWithROI>();
             for (Identified_Pain_Point__c pp : securedPoints) {
                 Decimal costPerIncident = ruleCostMap.get(pp.Unique_Key__c);
@@ -335,7 +350,7 @@ public with sharing class WorkflowAnalyticsController {
     
     @AuraEnabled
     public static String dismissSuggestion(Id painPointId) {
-        if (!Schema.sObjectType.Identified_Pain_Point__c.isUpdateable() || 
+        if (!Schema.sObjectType.Identified_Pain_Point__c.isUpdateable() ||
             !Schema.sObjectType.Identified_Pain_Point__c.fields.Status__c.isUpdateable()) {
             throw new AuraHandledException('Insufficient permissions to update Pain Points.');
         }
@@ -345,14 +360,42 @@ public with sharing class WorkflowAnalyticsController {
                 Id = painPointId,
                 Status__c = 'Dismissed'
             );
-            
+
             // Enforce Security on Update
             SObjectAccessDecision decision = Security.stripInaccessible(AccessType.UPDATABLE, new List<Identified_Pain_Point__c>{point});
             update decision.getRecords();
-            
+
             return 'Suggestion dismissed successfully.';
         } catch (Exception e) {
             throw new AuraHandledException('Error dismissing suggestion.');
+        }
+    }
+
+    /**
+     * @description Restores a dismissed pain point back to active status.
+     * @param painPointId The Id of the pain point to restore.
+     * @return Success message string.
+     */
+    @AuraEnabled
+    public static String restoreSuggestion(Id painPointId) {
+        if (!Schema.sObjectType.Identified_Pain_Point__c.isUpdateable() ||
+            !Schema.sObjectType.Identified_Pain_Point__c.fields.Status__c.isUpdateable()) {
+            throw new AuraHandledException('Insufficient permissions to update Pain Points.');
+        }
+
+        try {
+            Identified_Pain_Point__c point = new Identified_Pain_Point__c(
+                Id = painPointId,
+                Status__c = 'New'
+            );
+
+            // Enforce Security on Update
+            SObjectAccessDecision decision = Security.stripInaccessible(AccessType.UPDATABLE, new List<Identified_Pain_Point__c>{point});
+            update decision.getRecords();
+
+            return 'Suggestion restored successfully.';
+        } catch (Exception e) {
+            throw new AuraHandledException('Error restoring suggestion.');
         }
     }
 
@@ -519,7 +562,7 @@ public with sharing class WorkflowAnalyticsController {
     // --- NEW: Org Health Score Gamification Engine ---
 
     /**
-     * @description Wrapper for health score with status text
+     * @description Wrapper for health score with status text and total at risk
      */
     public class HealthScoreResult {
         @AuraEnabled public Integer score { get; set; }
@@ -527,29 +570,34 @@ public with sharing class WorkflowAnalyticsController {
         @AuraEnabled public Integer highCount { get; set; }
         @AuraEnabled public Integer mediumCount { get; set; }
         @AuraEnabled public Integer lowCount { get; set; }
+        @AuraEnabled public Decimal totalAtRisk { get; set; }
 
-        public HealthScoreResult(Integer score, String status, Integer highCount, Integer mediumCount, Integer lowCount) {
+        public HealthScoreResult(Integer score, String status, Integer highCount, Integer mediumCount, Integer lowCount, Decimal totalAtRisk) {
             this.score = score;
             this.status = status;
             this.highCount = highCount;
             this.mediumCount = mediumCount;
             this.lowCount = lowCount;
+            this.totalAtRisk = totalAtRisk;
         }
     }
 
     /**
      * @description Calculates the Org Health Score based on active pain points.
-     * Gamification scoring: Start at 100, deduct points based on severity.
-     * - High Severity (Cost >= $1000): -10 points each, cap at -30
-     * - Medium Severity (Cost $100-$999): -5 points each, cap at -20
-     * - Low Severity (Cost < $100 or tasks): -1 point each
+     * Gamification scoring: Start at 100, deduct points based on actual dollar risk.
+     *
+     * Severity Classification (based on Impact_Score__c which stores actual $ at risk):
+     * - High Severity (>= $50,000 at risk): -15 points each, cap at -45
+     * - Medium Severity ($5,000 - $49,999 at risk): -8 points each, cap at -30
+     * - Low Severity (< $5,000 at risk): -2 points each, cap at -20
+     *
      * Floor: 0 (score cannot go negative)
      * @return HealthScoreResult containing score (0-100), status text, and breakdown counts
      */
     @AuraEnabled(cacheable=true)
     public static HealthScoreResult getHealthScore() {
         if (!Schema.sObjectType.Identified_Pain_Point__c.isAccessible()) {
-            return new HealthScoreResult(100, 'Healthy', 0, 0, 0);
+            return new HealthScoreResult(100, 'Healthy', 0, 0, 0, 0);
         }
 
         try {
@@ -557,42 +605,59 @@ public with sharing class WorkflowAnalyticsController {
             Integer highCount = 0;
             Integer mediumCount = 0;
             Integer lowCount = 0;
+            Decimal totalAtRisk = 0;
 
-            // Build cost map from metadata
+            // Build cost map from metadata (for fallback calculation)
             Map<String, Decimal> ruleCostMap = getRuleCostMap();
 
-            // Get active pain points
+            // Get active pain points with Impact_Score__c for dollar-based severity
             List<Identified_Pain_Point__c> activePoints = [
-                SELECT Id, Unique_Key__c, Occurrences__c, Object_API_Name__c
+                SELECT Id, Unique_Key__c, Occurrences__c, Object_API_Name__c, Impact_Score__c
                 FROM Identified_Pain_Point__c
                 WHERE Status__c = 'New' OR Status__c = 'Active'
                 WITH SECURITY_ENFORCED
                 LIMIT 100
             ];
 
-            // Calculate deductions based on severity
+            // Calculate deductions based on actual dollar risk
             Integer highDeduction = 0;
             Integer mediumDeduction = 0;
             Integer lowDeduction = 0;
 
             for (Identified_Pain_Point__c pp : activePoints) {
-                Decimal costPerIncident = ruleCostMap.get(pp.Unique_Key__c);
                 String objName = pp.Object_API_Name__c != null ? pp.Object_API_Name__c.toLowerCase() : '';
 
-                // Determine severity based on cost or object type
-                if (costPerIncident != null && costPerIncident >= 1000) {
-                    // High Severity: Contract Expiry, High-Value Ghosting
-                    highCount++;
-                    highDeduction = Math.min(highDeduction + 10, 30);
-                } else if (costPerIncident != null && costPerIncident >= 100) {
-                    // Medium Severity: Stale Opps, Stale Cases
-                    mediumCount++;
-                    mediumDeduction = Math.min(mediumDeduction + 5, 20);
+                // Determine the dollar amount at risk
+                Decimal dollarRisk = 0;
+                if (objName == 'opportunity' || objName == 'contract') {
+                    // For Opportunity/Contract, use stored Impact_Score (cumulative value)
+                    dollarRisk = pp.Impact_Score__c != null ? pp.Impact_Score__c : 0;
                 } else {
-                    // Low Severity: Tasks, uncategorized
-                    lowCount++;
-                    lowDeduction += 1;
+                    // For other objects, calculate from occurrences * cost per incident
+                    Decimal costPerIncident = ruleCostMap.get(pp.Unique_Key__c);
+                    if (costPerIncident != null && pp.Occurrences__c != null) {
+                        dollarRisk = pp.Occurrences__c * costPerIncident;
+                    }
                 }
+
+                // Add to total at risk
+                totalAtRisk += dollarRisk;
+
+                // Classify severity based on dollar amount at risk
+                if (dollarRisk >= 50000) {
+                    // High Severity: >= $50K at risk
+                    highCount++;
+                    highDeduction = Math.min(highDeduction + 15, 45);
+                } else if (dollarRisk >= 5000) {
+                    // Medium Severity: $5K - $50K at risk
+                    mediumCount++;
+                    mediumDeduction = Math.min(mediumDeduction + 8, 30);
+                } else if (dollarRisk > 0) {
+                    // Low Severity: < $5K at risk
+                    lowCount++;
+                    lowDeduction = Math.min(lowDeduction + 2, 20);
+                }
+                // Items with $0 risk don't affect score
             }
 
             // Apply deductions
@@ -611,11 +676,11 @@ public with sharing class WorkflowAnalyticsController {
                 status = 'Critical Issues Found';
             }
 
-            return new HealthScoreResult(score, status, highCount, mediumCount, lowCount);
+            return new HealthScoreResult(score, status, highCount, mediumCount, lowCount, totalAtRisk);
 
         } catch (Exception e) {
             System.debug(LoggingLevel.ERROR, 'getHealthScore Error: ' + e.getMessage());
-            return new HealthScoreResult(100, 'Healthy', 0, 0, 0);
+            return new HealthScoreResult(100, 'Healthy', 0, 0, 0, 0);
         }
     }
 }

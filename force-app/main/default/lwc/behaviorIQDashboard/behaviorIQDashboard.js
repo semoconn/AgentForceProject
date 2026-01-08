@@ -6,6 +6,7 @@ import { refreshApex } from '@salesforce/apex';
 import getPainPoints from '@salesforce/apex/WorkflowAnalyticsController.getPainPoints';
 import runAutoFix from '@salesforce/apex/WorkflowAnalyticsController.runAutoFix';
 import dismissSuggestion from '@salesforce/apex/WorkflowAnalyticsController.dismissSuggestion';
+import restoreSuggestion from '@salesforce/apex/WorkflowAnalyticsController.restoreSuggestion';
 import getDashboardData from '@salesforce/apex/WorkflowAnalyticsController.getDashboardData';
 import getTotalEventsAnalyzed from '@salesforce/apex/WorkflowAnalyticsController.getTotalEventsAnalyzed';
 
@@ -179,11 +180,28 @@ export default class BehaviorIQDashboard extends LightningElement {
     // --- Getters for Filters ---
     get filteredPainPoints() {
         if (!this.allPainPoints) return [];
+        let filtered;
         switch (this.currentFilter) {
-            case 'Active': return this.allPainPoints.filter(item => item.Status !== 'Dismissed' && item.Status !== 'Resolved');
-            case 'Dismissed': return this.allPainPoints.filter(item => item.Status === 'Dismissed' || item.Status === 'Resolved');
-            default: return this.allPainPoints;
+            case 'Active':
+                filtered = this.allPainPoints.filter(item => item.Status !== 'Dismissed' && item.Status !== 'Resolved');
+                break;
+            case 'Dismissed':
+                filtered = this.allPainPoints.filter(item => item.Status === 'Dismissed' || item.Status === 'Resolved');
+                break;
+            default:
+                filtered = this.allPainPoints;
         }
+        // Add computed properties for each point
+        return filtered.map(point => ({
+            ...point,
+            // Show cost per incident only for non-Opportunity/Contract objects that have a cost
+            showCostPerIncident: point.CostPerIncident &&
+                point.ObjectApiName &&
+                point.ObjectApiName.toLowerCase() !== 'opportunity' &&
+                point.ObjectApiName.toLowerCase() !== 'contract',
+            // Track if item is dismissed for UI (restore vs dismiss button)
+            isDismissed: point.Status === 'Dismissed' || point.Status === 'Resolved'
+        }));
     }
 
     get hasPainPoints() { return this.filteredPainPoints.length > 0; }
@@ -318,6 +336,19 @@ export default class BehaviorIQDashboard extends LightningElement {
                 this.showToast('Dismissed', 'Suggestion dismissed', 'success');
                 refreshApex(this._wiredPainPointsResult);
             })
+            .finally(() => this.isLoading = false);
+    }
+
+    handleRestore(event) {
+        const painPointId = event.currentTarget.dataset.id;
+        if(!painPointId) return;
+        this.isLoading = true;
+        restoreSuggestion({ painPointId })
+            .then(() => {
+                this.showToast('Restored', 'Suggestion restored to active', 'success');
+                refreshApex(this._wiredPainPointsResult);
+            })
+            .catch(err => this.showToast('Error', err?.body?.message || 'Failed to restore', 'error'))
             .finally(() => this.isLoading = false);
     }
 

@@ -10,3 +10,15 @@ package.xml
 
 # LWC Jest
 **/__tests__/**
+
+# Ignore standard Salesforce metadata for scratch org deployments
+# These contain references to features/fields not available in scratch orgs
+**/profiles/Admin.profile-meta.xml
+**/profiles/*.profile-meta.xml
+**/layouts/*-*.layout-meta.xml
+**/applications/standard__*.app-meta.xml
+
+# Ignore layouts that reference unavailable features (keep only BehaviorIQ layouts)
+!**/layouts/Behavior_Change__c-*.layout-meta.xml
+!**/layouts/BIQ_Nudge_Template__c-*.layout-meta.xml
+!**/layouts/BIQ_Exclusion_Rule__c-*.layout-meta.xml

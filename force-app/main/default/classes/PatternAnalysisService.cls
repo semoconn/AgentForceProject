@@ -126,7 +126,19 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
 
         // 5. Dynamic Detection with Admin Configuration Injection
         String effectiveCondition = getEffectiveQuery(rule);
-        String queryString = 'SELECT Id FROM ' + String.escapeSingleQuotes(objectApiName) +
+
+        // For Opportunity and Contract, also select the value field for cumulative risk calculation
+        String selectFields = 'Id';
+        String objLower = objectApiName.toLowerCase();
+        if (objLower == 'opportunity') {
+            selectFields = 'Id, Amount';
+        } else if (objLower == 'contract') {
+            // Contract doesn't have a standard Amount field; we'll use a calculated approach
+            // Check if there's an Account relationship to get contract value context
+            selectFields = 'Id, ContractNumber';
+        }
+
+        String queryString = 'SELECT ' + selectFields + ' FROM ' + String.escapeSingleQuotes(objectApiName) +
                              ' WHERE ' + effectiveCondition +
                              ' LIMIT 2000';
 
@@ -157,9 +169,33 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
                 exampleIds.add(detectedRecords[i].Id);
             }
 
-            // Calculate financial impact using Cost_Per_Incident__c
+            // Calculate financial impact
+            // For Opportunity: Sum actual Amount values (cumulative risk)
+            // For Contract: Use Cost_Per_Incident as contracts don't have a standard value field
+            // For other objects: count * Cost_Per_Incident
             Decimal costPerIncident = rule.Cost_Per_Incident__c != null ? rule.Cost_Per_Incident__c : 0;
-            Decimal totalImpact = count * costPerIncident;
+            Decimal totalImpact = 0;
+
+            if (objLower == 'opportunity') {
+                // Sum actual Opportunity amounts for cumulative risk
+                for (SObject rec : detectedRecords) {
+                    Decimal amt = (Decimal)rec.get('Amount');
+                    if (amt != null) {
+                        totalImpact += amt;
+                    }
+                }
+                // If no amounts, fall back to count * cost per incident
+                if (totalImpact == 0) {
+                    totalImpact = count * costPerIncident;
+                }
+            } else if (objLower == 'contract') {
+                // For contracts, use cost per incident * count
+                // (Contracts don't have a standard Amount field; value would need custom field)
+                totalImpact = count * costPerIncident;
+            } else {
+                // Standard calculation: count * cost per incident
+                totalImpact = count * costPerIncident;
+            }
 
             upsertPainPoint(
                 rule.DeveloperName,

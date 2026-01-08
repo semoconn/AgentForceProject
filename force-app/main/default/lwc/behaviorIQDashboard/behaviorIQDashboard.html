@@ -118,7 +118,7 @@
                                                 <p class="slds-text-body_small slds-m-top_xx-small">{point.Description}</p>
                                                 <div class="slds-grid slds-grid_vertical-align-center slds-text-color_weak slds-text-body_small">
                                                     <span class="slds-m-right_medium">{point.Occurrences} records affected</span>
-                                                    <template if:true={point.CostPerIncident}>
+                                                    <template if:true={point.showCostPerIncident}>
                                                         <span>@ <lightning-formatted-number value={point.CostPerIncident} format-style="currency" currency-code="USD" maximum-fraction-digits="0"></lightning-formatted-number>/incident</span>
                                                     </template>
                                                 </div>
@@ -137,8 +137,7 @@
                                                 data-id={point.ExampleRecords}
                                                 data-type={point.ObjectApiName}
                                                 data-key={point.UniqueKey}
-                                                data-label={point.Name}
-                                                disabled={isFixDisabled}>
+                                                data-label={point.Name}>
                                             </lightning-button-icon>
 
                                             <lightning-button-icon
@@ -151,15 +150,28 @@
                                                 data-id={point.Id}>
                                             </lightning-button-icon>
 
-                                            <lightning-button-icon
-                                                icon-name="utility:close"
-                                                variant="bare"
-                                                alternative-text="Dismiss"
-                                                title="Dismiss Suggestion"
-                                                onclick={handleDismiss}
-                                                data-id={point.Id}
-                                                data-key={point.UniqueKey}>
-                                            </lightning-button-icon>
+                                            <template if:true={point.isDismissed}>
+                                                <lightning-button-icon
+                                                    icon-name="utility:add"
+                                                    variant="bare"
+                                                    alternative-text="Restore"
+                                                    title="Restore to Active"
+                                                    onclick={handleRestore}
+                                                    data-id={point.Id}
+                                                    data-key={point.UniqueKey}>
+                                                </lightning-button-icon>
+                                            </template>
+                                            <template if:false={point.isDismissed}>
+                                                <lightning-button-icon
+                                                    icon-name="utility:close"
+                                                    variant="bare"
+                                                    alternative-text="Dismiss"
+                                                    title="Dismiss Suggestion"
+                                                    onclick={handleDismiss}
+                                                    data-id={point.Id}
+                                                    data-key={point.UniqueKey}>
+                                                </lightning-button-icon>
+                                            </template>
                                         </div>
                                     </div>
                                 </div>
