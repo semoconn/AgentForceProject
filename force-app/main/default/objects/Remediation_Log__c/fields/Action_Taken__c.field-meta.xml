@@ -36,6 +36,16 @@
                 <default>false</default>
                 <label>Opportunity Creation</label>
             </value>
+            <value>
+                <fullName>Escalation_Revert</fullName>
+                <default>false</default>
+                <label>Escalation Revert</label>
+            </value>
+            <value>
+                <fullName>No_Action</fullName>
+                <default>false</default>
+                <label>No Action</label>
+            </value>
         </valueSetDefinition>
     </valueSet>
 </CustomField>

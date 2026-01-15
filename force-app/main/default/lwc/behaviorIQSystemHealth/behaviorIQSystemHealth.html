@@ -1,9 +1,7 @@
 <!--
   @description       : Displays the status of the last BehaviorIQ analysis job run.
-  @author            : Gemini
+  @author            : BehaviorIQ
   @group             : BehaviorIQ
-  @last modified on  : 10-20-2025
-  @last modified by  : Gemini
 -->
 <template>
     <div class="slds-box slds-box_x-small slds-theme_shade slds-m-top_medium slds-m-bottom_medium">
@@ -15,11 +13,19 @@
                 </h3>
             </div>
             <div class="slds-col slds-text-align_right">
-                <template if:true={health}>
+                <!-- Loading state -->
+                <template lwc:if={isLoading}>
+                    <lightning-spinner alternative-text="Loading" size="small"></lightning-spinner>
+                </template>
+
+                <!-- Has health data -->
+                <template lwc:if={hasHealthData}>
+                    <span class="slds-m-right_small slds-text-color_weak">
+                        {sourceLabel}:
+                    </span>
                     <span class="slds-m-right_medium">
-                        Last Analysis Run: 
                         <lightning-formatted-date-time
-                            value={health.CreatedDate}
+                            value={health.lastRunTime}
                             year="numeric"
                             month="short"
                             day="2-digit"
@@ -27,18 +33,22 @@
                             minute="2-digit">
                         </lightning-formatted-date-time>
                     </span>
-                    <template if:true={isSuccess}>
+                    <template lwc:if={isSuccess}>
                         <lightning-badge label="Success" class="success-badge"></lightning-badge>
                     </template>
-                    <template if:false={isSuccess}>
-                        <lightning-badge label="Failed" class="error-badge"></lightning-badge>
+                    <template lwc:elseif={health.status}>
+                        <lightning-badge label={health.status} class="warning-badge"></lightning-badge>
                     </template>
                 </template>
-                <template if:false={health}>
-                     <lightning-badge label="No job has run yet."></lightning-badge>
-                </template>
-                 <template if:true={error}>
-                     <lightning-badge label="Error" class="error-badge"></lightning-badge>
+
+                <!-- No health data -->
+                <template lwc:if={showNoDataMessage}>
+                    <template lwc:if={hasError}>
+                        <lightning-badge label="Error loading status" class="error-badge"></lightning-badge>
+                    </template>
+                    <template lwc:if={noError}>
+                        <lightning-badge label="No analysis has run yet"></lightning-badge>
+                    </template>
                 </template>
             </div>
         </div>

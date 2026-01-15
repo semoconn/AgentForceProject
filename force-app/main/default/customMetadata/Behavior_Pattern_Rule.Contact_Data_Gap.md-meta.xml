@@ -1,18 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomMetadata xmlns="http://soap.sforce.com/2006/04/metadata" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
-    <label>High-Value Ghosting (Revenue Risk)</label>
+    <label>Missing Contact Info</label>
     <protected>false</protected>
     <values>
         <field>Object_API_Name__c</field>
-        <value xsi:type="xsd:string">Opportunity</value>
+        <value xsi:type="xsd:string">Contact</value>
     </values>
     <values>
         <field>Query_Condition__c</field>
-        <value xsi:type="xsd:string">Amount &gt; 50000 AND (LastActivityDate &lt; LAST_N_DAYS:14 OR LastActivityDate = null) AND IsClosed = false</value>
+        <value xsi:type="xsd:string">(Email = null OR Phone = null) AND OwnerId != null</value>
     </values>
     <values>
         <field>Threshold_Default__c</field>
-        <value xsi:type="xsd:double">14</value>
+        <value xsi:type="xsd:double">0</value>
     </values>
     <values>
         <field>Fix_Type__c</field>
@@ -20,14 +20,14 @@
     </values>
     <values>
         <field>Fix_Config__c</field>
-        <value xsi:type="xsd:string">{"subject": "URGENT: High-Value Opportunity Needs Attention", "priority": "High", "description": "This high-value opportunity (>$50K) has had no activity in 14+ days. Immediate action required to prevent deal loss."}</value>
+        <value xsi:type="xsd:string">{"subject": "Urgent: Update Contact Details", "priority": "High", "status": "Not Started", "description": "This contact is missing email or phone information. Please update to ensure complete customer records."}</value>
     </values>
     <values>
         <field>Is_Premium__c</field>
-        <value xsi:type="xsd:boolean">true</value>
+        <value xsi:type="xsd:boolean">false</value>
     </values>
     <values>
         <field>Cost_Per_Incident__c</field>
-        <value xsi:type="xsd:double">2500</value>
+        <value xsi:type="xsd:double">50</value>
     </values>
 </CustomMetadata>

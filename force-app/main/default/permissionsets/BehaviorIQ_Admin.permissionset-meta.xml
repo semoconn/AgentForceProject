@@ -166,6 +166,16 @@
         <field>Identified_Pain_Point__c.Status__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Identified_Pain_Point__c.Cost_Per_Incident__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Identified_Pain_Point__c.Fixed_Record_Ids__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
 
     <!-- FIELD PERMISSIONS: Behavior_Log__c -->
     <fieldPermissions>

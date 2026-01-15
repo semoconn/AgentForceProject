@@ -22,18 +22,18 @@ export default class BehaviorIQUpgradeCta extends LightningElement {
         return this.licenseStatus === 'Premium';
     }
 
-    get showUpgradeBanner() {
-        return !this.isLoading && !this.isPremium;
+    get showPremiumView() {
+        return !this.isLoading && this.isPremium;
     }
 
-    get showPremiumBadge() {
-        return !this.isLoading && this.isPremium;
+    get showFreeView() {
+        return !this.isLoading && !this.isPremium;
     }
 
     handleUpgradeClick() {
         const event = new ShowToastEvent({
-            title: 'Premium Features',
-            message: 'Thank you for your interest in BehaviorIQ Premium! This feature is coming soon.',
+            title: 'Upgrade to Premium',
+            message: 'Please contact your Salesforce administrator or visit the AppExchange listing to upgrade to BehaviorIQ Premium.',
             variant: 'info',
         });
         this.dispatchEvent(event);

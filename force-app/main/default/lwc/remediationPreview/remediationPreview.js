@@ -4,6 +4,8 @@ import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 // Apex Controllers
 import getPatternMatches from '@salesforce/apex/PatternAnalysisService.getPatternMatches';
 import runAutoFix from '@salesforce/apex/WorkflowAnalyticsController.runAutoFix';
+import getFixConfig from '@salesforce/apex/WorkflowAnalyticsController.getFixConfig';
+import getRecordsByIds from '@salesforce/apex/WorkflowAnalyticsController.getRecordsByIds';
 
 // Column definitions per object type
 const COLUMN_CONFIG = {
@@ -21,9 +23,7 @@ const COLUMN_CONFIG = {
         { label: 'Stage', fieldName: 'StageName', type: 'text', sortable: true },
         { label: 'Amount', fieldName: 'Amount', type: 'currency', sortable: true },
         { label: 'Close Date', fieldName: 'CloseDate', type: 'date', sortable: true },
-        { label: 'Probability', fieldName: 'Probability', type: 'percent', sortable: true,
-            typeAttributes: { maximumFractionDigits: 0 }
-        }
+        { label: 'Probability', fieldName: 'ProbabilityDisplay', type: 'text', sortable: true }
     ],
     Lead: [
         { label: 'Name', fieldName: 'Name', type: 'text', sortable: true },
@@ -61,6 +61,10 @@ export default class RemediationPreview extends LightningElement {
     @api objectApiName;
     @api ruleLabel;
     @api fixType;
+    @api exampleRecordIds; // Whitelist of record IDs to filter to (from pain point's Example_Records__c)
+    @api readOnly = false; // When true, shows records in view-only mode (no fix button)
+    @api fixedRecordIds; // Cumulative fixed record IDs from pain point (for displaying previously fixed records)
+    @api fixedAtTimestamp; // Timestamp when records were fixed (for displaying in Fixed At column)
 
     // Internal state - Inbox Zero pattern with pending/fixed split
     @track pendingRecords = [];
@@ -70,7 +74,13 @@ export default class RemediationPreview extends LightningElement {
     @track isLoading = true;
     @track error = null;
     @track isFixing = false;
-    @track activeTab = 'pending';
+    @track hasCompletedFix = false; // Track if user has completed at least one fix in this session
+
+    // Confirmation dialog state
+    @track showConfirmation = false;
+    @track dontShowAgain = false;
+    @track fixConfigInfo = null; // Metadata-driven fix configuration
+    static CONFIRMATION_SKIP_KEY = 'behavioriq_skip_fix_confirmation';
 
     // Getter/setter for selected rows to ensure proper reactivity
     get selectedRows() {
@@ -86,8 +96,17 @@ export default class RemediationPreview extends LightningElement {
 
     // Lifecycle hooks
     connectedCallback() {
-        if (this.ruleDeveloperName) {
+        // Set columns first
+        this.columns = this.getColumnsForObject(this.objectApiName);
+
+        if (this.readOnly) {
+            // Read-only mode: load fixed records directly by IDs
+            // Don't use getPatternMatches since the records no longer match the pattern
+            this.loadFixedRecordsDirectly();
+        } else if (this.ruleDeveloperName) {
+            // Edit mode: load pending records via pattern matching
             this.loadRecords();
+            this.loadFixConfig();
         } else {
             this.isLoading = false;
             this.error = 'No pattern rule specified.';
@@ -95,6 +114,19 @@ export default class RemediationPreview extends LightningElement {
 
         this._handleKeyDown = this.handleKeyDown.bind(this);
         window.addEventListener('keydown', this._handleKeyDown);
+    }
+
+    // Load fix configuration from metadata
+    loadFixConfig() {
+        getFixConfig({ ruleDeveloperName: this.ruleDeveloperName })
+            .then(result => {
+                this.fixConfigInfo = result;
+                console.log('Fix config loaded:', result);
+            })
+            .catch(err => {
+                console.warn('Could not load fix config:', err);
+                // Non-fatal - we'll fall back to generic messages
+            });
     }
 
     disconnectedCallback() {
@@ -116,7 +148,15 @@ export default class RemediationPreview extends LightningElement {
     // --- Getters ---
 
     get modalTitle() {
+        if (this.readOnly) {
+            return `Fixed Records: ${this.ruleLabel || this.ruleDeveloperName || 'Remediated Records'}`;
+        }
         return `Preview: ${this.ruleLabel || this.ruleDeveloperName || 'Affected Records'}`;
+    }
+
+    // Check if we should hide the fix button (read-only mode or no selection)
+    get showFixButton() {
+        return !this.readOnly;
     }
 
     get pendingCount() {
@@ -151,12 +191,14 @@ export default class RemediationPreview extends LightningElement {
         return !this.hasSelection || this.isFixing;
     }
 
-    get pendingTabLabel() {
-        return `Pending Action (${this.pendingCount})`;
-    }
-
-    get fixedTabLabel() {
-        return `Successfully Fixed (${this.fixedCount})`;
+    // Columns for fixed records include a "Fixed At" column
+    get fixedColumns() {
+        const baseColumns = this.getColumnsForObject(this.objectApiName);
+        // Add Fixed At column for tracking when records were fixed
+        return [
+            ...baseColumns,
+            { label: 'Fixed At', fieldName: 'fixedAt', type: 'text', sortable: true }
+        ];
     }
 
     get summaryText() {
@@ -177,7 +219,113 @@ export default class RemediationPreview extends LightningElement {
     }
 
     get allCaughtUp() {
-        return !this.isLoading && !this.error && this.pendingCount === 0;
+        // Only show "All Caught Up" if user has completed at least one fix in this session
+        // This prevents the confusing "Inbox Zero" message when records simply don't load
+        return !this.isLoading && !this.error && this.pendingCount === 0 && this.hasCompletedFix;
+    }
+
+    // Check if no records were found (initial load returned empty without any fix being performed)
+    get noRecordsFound() {
+        return !this.isLoading && !this.error && this.pendingCount === 0 && !this.hasCompletedFix && !this.readOnly;
+    }
+
+    get confirmationMessage() {
+        // Use metadata-driven configuration if available
+        if (this.fixConfigInfo && this.fixConfigInfo.fixType) {
+            return this.buildDetailedConfirmationMessage();
+        }
+
+        // Fallback: Generate context-aware confirmation message based on fix type
+        const fixType = this.fixType || this.mapObjectToFixType(this.objectApiName) || '';
+        const normalizedType = fixType.toLowerCase();
+
+        if (normalizedType.includes('case')) {
+            return 'High-priority follow-up tasks will be created for the selected cases.';
+        } else if (normalizedType.includes('opportunity')) {
+            return 'Follow-up tasks will be created for the selected opportunities.';
+        } else if (normalizedType.includes('lead')) {
+            return 'You will be assigned as the owner of the selected leads.';
+        }
+        return 'The selected records will be remediated according to the pattern rule configuration.';
+    }
+
+    // Build a detailed confirmation message from metadata configuration
+    buildDetailedConfirmationMessage() {
+        const config = this.fixConfigInfo;
+        const fixType = config.fixType;
+        let message = '';
+
+        switch (fixType) {
+            case 'Task_Creation':
+                message = 'A task will be created for each selected record';
+                if (config.subject) {
+                    message += ` with subject: "${config.subject}"`;
+                }
+                if (config.priority) {
+                    message += ` (${config.priority} priority)`;
+                }
+                message += '.';
+                if (config.description) {
+                    message += `\n\nTask description: "${config.description}"`;
+                }
+                break;
+
+            case 'Owner_Assignment':
+                if (config.queueName) {
+                    message = `Selected records will be assigned to the "${config.queueName}" queue for redistribution.`;
+                } else {
+                    message = 'You will be assigned as the owner of the selected records.';
+                }
+                break;
+
+            case 'Field_Update':
+                if (config.fieldName && config.fieldValue) {
+                    message = `The "${config.fieldName}" field will be updated to "${config.fieldValue}" on selected records.`;
+                } else {
+                    message = 'A field will be updated on the selected records.';
+                }
+                break;
+
+            case 'Email_Notification':
+                message = 'An email notification will be sent to the record owners.';
+                if (config.subject) {
+                    message += ` Subject: "${config.subject}"`;
+                }
+                break;
+
+            case 'Opportunity_Creation':
+                message = 'Renewal opportunities will be created from the selected records.';
+                break;
+
+            default:
+                message = `The selected records will be processed using "${fixType}" action.`;
+        }
+
+        return message;
+    }
+
+    // Check if we have detailed fix information to display
+    get hasDetailedFixInfo() {
+        return this.fixConfigInfo && this.fixConfigInfo.fixType;
+    }
+
+    // Get fix type display name for the confirmation dialog header
+    get fixTypeDisplayName() {
+        if (!this.fixConfigInfo || !this.fixConfigInfo.fixType) {
+            return 'Auto-Fix';
+        }
+        // Convert snake_case to Title Case
+        return this.fixConfigInfo.fixType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    }
+
+    // Check if confirmation should be skipped (user previously checked "Don't show again")
+    get shouldSkipConfirmation() {
+        try {
+            return localStorage.getItem(RemediationPreview.CONFIRMATION_SKIP_KEY) === 'true';
+        } catch (e) {
+            // localStorage might be unavailable in some contexts
+            return false;
+        }
     }
 
     // --- Data Loading ---
@@ -186,21 +334,51 @@ export default class RemediationPreview extends LightningElement {
         this.isLoading = true;
         this.error = null;
 
+        // Pass exampleRecordIds as whitelist filter if provided
+        // This ensures we only show remaining unfixed records for partial fix scenarios
+        console.log('=== remediationPreview.loadRecords ===');
+        console.log('ruleDeveloperName:', this.ruleDeveloperName);
+        console.log('exampleRecordIds prop:', this.exampleRecordIds);
+        console.log('exampleRecordIds type:', typeof this.exampleRecordIds);
+        console.log('readOnly mode:', this.readOnly);
+
         getPatternMatches({
             ruleDeveloperName: this.ruleDeveloperName,
-            limitCount: 50
+            limitCount: 50,
+            includeOnlyRecordIds: this.exampleRecordIds || ''
         })
         .then(result => {
-            this.pendingRecords = result || [];
-            this.fixedRecords = [];
+            let records = result || [];
+            // Transform Opportunity records to add ProbabilityDisplay field with % suffix
+            if (this.objectApiName === 'Opportunity') {
+                records = records.map(r => ({
+                    ...r,
+                    ProbabilityDisplay: r.Probability != null ? `${r.Probability}%` : ''
+                }));
+            }
+
             this.columns = this.getColumnsForObject(this.objectApiName);
-            // Pre-select all pending rows by default
-            this._selectedRowIds = this.pendingRecords.map(r => r.Id);
-            console.log('Records loaded:', this.pendingRecords.length, 'Selected:', this._selectedRowIds.length);
+
+            // In read-only mode (viewing completed/fixed records), load into fixedRecords
+            // and switch to the fixed tab
+            if (this.readOnly) {
+                this.fixedRecords = records;
+                this.pendingRecords = [];
+                this._selectedRowIds = [];
+                console.log('Read-only mode: Loaded', this.fixedRecords.length, 'fixed records');
+            } else {
+                // Normal mode: load into pendingRecords for fixing
+                this.pendingRecords = records;
+                this.fixedRecords = [];
+                // Pre-select all pending rows by default
+                this._selectedRowIds = this.pendingRecords.map(r => r.Id);
+                console.log('Records loaded:', this.pendingRecords.length, 'Selected:', this._selectedRowIds.length);
+            }
         })
         .catch(err => {
             this.error = err?.body?.message || 'Failed to load records.';
             this.pendingRecords = [];
+            this.fixedRecords = [];
             console.error('Error loading pattern matches:', err);
         })
         .finally(() => {
@@ -212,11 +390,88 @@ export default class RemediationPreview extends LightningElement {
         return COLUMN_CONFIG[objectName] || COLUMN_CONFIG.Default;
     }
 
-    // --- Event Handlers ---
+    // Load fixed records directly by ID for read-only mode (completed pain points)
+    loadFixedRecordsDirectly() {
+        this.isLoading = true;
+        this.error = null;
 
-    handleTabChange(event) {
-        this.activeTab = event.target.value;
+        // Use exampleRecordIds which now contains the Fixed_Record_Ids__c for completed pain points
+        const recordIdsToLoad = this.exampleRecordIds;
+
+        if (!recordIdsToLoad || !this.objectApiName) {
+            this.isLoading = false;
+            this.fixedRecords = [];
+            console.log('No fixed record IDs to load');
+            return;
+        }
+
+        console.log('Loading fixed records directly:', recordIdsToLoad);
+        console.log('Fixed at timestamp:', this.fixedAtTimestamp);
+
+        getRecordsByIds({
+            objectApiName: this.objectApiName,
+            recordIds: recordIdsToLoad
+        })
+        .then(result => {
+            if (result && result.length > 0) {
+                // Format the timestamp for display
+                const displayTimestamp = this.formatFixedAtTimestamp(this.fixedAtTimestamp);
+
+                // Transform records and add formatted timestamp
+                this.fixedRecords = result.map(r => {
+                    let record = { ...r };
+                    // Add Probability display for Opportunities
+                    if (this.objectApiName === 'Opportunity' && r.Probability != null) {
+                        record.ProbabilityDisplay = `${r.Probability}%`;
+                    }
+                    record.fixedAt = displayTimestamp;
+                    return record;
+                });
+                console.log('Fixed records loaded:', this.fixedRecords.length);
+            } else {
+                this.fixedRecords = [];
+            }
+            this.pendingRecords = [];
+            this._selectedRowIds = [];
+        })
+        .catch(err => {
+            this.error = err?.body?.message || 'Unable to load fixed records.';
+            this.fixedRecords = [];
+            console.error('Error loading fixed records:', err);
+        })
+        .finally(() => {
+            this.isLoading = false;
+        });
     }
+
+    // Format a timestamp for display in the Fixed At column
+    formatFixedAtTimestamp(timestamp) {
+        if (!timestamp) {
+            return 'Fixed';
+        }
+
+        try {
+            const date = new Date(timestamp);
+            if (isNaN(date.getTime())) {
+                return 'Fixed';
+            }
+
+            // Format as "Jan 13, 2026, 2:30 PM"
+            return date.toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
+            });
+        } catch (e) {
+            console.warn('Error formatting timestamp:', e);
+            return 'Fixed';
+        }
+    }
+
+    // --- Event Handlers ---
 
     handleRowSelection(event) {
         const newSelection = event.detail.selectedRows.map(row => row.Id);
@@ -256,12 +511,49 @@ export default class RemediationPreview extends LightningElement {
         this.dispatchEvent(new CustomEvent('close', { bubbles: true, composed: true }));
     }
 
-    handleConfirmFix() {
+    // Handler for fix button click - shows confirmation or proceeds directly
+    handleFixButtonClick() {
         if (!this.hasSelection) {
             this.showToast('Warning', 'Please select at least one record to fix.', 'warning');
             return;
         }
 
+        // Skip confirmation if user previously checked "Don't show again"
+        if (this.shouldSkipConfirmation) {
+            this.handleConfirmFix();
+        } else {
+            this.showConfirmation = true;
+        }
+    }
+
+    // Handler for "Don't show again" checkbox
+    handleDontShowAgainChange(event) {
+        this.dontShowAgain = event.target.checked;
+    }
+
+    // Handler for confirmation cancel button
+    handleConfirmationCancel() {
+        this.showConfirmation = false;
+        this.dontShowAgain = false;
+    }
+
+    // Handler for confirmation proceed button
+    handleConfirmationProceed() {
+        // Save preference if checkbox was checked
+        if (this.dontShowAgain) {
+            try {
+                localStorage.setItem(RemediationPreview.CONFIRMATION_SKIP_KEY, 'true');
+            } catch (e) {
+                console.warn('Could not save confirmation preference to localStorage:', e);
+            }
+        }
+
+        this.showConfirmation = false;
+        this.handleConfirmFix();
+    }
+
+    // Actual fix execution (called after confirmation or directly if skipped)
+    handleConfirmFix() {
         this.isFixing = true;
         const effectiveFixType = this.fixType || this.mapObjectToFixType(this.objectApiName);
         const selectedIds = [...this._selectedRowIds];
@@ -288,25 +580,25 @@ export default class RemediationPreview extends LightningElement {
             this.fixedRecords = [...nowFixed, ...this.fixedRecords];
             this.pendingRecords = stillPending;
 
+            // Mark that we've completed at least one fix in this session
+            this.hasCompletedFix = true;
+
             // Clear selection
             this._selectedRowIds = [];
 
             // Show success toast
             this.showToast('Success', result.message || `Fixed ${result.fixedCount} records`, 'success');
 
-            // If all records are fixed, switch to fixed tab
-            if (this.pendingCount === 0 && this.fixedCount > 0) {
-                this.activeTab = 'fixed';
-            }
 
-            // Dispatch event for parent component
+            // Dispatch event for parent component with fixed record IDs for pain point resolution
             this.dispatchEvent(new CustomEvent('fixcomplete', {
                 bubbles: true,
                 composed: true,
                 detail: {
                     fixedCount: result.fixedCount,
                     remainingCount: this.pendingCount,
-                    ruleDeveloperName: this.ruleDeveloperName
+                    ruleDeveloperName: this.ruleDeveloperName,
+                    fixedRecordIds: result.fixedRecordIds || selectedIds
                 }
             }));
         })

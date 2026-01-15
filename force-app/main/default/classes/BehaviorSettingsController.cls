@@ -227,4 +227,44 @@ public with sharing class BehaviorSettingsController {
         @AuraEnabled public Integer staleOpportunityThreshold;
         @AuraEnabled public Id recordId;
     }
+
+    /**
+     * @description Validates if a custom object rule can be created.
+     * Custom objects require Premium license for pattern rule creation.
+     * @param objectApiName The API name of the object to validate
+     * @return Boolean true if the object is valid for rule creation
+     * @throws AuraHandledException if custom object without Premium license or object not found
+     */
+    @AuraEnabled
+    public static Boolean validateCustomObjectRule(String objectApiName) {
+        if (String.isBlank(objectApiName)) {
+            throw new AuraHandledException('Object API name is required.');
+        }
+
+        // Check if this is a custom object (ends with __c)
+        Boolean isCustomObject = objectApiName.endsWithIgnoreCase('__c');
+
+        if (isCustomObject) {
+            if (!LicenseService.isPremium()) {
+                throw new AuraHandledException(
+                    'Custom Object rules require a BehaviorIQ Premium license. ' +
+                    'Please upgrade to create rules for ' + objectApiName
+                );
+            }
+        }
+
+        // Verify the object exists and is accessible
+        Map<String, Schema.SObjectType> globalDescribe = Schema.getGlobalDescribe();
+        Schema.SObjectType sObjType = globalDescribe.get(objectApiName.toLowerCase());
+
+        if (sObjType == null) {
+            throw new AuraHandledException('Object not found: ' + objectApiName);
+        }
+
+        if (!sObjType.getDescribe().isAccessible()) {
+            throw new AuraHandledException('You do not have access to: ' + objectApiName);
+        }
+
+        return true;
+    }
 }

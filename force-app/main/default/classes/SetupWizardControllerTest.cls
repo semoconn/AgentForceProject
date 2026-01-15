@@ -127,28 +127,24 @@ public class SetupWizardControllerTest {
     }
 
     @IsTest
-    static void testScheduleAnalysisJob_Duplicate() {
+    static void testScheduleAnalysisJob_Idempotent() {
         // FIX: Running as System (Admin)
-        
+
         // 1. Schedule it once safely
         List<CronTrigger> existing = [SELECT Id FROM CronTrigger WHERE CronJobDetail.Name = 'BehaviorIQ Nightly Analysis'];
-        if(existing.isEmpty()) {
+        if (existing.isEmpty()) {
             SetupWizardController.scheduleAnalysisJob();
         }
 
-        // 2. Try to schedule again - expect Exception
+        // 2. Try to schedule again - should succeed (idempotent, returns existing job ID)
         Test.startTest();
-        try {
-            SetupWizardController.scheduleAnalysisJob();
-            Assert.fail('Should have thrown an exception for duplicate job');
-        } catch (AuraHandledException e) {
-            // Expected behavior
-            Assert.isNotNull(e); 
-        } catch (Exception e) {
-            // Catch any other exception type if the controller wrapper fails
-            Assert.isNotNull(e);
-        }
+        String jobId = SetupWizardController.scheduleAnalysisJob();
         Test.stopTest();
+
+        // Verify it returns the existing job ID without error
+        Assert.isNotNull(jobId, 'Should return existing job ID');
+        List<CronTrigger> jobs = [SELECT Id FROM CronTrigger WHERE CronJobDetail.Name = 'BehaviorIQ Nightly Analysis'];
+        Assert.areEqual(1, jobs.size(), 'Should still have only one job scheduled');
     }
 
     @IsTest

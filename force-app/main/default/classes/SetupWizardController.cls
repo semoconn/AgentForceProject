@@ -68,18 +68,21 @@ public with sharing class SetupWizardController {
 
         try {
             List<CronTrigger> existingJobs = [
-                SELECT Id 
-                FROM CronTrigger 
+                SELECT Id
+                FROM CronTrigger
                 WHERE CronJobDetail.Name = :SCHEDULE_JOB_NAME
                 WITH SECURITY_ENFORCED
             ];
+
+            // If job already exists, return success (idempotent operation)
+            // This allows the setup wizard to complete even if the job was previously scheduled
             if (!existingJobs.isEmpty()) {
-                throw new AuraHandledException('The analysis job is already scheduled.');
+                return existingJobs[0].Id;
             }
 
             PatternAnalysisService service = new PatternAnalysisService();
             String cronExpression = '0 0 2 * * ?';
-            
+
             return System.schedule(SCHEDULE_JOB_NAME, cronExpression, service);
 
         } catch (Exception e) {

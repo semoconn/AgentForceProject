@@ -210,6 +210,40 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
     }
 
     /**
+     * @description Extracts the base rule developer name from a potentially timestamped key.
+     * Pain points created from partial fixes have keys like "High_Value_Ghosting_1767994173771".
+     * This method progressively strips underscore-suffixed segments to find the actual rule.
+     * @param uniqueKey The unique key from a pain point
+     * @return The base rule developer name that matches metadata, or original if no match found
+     */
+    @TestVisible
+    private static String extractBaseRuleName(String uniqueKey) {
+        if (String.isBlank(uniqueKey)) {
+            return uniqueKey;
+        }
+
+        // Try progressively shorter versions by removing underscore-suffixed segments
+        String testKey = uniqueKey;
+        while (testKey.contains('_')) {
+            // Remove the last underscore segment
+            Integer lastUnderscore = testKey.lastIndexOf('_');
+            testKey = testKey.substring(0, lastUnderscore);
+
+            // Check if this version exists as a rule
+            List<Behavior_Pattern_Rule__mdt> match = [
+                SELECT DeveloperName FROM Behavior_Pattern_Rule__mdt
+                WHERE DeveloperName = :testKey LIMIT 1
+            ];
+            if (!match.isEmpty()) {
+                return testKey;
+            }
+        }
+
+        // No match found - return original
+        return uniqueKey;
+    }
+
+    /**
      * @description Checks if an object exists and is accessible in the current org.
      * Uses Schema.getGlobalDescribe() for weak reference checking - prevents crashes
      * when custom objects from managed packages are not installed.
@@ -731,12 +765,19 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
     /**
      * @description Returns matching records for a given pattern rule, allowing users to preview
      * which records will be affected before executing a fix. Respects admin thresholds.
+     *
+     * When includeOnlyRecordIds is provided (whitelist mode), ONLY those specific records are returned.
+     * This is used for partial fix scenarios where we only want to show remaining unfixed records
+     * from a pain point's Example_Records__c field.
+     *
      * @param ruleDeveloperName The DeveloperName of the Behavior_Pattern_Rule__mdt record
      * @param limitCount Maximum number of records to return (default 50, max 200)
+     * @param includeOnlyRecordIds Optional comma-separated list of record IDs to filter to (whitelist).
+     *                             When provided, only these records are returned (if they still match the pattern).
      * @return List<SObject> The matching records with key fields for display
      */
     @AuraEnabled
-    public static List<SObject> getPatternMatches(String ruleDeveloperName, Integer limitCount) {
+    public static List<SObject> getPatternMatches(String ruleDeveloperName, Integer limitCount, String includeOnlyRecordIds) {
         // Validate inputs
         if (String.isBlank(ruleDeveloperName)) {
             AuraHandledException e = new AuraHandledException('Rule developer name is required.');
@@ -753,6 +794,8 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
         }
 
         // Fetch the rule from metadata
+        // First try exact match, then try to find base rule name (for timestamped keys from partial fixes)
+        String effectiveRuleName = ruleDeveloperName;
         List<Behavior_Pattern_Rule__mdt> rules = [
             SELECT DeveloperName, MasterLabel, Object_API_Name__c, Query_Condition__c,
                    Is_Premium__c, Threshold_Default__c, Cost_Per_Incident__c
@@ -760,6 +803,20 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
             WHERE DeveloperName = :ruleDeveloperName
             LIMIT 1
         ];
+
+        // If not found, try to extract base rule name (handles timestamped keys like "High_Value_Ghosting_1767994173771")
+        if (rules.isEmpty() && ruleDeveloperName.contains('_')) {
+            effectiveRuleName = extractBaseRuleName(ruleDeveloperName);
+            if (effectiveRuleName != ruleDeveloperName) {
+                rules = [
+                    SELECT DeveloperName, MasterLabel, Object_API_Name__c, Query_Condition__c,
+                           Is_Premium__c, Threshold_Default__c, Cost_Per_Incident__c
+                    FROM Behavior_Pattern_Rule__mdt
+                    WHERE DeveloperName = :effectiveRuleName
+                    LIMIT 1
+                ];
+            }
+        }
 
         if (rules.isEmpty()) {
             String msg = 'Pattern rule not found: ' + ruleDeveloperName;
@@ -810,19 +867,69 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
         // Build dynamic query with display fields based on object type
         String displayFields = getDisplayFieldsForObject(objectApiName);
 
-        String queryString = 'SELECT ' + displayFields +
-                             ' FROM ' + String.escapeSingleQuotes(objectApiName) +
-                             ' WHERE ' + effectiveCondition +
-                             ' ORDER BY CreatedDate DESC' +
-                             ' LIMIT ' + limitCount;
+        // Parse whitelist IDs if provided (for partial fix scenarios)
+        Set<Id> whitelistIds = new Set<Id>();
+        if (String.isNotBlank(includeOnlyRecordIds)) {
+            // Parse the comma-separated or JSON array of IDs
+            String cleanIds = includeOnlyRecordIds.trim();
+            List<String> idStrings;
+
+            if (cleanIds.startsWith('[')) {
+                // JSON array format: ["001...", "001..."]
+                try {
+                    idStrings = (List<String>)JSON.deserialize(cleanIds, List<String>.class);
+                } catch (Exception jsonEx) {
+                    // Fall back to comma-separated
+                    cleanIds = cleanIds.replace('[', '').replace(']', '').replace('"', '');
+                    idStrings = cleanIds.split(',');
+                }
+            } else {
+                // Comma-separated format: 001...,001...
+                idStrings = cleanIds.split(',');
+            }
+
+            for (String idStr : idStrings) {
+                String trimmedId = idStr.trim();
+                if (String.isNotBlank(trimmedId)) {
+                    try {
+                        whitelistIds.add(Id.valueOf(trimmedId));
+                    } catch (Exception idEx) {
+                        System.debug(LoggingLevel.WARN, 'Invalid ID in whitelist: ' + trimmedId);
+                    }
+                }
+            }
+            System.debug(LoggingLevel.INFO, 'Whitelist mode: filtering to ' + whitelistIds.size() + ' specific record IDs');
+        }
+
+        // Build the query - if whitelist is provided, use simple ID filter instead of pattern query
+        String queryString;
+        if (!whitelistIds.isEmpty()) {
+            // WHITELIST MODE: Only return records from the whitelist
+            // This is used for partial fix scenarios where we only want remaining unfixed records
+            queryString = 'SELECT ' + displayFields +
+                         ' FROM ' + String.escapeSingleQuotes(objectApiName) +
+                         ' WHERE Id IN :whitelistIds' +
+                         ' ORDER BY CreatedDate DESC' +
+                         ' LIMIT ' + limitCount;
+        } else {
+            // STANDARD MODE: Run the full pattern query
+            queryString = 'SELECT ' + displayFields +
+                         ' FROM ' + String.escapeSingleQuotes(objectApiName) +
+                         ' WHERE ' + effectiveCondition +
+                         ' ORDER BY CreatedDate DESC' +
+                         ' LIMIT ' + limitCount;
+        }
 
         // Store for test verification and debug logging
         lastExecutedQuery = queryString;
         System.debug(LoggingLevel.INFO, '=== PatternAnalysisService.getPatternMatches ===');
         System.debug(LoggingLevel.INFO, 'Rule: ' + ruleDeveloperName);
         System.debug(LoggingLevel.INFO, 'Object: ' + objectApiName);
-        System.debug(LoggingLevel.INFO, 'Original condition: ' + rule.Query_Condition__c);
-        System.debug(LoggingLevel.INFO, 'Effective condition: ' + effectiveCondition);
+        System.debug(LoggingLevel.INFO, 'Mode: ' + (whitelistIds.isEmpty() ? 'STANDARD (full pattern query)' : 'WHITELIST (' + whitelistIds.size() + ' specific IDs)'));
+        if (whitelistIds.isEmpty()) {
+            System.debug(LoggingLevel.INFO, 'Original condition: ' + rule.Query_Condition__c);
+            System.debug(LoggingLevel.INFO, 'Effective condition: ' + effectiveCondition);
+        }
         System.debug(LoggingLevel.INFO, 'Full query: ' + queryString);
 
         try {

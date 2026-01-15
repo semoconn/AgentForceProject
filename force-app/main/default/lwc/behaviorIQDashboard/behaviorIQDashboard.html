@@ -78,6 +78,7 @@
                             <lightning-button-group>
                                 <lightning-button label="All" variant={allVariant} onclick={filterAll}></lightning-button>
                                 <lightning-button label="Active" variant={activeVariant} onclick={filterActive}></lightning-button>
+                                <lightning-button label="Completed" variant={completedVariant} onclick={filterCompleted}></lightning-button>
                                 <lightning-button label="Dismissed" variant={dismissedVariant} onclick={filterDismissed}></lightning-button>
                             </lightning-button-group>
                             <div class="slds-col_bump-left slds-text-body_small slds-text-color_weak">
@@ -107,12 +108,14 @@
                                                 <div class="slds-grid slds-grid_vertical-align-center">
                                                     <h3 class="slds-text-heading_small slds-m-right_small">{point.Name}</h3>
                                                     <lightning-badge label={point.ObjectApiName} class="slds-badge_lightest"></lightning-badge>
-                                                    <!-- ROI Value Card - Shows estimated savings when configured -->
+                                                    <!-- ROI Value Card - Shows estimated savings only for Active items (not Completed) -->
                                                     <template if:true={point.EstimatedSavings}>
-                                                        <span class="slds-badge slds-badge_inverse slds-m-left_small roi-badge">
-                                                            <lightning-icon icon-name="utility:moneybag" size="xx-small" class="slds-m-right_xx-small"></lightning-icon>
-                                                            At Risk: <lightning-formatted-number value={point.EstimatedSavings} format-style="currency" currency-code="USD" maximum-fraction-digits="0"></lightning-formatted-number>
-                                                        </span>
+                                                        <template if:false={point.isCompleted}>
+                                                            <span class="slds-badge slds-badge_inverse slds-m-left_small roi-badge">
+                                                                <lightning-icon icon-name="utility:moneybag" size="xx-small" class="slds-m-right_xx-small"></lightning-icon>
+                                                                At Risk: <lightning-formatted-number value={point.EstimatedSavings} format-style="currency" currency-code="USD" maximum-fraction-digits="0"></lightning-formatted-number>
+                                                            </span>
+                                                        </template>
                                                     </template>
                                                 </div>
                                                 <p class="slds-text-body_small slds-m-top_xx-small">{point.Description}</p>
@@ -127,50 +130,76 @@
 
                                         <!-- Actions -->
                                         <div class="slds-no-flex">
-                                            <lightning-button-icon
-                                                icon-name="utility:magicwand"
-                                                variant="border-filled"
-                                                alternative-text="Auto-Fix"
-                                                class="slds-m-right_x-small"
-                                                title={autoFixButtonTitle}
-                                                onclick={handleAutoFix}
-                                                data-id={point.ExampleRecords}
-                                                data-type={point.ObjectApiName}
-                                                data-key={point.UniqueKey}
-                                                data-label={point.Name}>
-                                            </lightning-button-icon>
-
-                                            <lightning-button-icon
-                                                icon-name="utility:preview"
-                                                variant="border-filled"
-                                                class="slds-m-right_x-small"
-                                                alternative-text="View Details"
-                                                title="View Solution Guide"
-                                                onclick={handleViewDetails}
-                                                data-id={point.Id}>
-                                            </lightning-button-icon>
-
-                                            <template if:true={point.isDismissed}>
+                                            <!-- Completed items: Show View Fixed Records button -->
+                                            <template if:true={point.isCompleted}>
                                                 <lightning-button-icon
-                                                    icon-name="utility:add"
-                                                    variant="bare"
-                                                    alternative-text="Restore"
-                                                    title="Restore to Active"
-                                                    onclick={handleRestore}
+                                                    icon-name="utility:list"
+                                                    variant="border-filled"
+                                                    alternative-text="View Fixed Records"
+                                                    title="View records that were fixed"
+                                                    onclick={handleViewFixedRecords}
                                                     data-id={point.Id}
-                                                    data-key={point.UniqueKey}>
+                                                    data-fixed-ids={point.FixedRecordIds}
+                                                    data-type={point.ObjectApiName}
+                                                    data-key={point.UniqueKey}
+                                                    data-label={point.Name}
+                                                    data-timestamp={point.LastModifiedDate}>
                                                 </lightning-button-icon>
                                             </template>
-                                            <template if:false={point.isDismissed}>
-                                                <lightning-button-icon
-                                                    icon-name="utility:close"
-                                                    variant="bare"
-                                                    alternative-text="Dismiss"
-                                                    title="Dismiss Suggestion"
-                                                    onclick={handleDismiss}
-                                                    data-id={point.Id}
-                                                    data-key={point.UniqueKey}>
-                                                </lightning-button-icon>
+
+                                            <!-- For non-Completed items: Show actions based on dismissed state -->
+                                            <template if:false={point.isCompleted}>
+                                                <!-- Active items: Show Auto-Fix, Solution Guide, and Dismiss -->
+                                                <template if:false={point.isDismissed}>
+                                                    <lightning-button-icon
+                                                        icon-name="utility:magicwand"
+                                                        variant="border-filled"
+                                                        alternative-text="Auto-Fix"
+                                                        class="slds-m-right_x-small"
+                                                        title={autoFixButtonTitle}
+                                                        onclick={handleAutoFix}
+                                                        data-id={point.ExampleRecords}
+                                                        data-painpoint-id={point.Id}
+                                                        data-type={point.ObjectApiName}
+                                                        data-key={point.UniqueKey}
+                                                        data-label={point.Name}
+                                                        data-fixed-ids={point.FixedRecordIds}
+                                                        data-timestamp={point.LastModifiedDate}>
+                                                    </lightning-button-icon>
+
+                                                    <lightning-button-icon
+                                                        icon-name="utility:preview"
+                                                        variant="border-filled"
+                                                        class="slds-m-right_x-small"
+                                                        alternative-text="View Details"
+                                                        title="View Solution Guide"
+                                                        onclick={handleViewDetails}
+                                                        data-id={point.Id}>
+                                                    </lightning-button-icon>
+
+                                                    <lightning-button-icon
+                                                        icon-name="utility:close"
+                                                        variant="bare"
+                                                        alternative-text="Dismiss"
+                                                        title="Dismiss Suggestion"
+                                                        onclick={handleDismiss}
+                                                        data-id={point.Id}
+                                                        data-key={point.UniqueKey}>
+                                                    </lightning-button-icon>
+                                                </template>
+
+                                                <!-- Dismissed items: Only show Restore button -->
+                                                <template if:true={point.isDismissed}>
+                                                    <lightning-button-icon
+                                                        icon-name="utility:undo"
+                                                        variant="bare"
+                                                        alternative-text="Restore"
+                                                        title="Restore to Active"
+                                                        onclick={handleRestore}
+                                                        data-id={point.Id}
+                                                        data-key={point.UniqueKey}>
+                                                    </lightning-button-icon>
+                                                </template>
                                             </template>
                                         </div>
                                     </div>
@@ -251,6 +280,9 @@
                             <lightning-tab label="Configuration" value="settings" icon-name="utility:settings">
                                 <div class="slds-p-around_medium"><c-behavior-settings></c-behavior-settings></div>
                             </lightning-tab>
+                            <lightning-tab label="Exclusion Rules" value="exclusions" icon-name="utility:filter">
+                                <div class="slds-p-around_medium"><c-exclusion-builder></c-exclusion-builder></div>
+                            </lightning-tab>
                             <lightning-tab label="System Health" value="health" icon-name="utility:heart">
                                 <div class="slds-p-around_medium"><c-behavior-i-q-system-health></c-behavior-i-q-system-health></div>
                             </lightning-tab>
@@ -324,6 +356,10 @@
                 object-api-name={previewObjectApiName}
                 rule-label={previewRuleLabel}
                 fix-type={previewFixType}
+                example-record-ids={previewExampleRecordIds}
+                fixed-record-ids={previewFixedRecordIds}
+                fixed-at-timestamp={previewFixedAtTimestamp}
+                read-only={previewReadOnly}
                 onclose={handlePreviewClose}
                 onfixcomplete={handlePreviewFixComplete}>
             </c-remediation-preview>

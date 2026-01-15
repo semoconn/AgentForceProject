@@ -565,7 +565,7 @@ private class PatternAnalysisServiceTest {
             // Call getPatternMatches which is a real-time API
             // It should NOT create snapshots
             try {
-                PatternAnalysisService.getPatternMatches('Stale_Case_30', 50);
+                PatternAnalysisService.getPatternMatches('Stale_Case_30', 50, '');
             } catch (AuraHandledException e) {
                 // Expected if rule doesn't exist - that's fine
             }
@@ -950,7 +950,7 @@ private class PatternAnalysisServiceTest {
             // This test will use actual metadata in the org
             // If Stale_Case_30 exists, it will return matching records
             try {
-                List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_30', 50);
+                List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_30', 50, '');
                 // The test passes if no exception is thrown
                 // Results depend on org metadata and test data
                 System.assertNotEquals(null, results, 'Results should not be null');
@@ -974,7 +974,7 @@ private class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches(null, 50);
+                PatternAnalysisService.getPatternMatches(null, 50, '');
                 System.assert(false, 'Should have thrown an exception');
             } catch (AuraHandledException e) {
                 System.assert(e.getMessage().contains('Rule developer name is required'),
@@ -993,7 +993,7 @@ private class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('', 50);
+                PatternAnalysisService.getPatternMatches('', 50, '');
                 System.assert(false, 'Should have thrown an exception');
             } catch (AuraHandledException e) {
                 System.assert(e.getMessage().contains('Rule developer name is required'),
@@ -1012,7 +1012,7 @@ private class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('NonExistent_Rule_XYZ', 50);
+                PatternAnalysisService.getPatternMatches('NonExistent_Rule_XYZ', 50, '');
                 System.assert(false, 'Should have thrown an exception');
             } catch (AuraHandledException e) {
                 System.assert(e.getMessage().contains('Pattern rule not found'),
@@ -1033,21 +1033,21 @@ private class PatternAnalysisServiceTest {
             // Test with various limit values
             try {
                 // Test with null limit (should default to 50)
-                PatternAnalysisService.getPatternMatches('Stale_Case_30', null);
+                PatternAnalysisService.getPatternMatches('Stale_Case_30', null, '');
             } catch (AuraHandledException e) {
                 // Expected if rule doesn't exist
             }
 
             try {
                 // Test with negative limit (should default to 50)
-                PatternAnalysisService.getPatternMatches('Stale_Case_30', -10);
+                PatternAnalysisService.getPatternMatches('Stale_Case_30', -10, '');
             } catch (AuraHandledException e) {
                 // Expected if rule doesn't exist
             }
 
             try {
                 // Test with limit > 200 (should cap at 200)
-                PatternAnalysisService.getPatternMatches('Stale_Case_30', 500);
+                PatternAnalysisService.getPatternMatches('Stale_Case_30', 500, '');
             } catch (AuraHandledException e) {
                 // Expected if rule doesn't exist
             }
@@ -1081,7 +1081,7 @@ private class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_30', 50);
+                List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_30', 50, '');
                 // If we get here, the query executed successfully
                 System.assertNotEquals(null, results, 'Results should not be null');
 
@@ -1112,7 +1112,7 @@ private class PatternAnalysisServiceTest {
             try {
                 // Attempt to get pattern matches for Case
                 // This indirectly tests getDisplayFieldsForObject
-                PatternAnalysisService.getPatternMatches('Stale_Case_30', 10);
+                PatternAnalysisService.getPatternMatches('Stale_Case_30', 10, '');
 
                 String query = PatternAnalysisService.lastExecutedQuery;
                 if (query != null) {
@@ -1139,7 +1139,7 @@ private class PatternAnalysisServiceTest {
         System.runAs(testUser) {
             try {
                 // Attempt to get pattern matches for Opportunity
-                PatternAnalysisService.getPatternMatches('Stale_Opp_30', 10);
+                PatternAnalysisService.getPatternMatches('Stale_Opp_30', 10, '');
 
                 String query = PatternAnalysisService.lastExecutedQuery;
                 if (query != null) {
@@ -1166,7 +1166,7 @@ private class PatternAnalysisServiceTest {
         System.runAs(testUser) {
             try {
                 // Attempt to get pattern matches for Lead
-                PatternAnalysisService.getPatternMatches('Unassigned_Lead_48', 10);
+                PatternAnalysisService.getPatternMatches('Unassigned_Lead_48', 10, '');
 
                 String query = PatternAnalysisService.lastExecutedQuery;
                 if (query != null) {
@@ -1396,7 +1396,7 @@ private class PatternAnalysisServiceTest {
         System.runAs(testUser) {
             try {
                 // This should fail gracefully for non-existent object
-                PatternAnalysisService.getPatternMatches('Zombie_Projects', 50);
+                PatternAnalysisService.getPatternMatches('Zombie_Projects', 50, '');
                 // If Project__c doesn't exist, we should get an error
             } catch (AuraHandledException e) {
                 // Expected - either rule not found, object not accessible, or Premium feature gate
@@ -1434,7 +1434,7 @@ private class PatternAnalysisServiceTest {
         System.runAs(testUser) {
             try {
                 // Attempt to get pattern matches for Contract
-                PatternAnalysisService.getPatternMatches('Contract_Expiry_Red_Zone', 10);
+                PatternAnalysisService.getPatternMatches('Contract_Expiry_Red_Zone', 10, '');
 
                 String query = PatternAnalysisService.lastExecutedQuery;
                 if (query != null) {
@@ -1601,7 +1601,7 @@ private class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Opp_30', 10);
+                List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Opp_30', 10, '');
                 String query = PatternAnalysisService.lastExecutedQuery;
                 if (query != null) {
                     System.assert(query.contains('Opportunity'), 'Query should be for Opportunity');
@@ -1629,7 +1629,7 @@ private class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                List<SObject> results = PatternAnalysisService.getPatternMatches('Unassigned_Lead_48', 10);
+                List<SObject> results = PatternAnalysisService.getPatternMatches('Unassigned_Lead_48', 10, '');
                 String query = PatternAnalysisService.lastExecutedQuery;
                 if (query != null) {
                     System.assert(query.contains('Lead'), 'Query should be for Lead');
@@ -1691,13 +1691,13 @@ private class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('Zombie_Projects', 10);
+                PatternAnalysisService.getPatternMatches('Zombie_Projects', 10, '');
             } catch (AuraHandledException e) {
                 System.debug('Expected exception for custom object: ' + e.getMessage());
             }
 
             try {
-                PatternAnalysisService.getPatternMatches('High_Value_Ghosting', 10);
+                PatternAnalysisService.getPatternMatches('High_Value_Ghosting', 10, '');
             } catch (AuraHandledException e) {
                 System.debug('Expected exception for custom object: ' + e.getMessage());
             }
@@ -1714,7 +1714,7 @@ private class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('Non_Existent_Rule_XYZ', 50);
+                PatternAnalysisService.getPatternMatches('Non_Existent_Rule_XYZ', 50, '');
                 System.assert(false, 'Should throw exception');
             } catch (AuraHandledException e) {
                 System.assert(e.getMessage() != null, 'Exception should have message');
@@ -1741,7 +1741,7 @@ private class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('Contract_Expiry_Red_Zone', 10);
+                PatternAnalysisService.getPatternMatches('Contract_Expiry_Red_Zone', 10, '');
             } catch (AuraHandledException e) {
                 System.debug('Expected: ' + e.getMessage());
             }
@@ -1756,7 +1756,7 @@ private class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('Stale_Case_30', null);
+                PatternAnalysisService.getPatternMatches('Stale_Case_30', null, '');
             } catch (AuraHandledException e) {
                 System.debug('Expected: ' + e.getMessage());
             }
@@ -1771,7 +1771,7 @@ private class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('Stale_Case_30', 500);
+                PatternAnalysisService.getPatternMatches('Stale_Case_30', 500, '');
             } catch (AuraHandledException e) {
                 System.debug('Expected: ' + e.getMessage());
             }
@@ -1795,7 +1795,7 @@ private class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('Stale_Task_30', 10);
+                PatternAnalysisService.getPatternMatches('Stale_Task_30', 10, '');
                 String query = PatternAnalysisService.lastExecutedQuery;
                 if (query != null) {
                     System.assert(query.contains('Task') || query.contains('Subject'),
@@ -1820,7 +1820,7 @@ private class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('High_Value_Ghosting', 10);
+                PatternAnalysisService.getPatternMatches('High_Value_Ghosting', 10, '');
             } catch (AuraHandledException e) {
                 System.debug('Expected: ' + e.getMessage());
             }
@@ -1840,7 +1840,7 @@ private class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('Inactive_Contact_90', 10);
+                PatternAnalysisService.getPatternMatches('Inactive_Contact_90', 10, '');
             } catch (AuraHandledException e) {
                 System.debug('Expected: ' + e.getMessage());
             }
@@ -1954,7 +1954,7 @@ private class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('Stale_Case_30', -5);
+                PatternAnalysisService.getPatternMatches('Stale_Case_30', -5, '');
             } catch (AuraHandledException e) {
                 System.debug('Expected: ' + e.getMessage());
             }
@@ -1971,7 +1971,7 @@ private class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('Stale_Case_30', 0);
+                PatternAnalysisService.getPatternMatches('Stale_Case_30', 0, '');
             } catch (AuraHandledException e) {
                 System.debug('Expected: ' + e.getMessage());
             }
@@ -2104,7 +2104,7 @@ private class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('Frequent_Flyer_Churn', 10);
+                PatternAnalysisService.getPatternMatches('Frequent_Flyer_Churn', 10, '');
             } catch (AuraHandledException e) {
                 System.assert(
                     e.getMessage().contains('Premium') || e.getMessage().contains('not found'),
@@ -2131,7 +2131,7 @@ private class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_30', 50);
+                List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_30', 50, '');
                 System.assertNotEquals(null, results, 'Results should not be null');
             } catch (AuraHandledException e) {
                 System.debug('Exception: ' + e.getMessage());
@@ -2161,7 +2161,7 @@ private class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Opp_90', 50);
+                List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Opp_90', 50, '');
                 System.assertNotEquals(null, results, 'Results should not be null');
             } catch (AuraHandledException e) {
                 System.debug('Exception: ' + e.getMessage());
@@ -2187,7 +2187,7 @@ private class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                List<SObject> results = PatternAnalysisService.getPatternMatches('Unassigned_Lead_48', 50);
+                List<SObject> results = PatternAnalysisService.getPatternMatches('Unassigned_Lead_48', 50, '');
                 System.assertNotEquals(null, results, 'Results should not be null');
             } catch (AuraHandledException e) {
                 System.debug('Exception: ' + e.getMessage());
@@ -2205,7 +2205,7 @@ private class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('', 50);
+                PatternAnalysisService.getPatternMatches('', 50, '');
                 System.assert(false, 'Should throw exception');
             } catch (AuraHandledException e) {
                 System.assert(e.getMessage().contains('required'), 'Should say rule name is required');
@@ -2231,7 +2231,7 @@ private class PatternAnalysisServiceTest {
         String contractFields = '';
 
         try {
-            List<SObject> caseResults = PatternAnalysisService.getPatternMatches('Stale_Case_30', 1);
+            List<SObject> caseResults = PatternAnalysisService.getPatternMatches('Stale_Case_30', 1, '');
             caseFields = PatternAnalysisService.lastExecutedQuery;
         } catch (Exception e) {}
 
@@ -2453,7 +2453,7 @@ private class PatternAnalysisServiceTest {
         PatternAnalysisService.forceDynamicFieldsException = true;
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('Stale_Case_30', 50);
+                PatternAnalysisService.getPatternMatches('Stale_Case_30', 50, '');
             } catch (AuraHandledException e) {
                 // Expected
             }
@@ -2472,7 +2472,7 @@ private class PatternAnalysisServiceTest {
         PatternAnalysisService.forcePatternMatchQueryException = true;
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('Stale_Case_30', 50);
+                PatternAnalysisService.getPatternMatches('Stale_Case_30', 50, '');
                 System.assert(false, 'Should have thrown exception');
             } catch (AuraHandledException e) {
                 System.assert(e.getMessage() != null, 'Exception should have message');
@@ -2492,7 +2492,7 @@ private class PatternAnalysisServiceTest {
         PatternAnalysisService.forcePatternMatchGeneralException = true;
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('Stale_Case_30', 50);
+                PatternAnalysisService.getPatternMatches('Stale_Case_30', 50, '');
                 System.assert(false, 'Should have thrown exception');
             } catch (AuraHandledException e) {
                 System.assert(e.getMessage() != null, 'Exception should have message');
@@ -2809,7 +2809,7 @@ private class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             // Query for stale cases using the real rule
-            List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_30', 100);
+            List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_30', 100, '');
             System.assert(results != null, 'Results should not be null');
         }
         Test.stopTest();
@@ -3024,7 +3024,7 @@ private class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                List<SObject> results = PatternAnalysisService.getPatternMatches('Test_Status_New', 50);
+                List<SObject> results = PatternAnalysisService.getPatternMatches('Test_Status_New', 50, '');
 
                 // If rule exists and works, we should get results
                 System.assertNotEquals(null, results, 'Results should not be null');
@@ -3260,7 +3260,7 @@ private class PatternAnalysisServiceTest {
         System.runAs(testUser) {
             // Call getPatternMatches which internally validates field accessibility
             try {
-                List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_30', 10);
+                List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_30', 10, '');
                 System.assertNotEquals(null, results, 'Results should not be null');
             } catch (AuraHandledException e) {
                 // May throw if rule conditions not met
@@ -3477,7 +3477,7 @@ private class PatternAnalysisServiceTest {
         System.runAs(testUser) {
             try {
                 // This rule has Owner.Type in its condition
-                List<SObject> results = PatternAnalysisService.getPatternMatches('Unassigned_Lead_48', 10);
+                List<SObject> results = PatternAnalysisService.getPatternMatches('Unassigned_Lead_48', 10, '');
                 // May or may not return results depending on data
                 System.debug('Results: ' + results);
             } catch (AuraHandledException e) {

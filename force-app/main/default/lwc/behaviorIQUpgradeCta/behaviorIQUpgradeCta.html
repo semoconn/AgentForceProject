@@ -6,30 +6,259 @@
         </div>
     </template>
 
-    <!-- Upgrade Banner for Free Users -->
-    <template lwc:if={showUpgradeBanner}>
-        <div class="slds-box slds-theme_shade slds-theme_alert-texture slds-m-top_medium">
-            <div class="slds-text-align_center">
-                <h3 class="slds-text-heading_small slds-m-bottom_small">
-                    Unlock BehaviorIQ Premium
-                </h3>
-                <p class="slds-m-bottom_medium">
-                    Get one-click remediation, AI-driven insights, and configurable thresholds.
-                </p>
-                <button class="slds-button slds-button_brand" onclick={handleUpgradeClick}>
-                    Upgrade Now
-                </button>
+    <!-- Premium User View - Congratulatory -->
+    <template lwc:if={showPremiumView}>
+        <div class="premium-active-container">
+            <!-- Header with success styling -->
+            <div class="premium-header slds-p-around_medium slds-text-align_center">
+                <div class="premium-icon-wrapper">
+                    <lightning-icon icon-name="utility:diamond" size="large" variant="inverse"></lightning-icon>
+                </div>
+                <h2 class="slds-text-heading_medium slds-m-top_small">Welcome to BehaviorIQ Premium</h2>
+                <p class="slds-text-color_weak slds-m-top_x-small">Thank you for being a Premium member! You have full access to all features.</p>
+            </div>
+
+            <!-- Feature Cards Grid -->
+            <div class="slds-p-around_medium">
+                <h3 class="slds-text-title_caps slds-m-bottom_small">Your Premium Features</h3>
+
+                <div class="feature-grid">
+                    <!-- Detection Features -->
+                    <div class="feature-card">
+                        <div class="feature-icon detection">
+                            <lightning-icon icon-name="utility:search" size="small"></lightning-icon>
+                        </div>
+                        <div class="feature-content">
+                            <h4>Advanced Pattern Detection</h4>
+                            <ul class="feature-list">
+                                <li><lightning-icon icon-name="utility:check" size="xx-small" class="check-icon"></lightning-icon> Stale Case Detection (30+ days)</li>
+                                <li><lightning-icon icon-name="utility:check" size="xx-small" class="check-icon"></lightning-icon> Unassigned Lead Alerts (48+ hours)</li>
+                                <li><lightning-icon icon-name="utility:check" size="xx-small" class="check-icon"></lightning-icon> Stale Opportunity Tracking (90+ days)</li>
+                                <li><lightning-icon icon-name="utility:check" size="xx-small" class="check-icon premium-feature"></lightning-icon> High-Value Ghosting ($50K+ deals)</li>
+                                <li><lightning-icon icon-name="utility:check" size="xx-small" class="check-icon premium-feature"></lightning-icon> Contract Expiry Red Zone</li>
+                                <li><lightning-icon icon-name="utility:check" size="xx-small" class="check-icon premium-feature"></lightning-icon> Lead Hoarding Detection</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- Remediation Features -->
+                    <div class="feature-card">
+                        <div class="feature-icon remediation">
+                            <lightning-icon icon-name="utility:magicwand" size="small"></lightning-icon>
+                        </div>
+                        <div class="feature-content">
+                            <h4>One-Click Remediation</h4>
+                            <ul class="feature-list">
+                                <li><lightning-icon icon-name="utility:check" size="xx-small" class="check-icon"></lightning-icon> Automated Task Creation</li>
+                                <li><lightning-icon icon-name="utility:check" size="xx-small" class="check-icon"></lightning-icon> Bulk Record Updates</li>
+                                <li><lightning-icon icon-name="utility:check" size="xx-small" class="check-icon"></lightning-icon> Smart Field Mapping</li>
+                                <li><lightning-icon icon-name="utility:check" size="xx-small" class="check-icon"></lightning-icon> Preview Before Fix</li>
+                                <li><lightning-icon icon-name="utility:check" size="xx-small" class="check-icon"></lightning-icon> Partial Fix Support</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- Analytics Features -->
+                    <div class="feature-card">
+                        <div class="feature-icon analytics">
+                            <lightning-icon icon-name="utility:analytics" size="small"></lightning-icon>
+                        </div>
+                        <div class="feature-content">
+                            <h4>Advanced Analytics</h4>
+                            <ul class="feature-list">
+                                <li><lightning-icon icon-name="utility:check" size="xx-small" class="check-icon"></lightning-icon> ROI Tracking Dashboard</li>
+                                <li><lightning-icon icon-name="utility:check" size="xx-small" class="check-icon"></lightning-icon> User Activity Leaderboard</li>
+                                <li><lightning-icon icon-name="utility:check" size="xx-small" class="check-icon"></lightning-icon> Full User Identity (not anonymized)</li>
+                                <li><lightning-icon icon-name="utility:check" size="xx-small" class="check-icon"></lightning-icon> Org Health Score</li>
+                                <li><lightning-icon icon-name="utility:check" size="xx-small" class="check-icon"></lightning-icon> Trend Analysis</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- Configuration Features -->
+                    <div class="feature-card">
+                        <div class="feature-icon config">
+                            <lightning-icon icon-name="utility:settings" size="small"></lightning-icon>
+                        </div>
+                        <div class="feature-content">
+                            <h4>Enterprise Configuration</h4>
+                            <ul class="feature-list">
+                                <li><lightning-icon icon-name="utility:check" size="xx-small" class="check-icon"></lightning-icon> Configurable Thresholds</li>
+                                <li><lightning-icon icon-name="utility:check" size="xx-small" class="check-icon"></lightning-icon> Exclusion Rules Builder</li>
+                                <li><lightning-icon icon-name="utility:check" size="xx-small" class="check-icon"></lightning-icon> Custom Object Support</li>
+                                <li><lightning-icon icon-name="utility:check" size="xx-small" class="check-icon"></lightning-icon> Scheduled Analysis Jobs</li>
+                                <li><lightning-icon icon-name="utility:check" size="xx-small" class="check-icon"></lightning-icon> API Access</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ROI Summary -->
+                <div class="roi-summary slds-m-top_medium slds-box slds-theme_shade">
+                    <div class="slds-grid slds-grid_align-spread slds-grid_vertical-align-center">
+                        <div>
+                            <h4 class="slds-text-heading_small">Estimated Annual Savings</h4>
+                            <p class="slds-text-color_weak">Based on Premium pattern detection capabilities</p>
+                        </div>
+                        <div class="roi-values">
+                            <div class="roi-item">
+                                <span class="roi-label">High-Value Ghosting</span>
+                                <span class="roi-value">$2,500/incident</span>
+                            </div>
+                            <div class="roi-item">
+                                <span class="roi-label">Contract Expiry Risk</span>
+                                <span class="roi-value">$5,000/incident</span>
+                            </div>
+                            <div class="roi-item">
+                                <span class="roi-label">Lead Redistribution</span>
+                                <span class="roi-value">$100/incident</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </template>
 
-    <!-- Premium Badge for Paying Customers -->
-    <template lwc:if={showPremiumBadge}>
-        <div class="slds-m-top_medium">
-            <span class="slds-badge slds-badge_inverse slds-theme_success">
-                <lightning-icon icon-name="utility:check" size="xx-small" class="slds-m-right_xx-small"></lightning-icon>
-                Premium Active
-            </span>
+    <!-- Free User View - Upsell -->
+    <template lwc:if={showFreeView}>
+        <div class="free-upgrade-container">
+            <!-- Header -->
+            <div class="upgrade-header slds-p-around_medium slds-text-align_center">
+                <lightning-icon icon-name="utility:lock" size="large" class="slds-m-bottom_small"></lightning-icon>
+                <h2 class="slds-text-heading_medium">Unlock BehaviorIQ Premium</h2>
+                <p class="slds-text-color_weak slds-m-top_x-small">You're currently on the Free plan. Upgrade to access powerful automation and insights.</p>
+            </div>
+
+            <!-- Comparison Table -->
+            <div class="slds-p-horizontal_medium slds-p-bottom_medium">
+                <table class="slds-table slds-table_cell-buffer slds-table_bordered comparison-table">
+                    <thead>
+                        <tr class="slds-line-height_reset">
+                            <th scope="col" class="feature-column">
+                                <div class="slds-truncate">Feature</div>
+                            </th>
+                            <th scope="col" class="plan-column free-column">
+                                <div class="slds-truncate">Free</div>
+                            </th>
+                            <th scope="col" class="plan-column premium-column">
+                                <div class="slds-truncate">Premium</div>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Detection Section -->
+                        <tr class="section-header">
+                            <td colspan="3"><strong>Pattern Detection</strong></td>
+                        </tr>
+                        <tr>
+                            <td>Stale Case Detection</td>
+                            <td class="slds-text-align_center"><lightning-icon icon-name="utility:check" size="x-small" class="check-green"></lightning-icon></td>
+                            <td class="slds-text-align_center"><lightning-icon icon-name="utility:check" size="x-small" class="check-green"></lightning-icon></td>
+                        </tr>
+                        <tr>
+                            <td>Unassigned Lead Alerts</td>
+                            <td class="slds-text-align_center"><lightning-icon icon-name="utility:check" size="x-small" class="check-green"></lightning-icon></td>
+                            <td class="slds-text-align_center"><lightning-icon icon-name="utility:check" size="x-small" class="check-green"></lightning-icon></td>
+                        </tr>
+                        <tr>
+                            <td>High-Value Opportunity Ghosting</td>
+                            <td class="slds-text-align_center"><lightning-icon icon-name="utility:close" size="x-small" class="check-red"></lightning-icon></td>
+                            <td class="slds-text-align_center">
+                                <lightning-icon icon-name="utility:check" size="x-small" class="check-green"></lightning-icon>
+                                <span class="savings-badge">$2,500/incident</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Contract Expiry Red Zone</td>
+                            <td class="slds-text-align_center"><lightning-icon icon-name="utility:close" size="x-small" class="check-red"></lightning-icon></td>
+                            <td class="slds-text-align_center">
+                                <lightning-icon icon-name="utility:check" size="x-small" class="check-green"></lightning-icon>
+                                <span class="savings-badge">$5,000/incident</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Lead Hoarding Detection</td>
+                            <td class="slds-text-align_center"><lightning-icon icon-name="utility:close" size="x-small" class="check-red"></lightning-icon></td>
+                            <td class="slds-text-align_center">
+                                <lightning-icon icon-name="utility:check" size="x-small" class="check-green"></lightning-icon>
+                                <span class="savings-badge">$100/incident</span>
+                            </td>
+                        </tr>
+
+                        <!-- Remediation Section -->
+                        <tr class="section-header">
+                            <td colspan="3"><strong>Remediation</strong></td>
+                        </tr>
+                        <tr>
+                            <td>View Affected Records</td>
+                            <td class="slds-text-align_center"><lightning-icon icon-name="utility:check" size="x-small" class="check-green"></lightning-icon></td>
+                            <td class="slds-text-align_center"><lightning-icon icon-name="utility:check" size="x-small" class="check-green"></lightning-icon></td>
+                        </tr>
+                        <tr>
+                            <td>One-Click Auto-Fix</td>
+                            <td class="slds-text-align_center"><lightning-icon icon-name="utility:close" size="x-small" class="check-red"></lightning-icon></td>
+                            <td class="slds-text-align_center"><lightning-icon icon-name="utility:check" size="x-small" class="check-green"></lightning-icon></td>
+                        </tr>
+                        <tr>
+                            <td>Bulk Remediation</td>
+                            <td class="slds-text-align_center"><lightning-icon icon-name="utility:close" size="x-small" class="check-red"></lightning-icon></td>
+                            <td class="slds-text-align_center"><lightning-icon icon-name="utility:check" size="x-small" class="check-green"></lightning-icon></td>
+                        </tr>
+
+                        <!-- Analytics Section -->
+                        <tr class="section-header">
+                            <td colspan="3"><strong>Analytics & Reporting</strong></td>
+                        </tr>
+                        <tr>
+                            <td>Org Health Score</td>
+                            <td class="slds-text-align_center"><lightning-icon icon-name="utility:check" size="x-small" class="check-green"></lightning-icon></td>
+                            <td class="slds-text-align_center"><lightning-icon icon-name="utility:check" size="x-small" class="check-green"></lightning-icon></td>
+                        </tr>
+                        <tr>
+                            <td>User Leaderboard</td>
+                            <td class="slds-text-align_center"><span class="partial-text">Anonymized</span></td>
+                            <td class="slds-text-align_center"><span class="full-text">Full Identity</span></td>
+                        </tr>
+                        <tr>
+                            <td>ROI Dashboard</td>
+                            <td class="slds-text-align_center"><lightning-icon icon-name="utility:close" size="x-small" class="check-red"></lightning-icon></td>
+                            <td class="slds-text-align_center"><lightning-icon icon-name="utility:check" size="x-small" class="check-green"></lightning-icon></td>
+                        </tr>
+
+                        <!-- Configuration Section -->
+                        <tr class="section-header">
+                            <td colspan="3"><strong>Configuration</strong></td>
+                        </tr>
+                        <tr>
+                            <td>Configurable Thresholds</td>
+                            <td class="slds-text-align_center"><lightning-icon icon-name="utility:close" size="x-small" class="check-red"></lightning-icon></td>
+                            <td class="slds-text-align_center"><lightning-icon icon-name="utility:check" size="x-small" class="check-green"></lightning-icon></td>
+                        </tr>
+                        <tr>
+                            <td>Exclusion Rules</td>
+                            <td class="slds-text-align_center"><lightning-icon icon-name="utility:close" size="x-small" class="check-red"></lightning-icon></td>
+                            <td class="slds-text-align_center"><lightning-icon icon-name="utility:check" size="x-small" class="check-green"></lightning-icon></td>
+                        </tr>
+                        <tr>
+                            <td>Custom Object Tracking</td>
+                            <td class="slds-text-align_center"><lightning-icon icon-name="utility:close" size="x-small" class="check-red"></lightning-icon></td>
+                            <td class="slds-text-align_center"><lightning-icon icon-name="utility:check" size="x-small" class="check-green"></lightning-icon></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <!-- CTA Button -->
+                <div class="slds-text-align_center slds-m-top_large">
+                    <button class="slds-button slds-button_brand upgrade-button" onclick={handleUpgradeClick}>
+                        <lightning-icon icon-name="utility:diamond" size="x-small" class="slds-m-right_x-small"></lightning-icon>
+                        Upgrade to Premium
+                    </button>
+                    <p class="slds-text-color_weak slds-m-top_small slds-text-body_small">
+                        Contact your Salesforce administrator or visit AppExchange to upgrade.
+                    </p>
+                </div>
+            </div>
         </div>
     </template>
 </template>

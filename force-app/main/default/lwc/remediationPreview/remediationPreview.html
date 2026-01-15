@@ -18,9 +18,11 @@
                     </div>
                     <div class="slds-media__body">
                         <h2 id="modal-heading" class="slds-text-heading_medium slds-hyphenate">{modalTitle}</h2>
-                        <p class="slds-text-body_small slds-text-color_inverse-weak">
-                            Review and select which records to remediate
-                        </p>
+                        <template if:false={readOnly}>
+                            <p class="slds-text-body_small slds-text-color_inverse-weak">
+                                Review and select which records to remediate
+                            </p>
+                        </template>
                     </div>
                 </div>
             </header>
@@ -47,140 +49,132 @@
                     </div>
                 </template>
 
-                <!-- Records Loaded - Tabbed View -->
+                <!-- Records Loaded -->
                 <template if:false={isLoading}>
                     <template if:false={error}>
 
-                        <!-- Tabset for Pending/Fixed Records -->
-                        <lightning-tabset active-tab-value={activeTab} variant="scoped">
+                        <!-- READ-ONLY MODE: Show fixed records directly (no tabs needed) -->
+                        <template if:true={readOnly}>
+                            <template if:true={hasFixedRecords}>
+                                <!-- Success Banner -->
+                                <div class="slds-notify slds-notify_alert slds-alert_texture slds-theme_success slds-m-bottom_medium slds-m-top_small" role="alert">
+                                    <span class="slds-assistive-text">success</span>
+                                    <lightning-icon icon-name="utility:success" size="x-small" variant="inverse"
+                                                    class="slds-m-right_x-small"></lightning-icon>
+                                    <h2>{fixedCount} record(s) were fixed by this remediation</h2>
+                                </div>
 
-                            <!-- Tab 1: Pending Action -->
-                            <lightning-tab label={pendingTabLabel} value="pending"
-                                           icon-name="utility:clock">
+                                <!-- Fixed Records Data Table -->
+                                <div class="datatable-container">
+                                    <lightning-datatable
+                                        key-field="Id"
+                                        data={fixedRecords}
+                                        columns={fixedColumns}
+                                        hide-checkbox-column
+                                        show-row-number-column={showRowNumbers}>
+                                    </lightning-datatable>
+                                </div>
+                            </template>
 
-                                <!-- Pending Records Exist -->
-                                <template if:true={hasPendingRecords}>
-                                    <!-- Summary Banner -->
-                                    <div class="slds-notify slds-notify_alert slds-alert_texture slds-theme_warning slds-m-bottom_medium slds-m-top_small" role="alert">
-                                        <span class="slds-assistive-text">warning</span>
-                                        <lightning-icon icon-name="utility:warning" size="x-small" variant="inverse"
-                                                        class="slds-m-right_x-small"></lightning-icon>
-                                        <h2>{summaryText}</h2>
+                            <template if:false={hasFixedRecords}>
+                                <div class="slds-illustration slds-illustration_small slds-m-vertical_large">
+                                    <div class="slds-text-longform slds-text-align_center">
+                                        <lightning-icon icon-name="utility:info" size="large"
+                                                        class="slds-m-bottom_small"></lightning-icon>
+                                        <h3 class="slds-text-heading_small">No Fixed Records Found</h3>
+                                        <p class="slds-text-body_regular slds-m-top_small">
+                                            No records were found for this remediation.
+                                        </p>
                                     </div>
+                                </div>
+                            </template>
+                        </template>
 
-                                    <!-- Selection Controls -->
-                                    <div class="slds-grid slds-grid_align-spread slds-m-bottom_small">
-                                        <div class="slds-col">
-                                            <lightning-button-group>
-                                                <lightning-button label="Select All" onclick={handleSelectAll}
-                                                                  variant="neutral" icon-name="utility:multi_select_checkbox">
-                                                </lightning-button>
-                                                <lightning-button label="Deselect All" onclick={handleDeselectAll}
-                                                                  variant="neutral" icon-name="utility:clear">
-                                                </lightning-button>
-                                            </lightning-button-group>
+                        <!-- EDIT MODE: Show pending records directly (no tabs) -->
+                        <template if:false={readOnly}>
+                            <!-- Pending Records Exist -->
+                            <template if:true={hasPendingRecords}>
+                                <!-- Summary Banner -->
+                                <div class="slds-notify slds-notify_alert slds-alert_texture slds-theme_warning slds-m-bottom_medium slds-m-top_small" role="alert">
+                                    <span class="slds-assistive-text">warning</span>
+                                    <lightning-icon icon-name="utility:warning" size="x-small" variant="inverse"
+                                                    class="slds-m-right_x-small"></lightning-icon>
+                                    <h2>{summaryText}</h2>
+                                </div>
+
+                                <!-- Selection Controls -->
+                                <div class="slds-grid slds-grid_align-spread slds-m-bottom_small">
+                                    <div class="slds-col">
+                                        <lightning-button-group>
+                                            <lightning-button label="Select All" onclick={handleSelectAll}
+                                                              variant="neutral" icon-name="utility:multi_select_checkbox">
+                                            </lightning-button>
+                                            <lightning-button label="Deselect All" onclick={handleDeselectAll}
+                                                              variant="neutral" icon-name="utility:clear">
+                                            </lightning-button>
+                                        </lightning-button-group>
+                                    </div>
+                                    <div class="slds-col slds-text-align_right">
+                                        <span class="slds-badge slds-badge_lightest slds-m-right_small">
+                                            <lightning-icon icon-name="utility:check" size="xx-small"
+                                                            class="slds-m-right_xx-small"></lightning-icon>
+                                            {selectedCount} of {pendingCount} selected
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <!-- Data Table with checkboxes -->
+                                <div class="datatable-container">
+                                    <lightning-datatable
+                                        key-field="Id"
+                                        data={pendingRecords}
+                                        columns={columns}
+                                        selected-rows={selectedRows}
+                                        onrowselection={handleRowSelection}
+                                        onsort={handleSort}
+                                        sorted-by={sortedBy}
+                                        sorted-direction={sortedDirection}
+                                        show-row-number-column={showRowNumbers}
+                                        max-row-selection={maxRowSelection}>
+                                    </lightning-datatable>
+                                </div>
+                            </template>
+
+                            <!-- All Caught Up State -->
+                            <template if:true={allCaughtUp}>
+                                <div class="slds-illustration slds-illustration_small slds-m-vertical_large">
+                                    <div class="slds-text-longform slds-text-align_center">
+                                        <div class="celebration-icon slds-m-bottom_medium">
+                                            <lightning-icon icon-name="utility:success" variant="success" size="large"></lightning-icon>
                                         </div>
-                                        <div class="slds-col slds-text-align_right">
-                                            <span class="slds-badge slds-badge_lightest slds-m-right_small">
-                                                <lightning-icon icon-name="utility:check" size="xx-small"
-                                                                class="slds-m-right_xx-small"></lightning-icon>
-                                                {selectedCount} of {pendingCount} selected
-                                            </span>
-                                        </div>
+                                        <h3 class="slds-text-heading_medium slds-text-color_success">All Caught Up!</h3>
+                                        <p class="slds-text-body_regular slds-m-top_small slds-text-color_weak">
+                                            All records have been successfully remediated.
+                                        </p>
+                                        <p class="slds-m-top_medium">
+                                            <lightning-badge label="Inbox Zero Achieved" icon-name="utility:like"></lightning-badge>
+                                        </p>
                                     </div>
+                                </div>
+                            </template>
 
-                                    <!-- Pending Data Table with row selection -->
-                                    <div class="datatable-container">
-                                        <lightning-datatable
-                                            key-field="Id"
-                                            data={pendingRecords}
-                                            columns={columns}
-                                            selected-rows={selectedRows}
-                                            onrowselection={handleRowSelection}
-                                            onsort={handleSort}
-                                            sorted-by={sortedBy}
-                                            sorted-direction={sortedDirection}
-                                            show-row-number-column={showRowNumbers}
-                                            max-row-selection={maxRowSelection}>
-                                        </lightning-datatable>
+                            <!-- Initial Empty State (no records found - possible data issue) -->
+                            <template if:true={noRecordsFound}>
+                                <div class="slds-illustration slds-illustration_small slds-m-vertical_large">
+                                    <div class="slds-text-longform slds-text-align_center">
+                                        <lightning-icon icon-name="utility:warning" variant="warning" size="large"
+                                                        class="slds-m-bottom_small"></lightning-icon>
+                                        <h3 class="slds-text-heading_small">No Records Available</h3>
+                                        <p class="slds-text-body_regular slds-m-top_small slds-text-color_weak">
+                                            The pain point record may not have associated record IDs.
+                                        </p>
+                                        <p class="slds-text-body_small slds-m-top_x-small slds-text-color_weak">
+                                            Run the pattern analysis to refresh the affected records list.
+                                        </p>
                                     </div>
-                                </template>
-
-                                <!-- All Caught Up State -->
-                                <template if:true={allCaughtUp}>
-                                    <div class="slds-illustration slds-illustration_small slds-m-vertical_large">
-                                        <div class="slds-text-longform slds-text-align_center">
-                                            <div class="celebration-icon slds-m-bottom_medium">
-                                                <lightning-icon icon-name="utility:success" variant="success" size="large"></lightning-icon>
-                                            </div>
-                                            <h3 class="slds-text-heading_medium slds-text-color_success">All Caught Up!</h3>
-                                            <p class="slds-text-body_regular slds-m-top_small slds-text-color_weak">
-                                                No pending records. All {fixedCount} record(s) have been successfully remediated.
-                                            </p>
-                                            <p class="slds-m-top_medium">
-                                                <lightning-badge label="Inbox Zero Achieved" icon-name="utility:like"></lightning-badge>
-                                            </p>
-                                        </div>
-                                    </div>
-                                </template>
-
-                                <!-- Initial Empty State (no records found at all) -->
-                                <template if:false={hasPendingRecords}>
-                                    <template if:false={allCaughtUp}>
-                                        <div class="slds-illustration slds-illustration_small slds-m-vertical_large">
-                                            <div class="slds-text-longform slds-text-align_center">
-                                                <lightning-icon icon-name="utility:like" size="large"
-                                                                class="slds-m-bottom_small"></lightning-icon>
-                                                <h3 class="slds-text-heading_small">No Records Found</h3>
-                                                <p class="slds-text-body_regular slds-m-top_small">
-                                                    Great news! No records currently match this pattern rule.
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </template>
-                                </template>
-                            </lightning-tab>
-
-                            <!-- Tab 2: Successfully Fixed -->
-                            <lightning-tab label={fixedTabLabel} value="fixed"
-                                           icon-name="utility:success">
-
-                                <template if:true={hasFixedRecords}>
-                                    <!-- Success Banner -->
-                                    <div class="slds-notify slds-notify_alert slds-alert_texture slds-theme_success slds-m-bottom_medium slds-m-top_small" role="alert">
-                                        <span class="slds-assistive-text">success</span>
-                                        <lightning-icon icon-name="utility:success" size="x-small" variant="inverse"
-                                                        class="slds-m-right_x-small"></lightning-icon>
-                                        <h2>{fixedCount} record(s) successfully remediated in this session</h2>
-                                    </div>
-
-                                    <!-- Fixed Records Data Table (read-only, no checkboxes) -->
-                                    <div class="datatable-container">
-                                        <lightning-datatable
-                                            key-field="Id"
-                                            data={fixedRecords}
-                                            columns={columns}
-                                            hide-checkbox-column
-                                            show-row-number-column={showRowNumbers}>
-                                        </lightning-datatable>
-                                    </div>
-                                </template>
-
-                                <template if:false={hasFixedRecords}>
-                                    <div class="slds-illustration slds-illustration_small slds-m-vertical_large">
-                                        <div class="slds-text-longform slds-text-align_center">
-                                            <lightning-icon icon-name="utility:info" size="large"
-                                                            class="slds-m-bottom_small"></lightning-icon>
-                                            <h3 class="slds-text-heading_small">No Records Fixed Yet</h3>
-                                            <p class="slds-text-body_regular slds-m-top_small">
-                                                Select records from the "Pending Action" tab and click Fix to remediate them.
-                                            </p>
-                                        </div>
-                                    </div>
-                                </template>
-                            </lightning-tab>
-
-                        </lightning-tabset>
+                                </div>
+                            </template>
+                        </template>
 
                     </template>
                 </template>
@@ -190,22 +184,78 @@
             <footer class="slds-modal__footer slds-grid slds-grid_align-spread">
                 <lightning-button label="Close" onclick={handleCancel} variant="neutral"></lightning-button>
 
-                <div class="slds-grid slds-grid_align-end">
-                    <template if:true={isFixing}>
-                        <lightning-spinner alternative-text="Applying fix..." size="small"
-                                           class="slds-m-right_small"></lightning-spinner>
-                    </template>
-                    <lightning-button
-                        variant="brand"
-                        label={fixButtonLabel}
-                        icon-name="utility:magicwand"
-                        onclick={handleConfirmFix}
-                        disabled={fixButtonDisabled}
-                        title="Apply remediation to selected records">
-                    </lightning-button>
-                </div>
+                <!-- Only show fix button when not in read-only mode -->
+                <template if:true={showFixButton}>
+                    <div class="slds-grid slds-grid_align-end">
+                        <template if:true={isFixing}>
+                            <lightning-spinner alternative-text="Applying fix..." size="small"
+                                               class="slds-m-right_small"></lightning-spinner>
+                        </template>
+                        <lightning-button
+                            variant="brand"
+                            label={fixButtonLabel}
+                            icon-name="utility:magicwand"
+                            onclick={handleFixButtonClick}
+                            disabled={fixButtonDisabled}
+                            title="Apply remediation to selected records">
+                        </lightning-button>
+                    </div>
+                </template>
             </footer>
         </div>
     </section>
     <div class="slds-backdrop slds-backdrop_open" onclick={handleBackdropClick}></div>
+
+    <!-- Confirmation Dialog -->
+    <template if:true={showConfirmation}>
+        <section role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="confirm-heading"
+                 class="slds-modal slds-fade-in-open" style="z-index: 9002;">
+            <div class="slds-modal__container" style="max-width: 550px;">
+                <header class="slds-modal__header slds-theme_warning">
+                    <h2 id="confirm-heading" class="slds-text-heading_medium">
+                        <lightning-icon icon-name="utility:warning" size="small" variant="inverse" class="slds-m-right_small"></lightning-icon>
+                        Confirm {fixTypeDisplayName}
+                    </h2>
+                </header>
+                <div class="slds-modal__content slds-p-around_medium">
+                    <!-- Warning notice -->
+                    <div class="slds-notify slds-notify_alert slds-alert_warning slds-m-bottom_medium" role="alert">
+                        <lightning-icon icon-name="utility:warning" size="x-small" variant="warning" class="slds-m-right_x-small"></lightning-icon>
+                        <span>This action cannot be undone.</span>
+                    </div>
+
+                    <!-- What will happen section -->
+                    <div class="slds-box slds-box_x-small slds-theme_shade slds-m-bottom_medium">
+                        <h3 class="slds-text-title_caps slds-m-bottom_x-small">What will happen:</h3>
+                        <p class="slds-text-body_regular" style="white-space: pre-line;">
+                            {confirmationMessage}
+                        </p>
+                    </div>
+
+                    <!-- Record count -->
+                    <p class="slds-text-body_regular slds-m-bottom_medium">
+                        <lightning-icon icon-name="utility:record" size="xx-small" class="slds-m-right_xx-small"></lightning-icon>
+                        <strong>{selectedCount}</strong> record(s) will be affected.
+                    </p>
+
+                    <!-- Don't show again checkbox -->
+                    <div class="slds-form-element slds-m-top_medium">
+                        <div class="slds-form-element__control">
+                            <lightning-input
+                                type="checkbox"
+                                label="Don't show this message again"
+                                checked={dontShowAgain}
+                                onchange={handleDontShowAgainChange}>
+                            </lightning-input>
+                        </div>
+                    </div>
+                </div>
+                <footer class="slds-modal__footer">
+                    <lightning-button label="Cancel" onclick={handleConfirmationCancel} variant="neutral" class="slds-m-right_small"></lightning-button>
+                    <lightning-button label="Apply Fix" onclick={handleConfirmationProceed} variant="brand" icon-name="utility:check"></lightning-button>
+                </footer>
+            </div>
+        </section>
+        <div class="slds-backdrop slds-backdrop_open" style="z-index: 9001;"></div>
+    </template>
 </template>

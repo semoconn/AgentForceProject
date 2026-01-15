@@ -29,6 +29,12 @@ public with sharing class GenericBehaviorTriggerHandler {
     }
     
     private void handleAfterDML(List<SObject> records, String actionName, Map<Id, SObject> oldMap) {
+        // Skip logging for non-Standard users (Community, Guest, Partner users)
+        // This ensures we only track full Salesforce license users
+        if (!isStandardUser()) {
+            return;
+        }
+
         List<SObject> recordsToProcess = filterProcessedRecords(records);
         if (recordsToProcess.isEmpty()) {
             return;
@@ -82,6 +88,25 @@ public with sharing class GenericBehaviorTriggerHandler {
             }
         }
         return changes;
+    }
+
+    /**
+     * @description Checks if the current user is a Standard (full license) user.
+     * Only Standard users should have their behavior tracked.
+     * Excludes: Community users, Guest users, Partner users, etc.
+     * @return Boolean true if user is Standard type, false otherwise
+     */
+    private static Boolean isStandardUser() {
+        // UserInfo.getUserType() returns:
+        // 'Standard' - Full Salesforce license (includes Admins)
+        // 'PowerPartner' - Partner Community
+        // 'CSPLitePortal' - Customer Community
+        // 'CustomerSuccess' - Customer Community Plus
+        // 'Guest' - Unauthenticated site users
+        // 'CsnOnly' - Chatter users
+        // 'SelfService' - Self-Service portal users
+        String userType = UserInfo.getUserType();
+        return userType == 'Standard';
     }
 
     @TestVisible

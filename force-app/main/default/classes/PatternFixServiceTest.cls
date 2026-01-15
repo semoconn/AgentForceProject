@@ -1720,4 +1720,294 @@ private class PatternFixServiceTest {
 
         PatternFixService.resetTestFlags();
     }
+
+    // ==================== ESCALATION REVERT TESTS ====================
+
+    @isTest
+    static void testEscalationRevert_SingleCase() {
+        // Setup - Create an escalated case
+        Case c = new Case(
+            Subject = 'Escalation Revert Test',
+            Status = 'New',
+            Priority = 'Medium',
+            IsEscalated = true
+        );
+        insert c;
+
+        // Verify case is escalated
+        Case beforeCase = [SELECT IsEscalated FROM Case WHERE Id = :c.Id];
+        System.assertEquals(true, beforeCase.IsEscalated, 'Case should be escalated before fix');
+
+        // Configure mock rule for Escalation_Revert with Chatter post
+        String config = '{"field":"IsEscalated","value":"false","postChatter":true,"chatterMessage":"Auto-remediated: Please complete Tier-1 troubleshooting."}';
+        PatternFixService.mockRule = createMockRule('Escalation_Revert', false, config);
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(new List<Id>{c.Id}, 'Test_Rule');
+        Test.stopTest();
+
+        // Verify case escalation was reverted
+        Case afterCase = [SELECT IsEscalated FROM Case WHERE Id = :c.Id];
+        System.assertEquals(false, afterCase.IsEscalated, 'Case should no longer be escalated');
+
+        // Verify Remediation Log was created
+        List<Remediation_Log__c> logs = [
+            SELECT Affected_Record_ID__c, Action_Taken__c, Original_Value__c, New_Value__c, Status__c
+            FROM Remediation_Log__c
+            WHERE Affected_Record_ID__c = :String.valueOf(c.Id)
+        ];
+        System.assertEquals(1, logs.size(), 'Expected exactly 1 remediation log');
+        System.assertEquals('Escalation_Revert', logs[0].Action_Taken__c, 'Action should be Escalation_Revert');
+        System.assertEquals('true', logs[0].Original_Value__c, 'Original value should be true');
+        System.assertEquals('false', logs[0].New_Value__c, 'New value should be false');
+        System.assertEquals('Success', logs[0].Status__c, 'Status should be Success');
+
+        // Verify Chatter post was created
+        List<FeedItem> posts = [SELECT Body FROM FeedItem WHERE ParentId = :c.Id];
+        System.assertEquals(1, posts.size(), 'Expected exactly 1 Chatter post');
+        System.assert(posts[0].Body.contains('Auto-remediated'), 'Chatter post should contain remediation message');
+
+        clearMockRule();
+    }
+
+    @isTest
+    static void testEscalationRevert_BulkCases() {
+        // Setup - Create multiple escalated cases
+        List<Case> cases = new List<Case>();
+        for (Integer i = 0; i < 20; i++) {
+            cases.add(new Case(
+                Subject = 'Bulk Escalation Revert ' + i,
+                Status = 'New',
+                Priority = 'Medium',
+                IsEscalated = true
+            ));
+        }
+        insert cases;
+
+        List<Id> caseIds = new List<Id>();
+        for (Case c : cases) {
+            caseIds.add(c.Id);
+        }
+
+        // Configure mock rule
+        String config = '{"field":"IsEscalated","value":"false","postChatter":true,"chatterMessage":"Bulk revert test"}';
+        PatternFixService.mockRule = createMockRule('Escalation_Revert', false, config);
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(caseIds, 'Test_Rule');
+        Test.stopTest();
+
+        // Verify all cases were de-escalated
+        List<Case> updatedCases = [SELECT IsEscalated FROM Case WHERE Id IN :caseIds];
+        for (Case c : updatedCases) {
+            System.assertEquals(false, c.IsEscalated, 'All cases should be de-escalated');
+        }
+
+        // Verify remediation logs
+        List<Remediation_Log__c> logs = [SELECT Id FROM Remediation_Log__c WHERE Action_Taken__c = 'Escalation_Revert'];
+        System.assertEquals(20, logs.size(), 'Expected 20 remediation logs');
+
+        // Verify Chatter posts
+        List<FeedItem> posts = [SELECT Id FROM FeedItem WHERE ParentId IN :caseIds];
+        System.assertEquals(20, posts.size(), 'Expected 20 Chatter posts');
+
+        clearMockRule();
+    }
+
+    @isTest
+    static void testEscalationRevert_WithoutChatter() {
+        // Setup - Create an escalated case
+        Case c = new Case(
+            Subject = 'No Chatter Revert Test',
+            Status = 'New',
+            Priority = 'Low',
+            IsEscalated = true
+        );
+        insert c;
+
+        // Configure mock rule without Chatter posting
+        String config = '{"field":"IsEscalated","value":"false","postChatter":false}';
+        PatternFixService.mockRule = createMockRule('Escalation_Revert', false, config);
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(new List<Id>{c.Id}, 'Test_Rule');
+        Test.stopTest();
+
+        // Verify case was de-escalated
+        Case afterCase = [SELECT IsEscalated FROM Case WHERE Id = :c.Id];
+        System.assertEquals(false, afterCase.IsEscalated, 'Case should be de-escalated');
+
+        // Verify NO Chatter post was created
+        List<FeedItem> posts = [SELECT Id FROM FeedItem WHERE ParentId = :c.Id];
+        System.assertEquals(0, posts.size(), 'No Chatter post should be created when postChatter is false');
+
+        clearMockRule();
+    }
+
+    @isTest
+    static void testEscalationRevert_Premium() {
+        // Setup - Test that premium rule works with premium license
+        Case c = new Case(
+            Subject = 'Premium Escalation Revert',
+            Status = 'New',
+            Priority = 'Medium',
+            IsEscalated = true
+        );
+        insert c;
+
+        // Configure mock rule as Premium
+        String config = '{"postChatter":true,"chatterMessage":"Premium feature revert"}';
+        PatternFixService.mockRule = createMockRule('Escalation_Revert', true, config);
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(new List<Id>{c.Id}, 'Test_Rule');
+        Test.stopTest();
+
+        // Verify case was de-escalated (premium license exists from testSetup)
+        Case afterCase = [SELECT IsEscalated FROM Case WHERE Id = :c.Id];
+        System.assertEquals(false, afterCase.IsEscalated, 'Premium user should be able to revert escalation');
+
+        clearMockRule();
+    }
+
+    // ==================== NO ACTION TESTS ====================
+
+    @isTest
+    static void testNoAction_SingleRecord() {
+        // Setup - Create a case (no DML will be performed on it)
+        Case c = new Case(
+            Subject = 'No Action Test',
+            Status = 'New',
+            Priority = 'Low'
+        );
+        insert c;
+
+        // Capture original state
+        Case beforeCase = [SELECT Subject, Status, Priority FROM Case WHERE Id = :c.Id];
+
+        // Configure mock rule for No_Action
+        String config = '{"message":"Expected seasonal pattern - no remediation needed"}';
+        PatternFixService.mockRule = createMockRule('No_Action', false, config);
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(new List<Id>{c.Id}, 'Test_Rule');
+        Test.stopTest();
+
+        // Verify case was NOT modified
+        Case afterCase = [SELECT Subject, Status, Priority FROM Case WHERE Id = :c.Id];
+        System.assertEquals(beforeCase.Subject, afterCase.Subject, 'Subject should not change');
+        System.assertEquals(beforeCase.Status, afterCase.Status, 'Status should not change');
+        System.assertEquals(beforeCase.Priority, afterCase.Priority, 'Priority should not change');
+
+        // Verify Remediation Log was created with message
+        List<Remediation_Log__c> logs = [
+            SELECT Affected_Record_ID__c, Action_Taken__c, New_Value__c, Status__c
+            FROM Remediation_Log__c
+            WHERE Affected_Record_ID__c = :String.valueOf(c.Id)
+        ];
+        System.assertEquals(1, logs.size(), 'Expected exactly 1 remediation log');
+        System.assertEquals('No_Action', logs[0].Action_Taken__c, 'Action should be No_Action');
+        System.assertEquals('Expected seasonal pattern - no remediation needed', logs[0].New_Value__c, 'Message should be logged');
+        System.assertEquals('Success', logs[0].Status__c, 'Status should be Success');
+
+        clearMockRule();
+    }
+
+    @isTest
+    static void testNoAction_BulkRecords() {
+        // Setup - Create multiple cases
+        List<Case> cases = new List<Case>();
+        for (Integer i = 0; i < 50; i++) {
+            cases.add(new Case(
+                Subject = 'Bulk No Action Test ' + i,
+                Status = 'New'
+            ));
+        }
+        insert cases;
+
+        List<Id> caseIds = new List<Id>();
+        for (Case c : cases) {
+            caseIds.add(c.Id);
+        }
+
+        // Configure mock rule
+        String config = '{"message":"Weekend spike - informational only"}';
+        PatternFixService.mockRule = createMockRule('No_Action', false, config);
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(caseIds, 'Test_Rule');
+        Test.stopTest();
+
+        // Verify all logs were created
+        List<Remediation_Log__c> logs = [SELECT New_Value__c FROM Remediation_Log__c WHERE Action_Taken__c = 'No_Action'];
+        System.assertEquals(50, logs.size(), 'Expected 50 remediation logs');
+
+        // Verify message is consistent across all logs
+        for (Remediation_Log__c log : logs) {
+            System.assertEquals('Weekend spike - informational only', log.New_Value__c, 'All logs should have same message');
+        }
+
+        clearMockRule();
+    }
+
+    @isTest
+    static void testNoAction_DefaultMessage() {
+        // Setup - Test with empty config (use default message)
+        Case c = new Case(Subject = 'Default No Action Message', Status = 'New');
+        insert c;
+
+        // Configure mock rule with empty config
+        PatternFixService.mockRule = createMockRule('No_Action', false, '{}');
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(new List<Id>{c.Id}, 'Test_Rule');
+        Test.stopTest();
+
+        // Verify log was created with default message
+        List<Remediation_Log__c> logs = [
+            SELECT New_Value__c FROM Remediation_Log__c
+            WHERE Affected_Record_ID__c = :String.valueOf(c.Id)
+        ];
+        System.assertEquals(1, logs.size(), 'Expected exactly 1 remediation log');
+        System.assertEquals('Expected pattern - no action required', logs[0].New_Value__c, 'Should use default message');
+
+        clearMockRule();
+    }
+
+    @isTest
+    static void testNoAction_WithOpportunity() {
+        // Test No_Action with Opportunity object
+        Opportunity opp = new Opportunity(
+            Name = 'No Action Opportunity',
+            StageName = 'Prospecting',
+            CloseDate = Date.today().addDays(30)
+        );
+        insert opp;
+
+        String config = '{"message":"Seasonal pattern - expected behavior"}';
+        PatternFixService.mockRule = createMockRule('No_Action', false, config);
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(new List<Id>{opp.Id}, 'Test_Rule');
+        Test.stopTest();
+
+        // Verify log was created
+        List<Remediation_Log__c> logs = [
+            SELECT Action_Taken__c, Status__c FROM Remediation_Log__c
+            WHERE Affected_Record_ID__c = :String.valueOf(opp.Id)
+        ];
+        System.assertEquals(1, logs.size(), 'Expected exactly 1 remediation log');
+        System.assertEquals('No_Action', logs[0].Action_Taken__c, 'Action should be No_Action');
+        System.assertEquals('Success', logs[0].Status__c, 'Status should be Success');
+
+        clearMockRule();
+    }
 }

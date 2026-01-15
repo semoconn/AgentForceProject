@@ -11,6 +11,8 @@ public with sharing class PatternFixService {
     private static final String ACTION_FIELD_UPDATE = 'Field_Update';
     private static final String ACTION_EMAIL_NOTIFICATION = 'Email_Notification';
     private static final String ACTION_OPPORTUNITY_CREATION = 'Opportunity_Creation';
+    private static final String ACTION_ESCALATION_REVERT = 'Escalation_Revert';
+    private static final String ACTION_NO_ACTION = 'No_Action';
 
     // Status constants
     private static final String STATUS_SUCCESS = 'Success';
@@ -100,6 +102,12 @@ public with sharing class PatternFixService {
             }
             when 'Opportunity_Creation' {
                 createRenewalOpportunities(recordIds, config);
+            }
+            when 'Escalation_Revert' {
+                revertEscalationWithChatter(recordIds, config);
+            }
+            when 'No_Action' {
+                logNoAction(recordIds, config);
             }
             when else {
                 throw new AuraHandledException('Unknown Fix Type: ' + rule.Fix_Type__c);
@@ -218,9 +226,10 @@ public with sharing class PatternFixService {
     }
 
     /**
-     * @description Smart Owner Assignment with Assignment Rules and Safety Net.
+     * @description ORG-AGNOSTIC Owner Assignment with Queue-First Strategy.
      * Uses Database.DMLOptions to trigger standard assignment rules.
-     * Falls back to current user if assignment results in a system/queue owner.
+     * Fallback Priority: 1) Assignment Rules, 2) Configured Queue, 3) BehaviorIQ Queue, 4) Current User
+     * Never hardcodes User IDs - always uses dynamic lookup for enterprise deployments.
      */
     private void assignOwner(List<Id> recordIds, Map<String, Object> config) {
         Schema.SObjectType sType = recordIds[0].getSObjectType();
@@ -247,20 +256,41 @@ public with sharing class PatternFixService {
             useAssignmentRules = (Boolean)config.get('useAssignmentRules');
         }
 
-        // Get fallback owner from config or use current user
-        Id configuredFallback = null;
-        if (config.containsKey('fallbackOwnerId')) {
-            String fallbackStr = (String)config.get('fallbackOwnerId');
-            if (String.isNotBlank(fallbackStr)) {
-                try {
-                    configuredFallback = Id.valueOf(fallbackStr);
-                } catch (Exception e) {
-                    // Invalid ID, ignore and use default fallback
+        // ORG-AGNOSTIC QUEUE LOOKUP: Find the best queue for this object type
+        // Priority: 1) Configured queueName, 2) BehaviorIQ default queue, 3) Any matching queue for object
+        Id targetQueueId = findBestQueueForObject(objectName, config);
+        String assignmentNote = '';
+
+        // Determine effective fallback owner using queue-first strategy
+        Id effectiveFallback = null;
+
+        if (targetQueueId != null) {
+            effectiveFallback = targetQueueId;
+            assignmentNote = 'Assigned to queue';
+        } else {
+            // No queue available - check config fallback (should be rare in production)
+            if (config.containsKey('fallbackOwnerId')) {
+                String fallbackStr = (String)config.get('fallbackOwnerId');
+                if (String.isNotBlank(fallbackStr)) {
+                    try {
+                        effectiveFallback = Id.valueOf(fallbackStr);
+                    } catch (Exception e) {
+                        // Invalid ID, continue to next fallback
+                    }
                 }
             }
+
+            // Test-injectable fallback for unit tests
+            if (effectiveFallback == null && fallbackOwnerId != null) {
+                effectiveFallback = fallbackOwnerId;
+            }
+
+            // Last resort: current user (with informative message)
+            if (effectiveFallback == null) {
+                effectiveFallback = UserInfo.getUserId();
+                assignmentNote = 'No queue configured for ' + objectName + ' - assigned to current user. Consider creating a BehaviorIQ queue.';
+            }
         }
-        Id effectiveFallback = configuredFallback != null ? configuredFallback
-                            : (fallbackOwnerId != null ? fallbackOwnerId : UserInfo.getUserId());
 
         List<SObject> records = new List<SObject>();
         for (Id recId : recordIds) {
@@ -360,6 +390,88 @@ public with sharing class PatternFixService {
             }
             throw new AuraHandledException('Failed to assign owner: ' + e.getMessage());
         }
+    }
+
+    /**
+     * @description ORG-AGNOSTIC Queue Lookup for Owner Assignment.
+     * Finds the best available queue for the given object type.
+     * Priority: 1) Configured queueName from metadata, 2) BehaviorIQ default queue, 3) Any queue for the object
+     * @param objectName The API name of the object (Lead, Case, etc.)
+     * @param config Configuration map that may contain 'queueName' override
+     * @return The Queue ID if found, null otherwise
+     */
+    private Id findBestQueueForObject(String objectName, Map<String, Object> config) {
+        // Priority 1: Check for configured queue name in metadata
+        String configuredQueueName = null;
+        if (config.containsKey('queueName')) {
+            configuredQueueName = (String)config.get('queueName');
+        }
+
+        // Query for queues that support this object type
+        // QueueSobject junction table links Queue to supported SObject types
+        List<Group> candidateQueues = new List<Group>();
+
+        try {
+            // Build list of queue names to search for, in priority order
+            List<String> queueNamesToFind = new List<String>();
+
+            if (String.isNotBlank(configuredQueueName)) {
+                queueNamesToFind.add(configuredQueueName);
+            }
+
+            // BehaviorIQ default queues by object type
+            String behaviorIQQueueName = 'BehaviorIQ ' + objectName + ' Queue';
+            queueNamesToFind.add(behaviorIQQueueName);
+
+            // Query queues that support this object type
+            Set<Id> supportedQueueIds = new Set<Id>();
+            for (QueueSobject qs : [
+                SELECT QueueId FROM QueueSobject
+                WHERE SobjectType = :objectName
+            ]) {
+                supportedQueueIds.add(qs.QueueId);
+            }
+
+            if (supportedQueueIds.isEmpty()) {
+                System.debug(LoggingLevel.INFO, 'No queues configured for ' + objectName);
+                return null;
+            }
+
+            // Try to find queues by name priority
+            for (String queueName : queueNamesToFind) {
+                List<Group> matchingQueues = [
+                    SELECT Id, Name FROM Group
+                    WHERE Type = 'Queue'
+                    AND Name = :queueName
+                    AND Id IN :supportedQueueIds
+                    LIMIT 1
+                ];
+
+                if (!matchingQueues.isEmpty()) {
+                    System.debug(LoggingLevel.INFO, 'Found queue "' + matchingQueues[0].Name + '" for ' + objectName);
+                    return matchingQueues[0].Id;
+                }
+            }
+
+            // Fallback: Return any available queue for this object type
+            List<Group> anyQueue = [
+                SELECT Id, Name FROM Group
+                WHERE Type = 'Queue'
+                AND Id IN :supportedQueueIds
+                ORDER BY Name
+                LIMIT 1
+            ];
+
+            if (!anyQueue.isEmpty()) {
+                System.debug(LoggingLevel.INFO, 'Using fallback queue "' + anyQueue[0].Name + '" for ' + objectName);
+                return anyQueue[0].Id;
+            }
+
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'Error finding queue for ' + objectName + ': ' + e.getMessage());
+        }
+
+        return null;
     }
 
     /**
@@ -637,6 +749,83 @@ public with sharing class PatternFixService {
                 addLog(recId, ACTION_OPPORTUNITY_CREATION, null, null, STATUS_FAILED, e.getMessage());
             }
             throw new AuraHandledException('Failed to create renewal opportunities: ' + e.getMessage());
+        }
+    }
+
+    /**
+     * @description Reverts escalation on Cases and optionally posts a Chatter message.
+     * Sets IsEscalated to false and creates a FeedItem explaining the revert.
+     * @param recordIds List of Case IDs to revert escalation on
+     * @param config Configuration map with optional chatterMessage and postChatter settings
+     */
+    private void revertEscalationWithChatter(List<Id> recordIds, Map<String, Object> config) {
+        if (!Schema.sObjectType.Case.isUpdateable()) {
+            throw new AuraHandledException('Insufficient permissions to update Cases.');
+        }
+
+        // Query Cases for snapshot
+        String snapshotFields = getSnapshotFieldsForObject('Case');
+        if (!snapshotFields.containsIgnoreCase('IsEscalated')) {
+            snapshotFields = 'IsEscalated, ' + snapshotFields;
+        }
+        String soql = 'SELECT ' + snapshotFields + ' FROM Case WHERE Id IN :recordIds';
+        Map<Id, SObject> originalRecords = new Map<Id, SObject>(Database.query(soql));
+
+        // Create snapshot JSON map
+        Map<Id, String> recordSnapshots = new Map<Id, String>();
+        for (Id recId : originalRecords.keySet()) {
+            recordSnapshots.put(recId, JSON.serialize(originalRecords.get(recId)));
+        }
+
+        // Update IsEscalated to false
+        List<Case> casesToUpdate = new List<Case>();
+        for (Id caseId : recordIds) {
+            casesToUpdate.add(new Case(Id = caseId, IsEscalated = false));
+        }
+
+        try {
+            update Security.stripInaccessible(AccessType.UPDATABLE, casesToUpdate).getRecords();
+
+            // Create Chatter posts if configured
+            Boolean postChatter = config.containsKey('postChatter') ? (Boolean)config.get('postChatter') : false;
+            if (postChatter && Schema.sObjectType.FeedItem.isCreateable()) {
+                String chatterMessage = (String)config.get('chatterMessage');
+                if (String.isNotBlank(chatterMessage)) {
+                    List<FeedItem> posts = new List<FeedItem>();
+                    for (Id caseId : recordIds) {
+                        posts.add(new FeedItem(ParentId = caseId, Body = chatterMessage));
+                    }
+                    insert posts;
+                }
+            }
+
+            // Log successful operations
+            for (Id recId : recordIds) {
+                String snapshot = recordSnapshots.get(recId);
+                addLogWithSnapshot(recId, ACTION_ESCALATION_REVERT, 'true', 'false', STATUS_SUCCESS, null, snapshot);
+            }
+
+        } catch (Exception e) {
+            for (Id recId : recordIds) {
+                addLogWithSnapshot(recId, ACTION_ESCALATION_REVERT, 'true', null, STATUS_FAILED, e.getMessage(), recordSnapshots.get(recId));
+            }
+            throw new AuraHandledException('Failed to revert escalation: ' + e.getMessage());
+        }
+    }
+
+    /**
+     * @description Logs an expected pattern without performing any DML on source records.
+     * Used for patterns that are informational only and don't require remediation.
+     * @param recordIds List of record IDs to log
+     * @param config Configuration map with optional message
+     */
+    private void logNoAction(List<Id> recordIds, Map<String, Object> config) {
+        String message = config.containsKey('message')
+            ? (String)config.get('message')
+            : 'Expected pattern - no action required';
+
+        for (Id recId : recordIds) {
+            addLog(recId, ACTION_NO_ACTION, null, message, STATUS_SUCCESS, null);
         }
     }
 

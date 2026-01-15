@@ -66,6 +66,8 @@ public with sharing class WorkflowAnalyticsController {
         @AuraEnabled public String UniqueKey;
         @AuraEnabled public Decimal EstimatedSavings;
         @AuraEnabled public Decimal CostPerIncident;
+        @AuraEnabled public String FixedRecordIds; // Cumulative list of fixed record IDs
+        @AuraEnabled public Datetime LastModifiedDate; // Timestamp for when records were fixed
 
         public PainPointWithROI(Identified_Pain_Point__c pp, Decimal costPerIncident) {
             this.Id = pp.Id;
@@ -78,6 +80,8 @@ public with sharing class WorkflowAnalyticsController {
             this.ExampleRecords = pp.Example_Records__c;
             this.UniqueKey = pp.Unique_Key__c;
             this.CostPerIncident = costPerIncident != null ? costPerIncident : 0;
+            this.FixedRecordIds = pp.Fixed_Record_Ids__c;
+            this.LastModifiedDate = pp.LastModifiedDate;
 
             // For Opportunity and Contract, Impact_Score__c holds the cumulative actual value at risk
             // For other objects, calculate from occurrences * cost per incident
@@ -103,7 +107,9 @@ public with sharing class WorkflowAnalyticsController {
         try {
             // Return ALL statuses so LWC can filter by Active/Dismissed tabs
             List<Identified_Pain_Point__c> points = [
-                SELECT Id, Name, Object_API_Name__c, Impact_Score__c, Status__c, Description__c, Occurrences__c, Example_Records__c, Unique_Key__c
+                SELECT Id, Name, Object_API_Name__c, Impact_Score__c, Status__c, Description__c,
+                       Occurrences__c, Example_Records__c, Unique_Key__c, Cost_Per_Incident__c,
+                       Fixed_Record_Ids__c, LastModifiedDate
                 FROM Identified_Pain_Point__c
                 ORDER BY Impact_Score__c DESC
                 LIMIT 100
@@ -121,7 +127,21 @@ public with sharing class WorkflowAnalyticsController {
             // For other objects, calculate from occurrences * cost per incident
             List<PainPointWithROI> results = new List<PainPointWithROI>();
             for (Identified_Pain_Point__c pp : securedPoints) {
-                Decimal costPerIncident = ruleCostMap.get(pp.Unique_Key__c);
+                // Extract base rule name for partial fix pain points with timestamped keys
+                // e.g., "Lead_Hoarding_1767994173771" -> "Lead_Hoarding"
+                String baseKey = extractBaseRuleName(pp.Unique_Key__c);
+                Decimal costPerIncident = ruleCostMap.get(baseKey);
+
+                // Fallback: if still null, try the original key (in case it's not timestamped)
+                if (costPerIncident == null && baseKey != pp.Unique_Key__c) {
+                    costPerIncident = ruleCostMap.get(pp.Unique_Key__c);
+                }
+
+                // Final fallback: use stored Cost_Per_Incident__c from the pain point itself
+                if (costPerIncident == null && pp.Cost_Per_Incident__c != null) {
+                    costPerIncident = pp.Cost_Per_Incident__c;
+                }
+
                 results.add(new PainPointWithROI(pp, costPerIncident));
             }
 
@@ -183,6 +203,208 @@ public with sharing class WorkflowAnalyticsController {
         }
 
         return costMap;
+    }
+
+    /**
+     * @description Extracts the base rule name from a potentially timestamped unique key.
+     * Pain points created from partial fixes have keys like "Lead_Hoarding_1767994173771".
+     * This method strips the timestamp to get "Lead_Hoarding" for metadata lookups.
+     * @param uniqueKey The unique key from the pain point record
+     * @return The base rule name suitable for metadata lookup
+     */
+    @TestVisible
+    private static String extractBaseRuleName(String uniqueKey) {
+        if (String.isBlank(uniqueKey)) {
+            return uniqueKey;
+        }
+
+        // Match pattern: ruleName_timestamp (e.g., Lead_Hoarding_1767994173771)
+        // Timestamps are 13+ digit numbers (milliseconds since epoch)
+        Integer lastUnderscore = uniqueKey.lastIndexOf('_');
+        if (lastUnderscore > 0 && lastUnderscore < uniqueKey.length() - 1) {
+            String possibleTimestamp = uniqueKey.substring(lastUnderscore + 1);
+            // Check if the suffix is a numeric timestamp (10+ digits for epoch milliseconds)
+            if (possibleTimestamp.isNumeric() && possibleTimestamp.length() >= 10) {
+                return uniqueKey.substring(0, lastUnderscore);
+            }
+        }
+        return uniqueKey;
+    }
+
+    /**
+     * @description Wrapper class for fix configuration to display in UI
+     */
+    public class FixConfigInfo {
+        @AuraEnabled public String fixType;
+        @AuraEnabled public String description;
+        @AuraEnabled public String subject;
+        @AuraEnabled public String priority;
+        @AuraEnabled public String fieldName;
+        @AuraEnabled public String fieldValue;
+        @AuraEnabled public String queueName;
+        @AuraEnabled public Boolean isPremium;
+
+        public FixConfigInfo() {
+            this.isPremium = false;
+        }
+    }
+
+    /**
+     * @description Gets the fix configuration for a pattern rule to display in the confirmation dialog.
+     * This allows the UI to show users exactly what action will be taken before they confirm.
+     * @param ruleDeveloperName The developer name of the pattern rule (may include timestamp suffix)
+     * @return FixConfigInfo containing the fix details
+     */
+    @AuraEnabled(cacheable=true)
+    public static FixConfigInfo getFixConfig(String ruleDeveloperName) {
+        FixConfigInfo info = new FixConfigInfo();
+
+        if (String.isBlank(ruleDeveloperName)) {
+            return info;
+        }
+
+        try {
+            // Extract base rule name in case it's a timestamped key from partial fix
+            String baseRuleName = extractBaseRuleName(ruleDeveloperName);
+
+            // Query the metadata for fix configuration
+            List<Behavior_Pattern_Rule__mdt> rules = [
+                SELECT DeveloperName, Label, Fix_Type__c, Fix_Config__c, Is_Premium__c
+                FROM Behavior_Pattern_Rule__mdt
+                WHERE DeveloperName = :baseRuleName
+                LIMIT 1
+            ];
+
+            if (rules.isEmpty()) {
+                // Try with original name if base name didn't match
+                rules = [
+                    SELECT DeveloperName, Label, Fix_Type__c, Fix_Config__c, Is_Premium__c
+                    FROM Behavior_Pattern_Rule__mdt
+                    WHERE DeveloperName = :ruleDeveloperName
+                    LIMIT 1
+                ];
+            }
+
+            if (!rules.isEmpty()) {
+                Behavior_Pattern_Rule__mdt rule = rules[0];
+                info.fixType = rule.Fix_Type__c;
+                info.isPremium = rule.Is_Premium__c;
+
+                // Parse Fix_Config__c JSON to extract details
+                if (String.isNotBlank(rule.Fix_Config__c)) {
+                    Map<String, Object> config = (Map<String, Object>)JSON.deserializeUntyped(rule.Fix_Config__c);
+
+                    // Extract common fields based on fix type
+                    if (config.containsKey('description')) {
+                        info.description = String.valueOf(config.get('description'));
+                    }
+                    if (config.containsKey('subject')) {
+                        info.subject = String.valueOf(config.get('subject'));
+                    }
+                    if (config.containsKey('priority')) {
+                        info.priority = String.valueOf(config.get('priority'));
+                    }
+                    if (config.containsKey('field')) {
+                        info.fieldName = String.valueOf(config.get('field'));
+                    }
+                    if (config.containsKey('value')) {
+                        info.fieldValue = String.valueOf(config.get('value'));
+                    }
+                    if (config.containsKey('queueName')) {
+                        info.queueName = String.valueOf(config.get('queueName'));
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'Error getting fix config for rule ' + ruleDeveloperName + ': ' + e.getMessage());
+        }
+
+        return info;
+    }
+
+    /**
+     * @description Retrieves records by their IDs for display in the remediation preview.
+     * Used to load previously fixed records for cumulative display.
+     * @param objectApiName The API name of the object to query
+     * @param recordIds Comma-separated list of record IDs to retrieve
+     * @return List of SObject records with display fields
+     */
+    @AuraEnabled
+    public static List<SObject> getRecordsByIds(String objectApiName, String recordIds) {
+        if (String.isBlank(objectApiName) || String.isBlank(recordIds)) {
+            return new List<SObject>();
+        }
+
+        try {
+            // Parse the record IDs (handle both comma-separated and JSON array format)
+            List<String> idStrings = new List<String>();
+            String trimmedIds = recordIds.trim();
+
+            if (trimmedIds.startsWith('[')) {
+                // JSON array format
+                try {
+                    idStrings = (List<String>)JSON.deserialize(trimmedIds, List<String>.class);
+                } catch (Exception jsonEx) {
+                    // Fallback: strip brackets and quotes, then split
+                    trimmedIds = trimmedIds.replace('[', '').replace(']', '').replace('"', '');
+                    idStrings = trimmedIds.split(',');
+                }
+            } else {
+                // Comma-separated format
+                idStrings = trimmedIds.split(',');
+            }
+
+            // Convert to Id list and validate
+            List<Id> idList = new List<Id>();
+            for (String idStr : idStrings) {
+                String trimmedId = idStr.trim();
+                if (String.isNotBlank(trimmedId)) {
+                    try {
+                        idList.add(Id.valueOf(trimmedId));
+                    } catch (Exception idEx) {
+                        System.debug(LoggingLevel.WARN, 'Invalid ID skipped: ' + trimmedId);
+                    }
+                }
+            }
+
+            if (idList.isEmpty()) {
+                return new List<SObject>();
+            }
+
+            // Build dynamic query based on object type
+            String queryFields = getDisplayFieldsForObject(objectApiName);
+            String query = 'SELECT ' + queryFields + ' FROM ' + String.escapeSingleQuotes(objectApiName) +
+                          ' WHERE Id IN :idList WITH SECURITY_ENFORCED LIMIT 200';
+
+            return Database.query(query);
+
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'getRecordsByIds Error: ' + e.getMessage());
+            throw new AuraHandledException('Unable to retrieve records: ' + e.getMessage());
+        }
+    }
+
+    /**
+     * @description Returns the display fields for a given object type.
+     * Used by getRecordsByIds to build dynamic queries.
+     */
+    private static String getDisplayFieldsForObject(String objectApiName) {
+        String objName = objectApiName.toLowerCase();
+
+        if (objName == 'case') {
+            return 'Id, CaseNumber, Subject, Status, Priority, CreatedDate';
+        } else if (objName == 'opportunity') {
+            return 'Id, Name, StageName, Amount, CloseDate, Probability';
+        } else if (objName == 'lead') {
+            return 'Id, Name, Company, Status, Email, Phone';
+        } else if (objName == 'account') {
+            return 'Id, Name, Industry, Type, Phone, CreatedDate';
+        } else if (objName == 'contact') {
+            return 'Id, Name, Email, Phone, Title, CreatedDate';
+        } else {
+            // Default fields that most objects have
+            return 'Id, Name, CreatedDate';
+        }
     }
 
     /**
@@ -285,8 +507,304 @@ public with sharing class WorkflowAnalyticsController {
         }
     }
 
+    // --- PAIN POINT RESOLUTION METHODS ---
+
+    /**
+     * @description Marks a pain point as resolved after auto-fix. Supports partial fixes by
+     * creating a new pain point for remaining records and marking the original as resolved.
+     * @param painPointId The ID of the pain point being fixed
+     * @param fixedCount Number of records successfully fixed
+     * @param totalCount Total number of records that were affected
+     * @param fixedRecordIds Comma-separated list of record IDs that were fixed
+     */
+    @AuraEnabled
+    public static void markPainPointResolved(String painPointId, Integer fixedCount, Integer totalCount, String fixedRecordIds) {
+        System.debug('markPainPointResolved called with: painPointId=' + painPointId + ', fixedCount=' + fixedCount + ', totalCount=' + totalCount);
+
+        if (String.isBlank(painPointId)) {
+            throw new AuraHandledException('Pain Point ID is required');
+        }
+
+        // Query the original pain point
+        List<Identified_Pain_Point__c> painPoints = [
+            SELECT Id, Name, Status__c, Object_API_Name__c, Description__c,
+                   Occurrences__c, Impact_Score__c, Example_Records__c, Unique_Key__c,
+                   Cost_Per_Incident__c, Fixed_Record_Ids__c
+            FROM Identified_Pain_Point__c
+            WHERE Id = :painPointId
+            WITH SECURITY_ENFORCED
+            LIMIT 1
+        ];
+
+        if (painPoints.isEmpty()) {
+            throw new AuraHandledException('Pain Point not found: ' + painPointId);
+        }
+
+        Identified_Pain_Point__c original = painPoints[0];
+        System.debug('Found pain point: ' + original.Name + ' with current status: ' + original.Status__c);
+
+        // Parse fixed record IDs - handle both JSON array and comma-separated formats
+        Set<String> fixedIdSet = new Set<String>();
+        if (String.isNotBlank(fixedRecordIds)) {
+            String trimmedFixedIds = fixedRecordIds.trim();
+            if (trimmedFixedIds.startsWith('[')) {
+                // JSON array format: ["id1","id2",...]
+                try {
+                    List<String> parsedIds = (List<String>)JSON.deserialize(trimmedFixedIds, List<String>.class);
+                    for (String fid : parsedIds) {
+                        fixedIdSet.add(fid.trim());
+                    }
+                } catch (Exception jsonEx) {
+                    System.debug(LoggingLevel.WARN, 'Failed to parse fixedRecordIds as JSON, falling back to string split: ' + jsonEx.getMessage());
+                    // Fallback: strip brackets and quotes, then split
+                    trimmedFixedIds = trimmedFixedIds.replace('[', '').replace(']', '').replace('"', '');
+                    for (String fid : trimmedFixedIds.split(',')) {
+                        fixedIdSet.add(fid.trim());
+                    }
+                }
+            } else {
+                // Plain comma-separated format
+                for (String fid : trimmedFixedIds.split(',')) {
+                    fixedIdSet.add(fid.trim());
+                }
+            }
+        }
+        System.debug('Fixed IDs to remove: ' + fixedIdSet);
+
+        // Parse Example_Records__c - it's stored as JSON array format: ["id1","id2",...]
+        List<String> remaining = new List<String>();
+        if (String.isNotBlank(original.Example_Records__c)) {
+            String exampleRecords = original.Example_Records__c.trim();
+            List<String> originalIds;
+
+            // Handle JSON array format
+            if (exampleRecords.startsWith('[')) {
+                try {
+                    originalIds = (List<String>)JSON.deserialize(exampleRecords, List<String>.class);
+                } catch (Exception jsonEx) {
+                    System.debug(LoggingLevel.WARN, 'Failed to parse JSON array, falling back to string split: ' + jsonEx.getMessage());
+                    // Fallback: strip brackets and quotes, then split
+                    exampleRecords = exampleRecords.replace('[', '').replace(']', '').replace('"', '');
+                    originalIds = exampleRecords.split(',');
+                }
+            } else {
+                // Plain comma-separated format
+                originalIds = exampleRecords.split(',');
+            }
+
+            System.debug('Original IDs from Example_Records__c: ' + originalIds);
+
+            for (String recId : originalIds) {
+                String trimmedId = recId.trim();
+                if (String.isNotBlank(trimmedId) && !fixedIdSet.contains(trimmedId)) {
+                    remaining.add(trimmedId);
+                }
+            }
+        }
+
+        Integer remainingCount = remaining.size();
+        Decimal costPerIncident = original.Cost_Per_Incident__c != null ? original.Cost_Per_Incident__c : 0;
+        String objName = original.Object_API_Name__c != null ? original.Object_API_Name__c.toLowerCase() : '';
+
+        // Build cumulative fixed record IDs: any previously fixed + newly fixed
+        String cumulativeFixedIds = '';
+        if (String.isNotBlank(original.Fixed_Record_Ids__c)) {
+            cumulativeFixedIds = original.Fixed_Record_Ids__c;
+            if (String.isNotBlank(fixedRecordIds)) {
+                cumulativeFixedIds += ',' + fixedRecordIds;
+            }
+        } else {
+            cumulativeFixedIds = fixedRecordIds;
+        }
+
+        // Check if this is a partial fix (remaining records exist)
+        if (remainingCount > 0) {
+            // PARTIAL FIX: Two-part update:
+            // 1. Update the SAME pain point with remaining records (stays in Active)
+            // 2. Create a NEW Completed record for the fixed records (shows in Completed)
+            System.debug('Partial fix: ' + fixedCount + ' fixed, ' + remainingCount + ' remaining');
+
+            // Calculate new impact score for remaining records
+            Decimal remainingImpactScore = 0;
+            Decimal fixedImpactScore = fixedCount * costPerIncident;
+
+            if (objName == 'opportunity') {
+                // Query remaining Opportunity records to sum actual Amount values
+                if (!remaining.isEmpty()) {
+                    try {
+                        List<Id> remainingIds = new List<Id>();
+                        for (String idStr : remaining) {
+                            String trimmed = idStr.trim();
+                            if (String.isNotBlank(trimmed)) {
+                                remainingIds.add(Id.valueOf(trimmed));
+                            }
+                        }
+
+                        if (!remainingIds.isEmpty()) {
+                            AggregateResult[] results = [
+                                SELECT SUM(Amount) total
+                                FROM Opportunity
+                                WHERE Id IN :remainingIds
+                                WITH SECURITY_ENFORCED
+                            ];
+                            if (!results.isEmpty() && results[0].get('total') != null) {
+                                remainingImpactScore = (Decimal)results[0].get('total');
+                            }
+                        }
+                    } catch (Exception oppEx) {
+                        System.debug(LoggingLevel.WARN, 'Failed to query Opportunity amounts for remaining impact: ' + oppEx.getMessage());
+                        remainingImpactScore = remainingCount * costPerIncident;
+                    }
+                }
+
+                // Query fixed Opportunity records to sum their Amount values
+                if (!fixedIdSet.isEmpty()) {
+                    try {
+                        List<Id> fixedIds = new List<Id>();
+                        for (String idStr : fixedIdSet) {
+                            if (String.isNotBlank(idStr)) {
+                                fixedIds.add(Id.valueOf(idStr.trim()));
+                            }
+                        }
+
+                        if (!fixedIds.isEmpty()) {
+                            AggregateResult[] fixedResults = [
+                                SELECT SUM(Amount) total
+                                FROM Opportunity
+                                WHERE Id IN :fixedIds
+                                WITH SECURITY_ENFORCED
+                            ];
+                            if (!fixedResults.isEmpty() && fixedResults[0].get('total') != null) {
+                                fixedImpactScore = (Decimal)fixedResults[0].get('total');
+                            }
+                        }
+                    } catch (Exception fixedEx) {
+                        System.debug(LoggingLevel.WARN, 'Failed to query fixed Opportunity amounts: ' + fixedEx.getMessage());
+                    }
+                }
+            } else {
+                remainingImpactScore = remainingCount * costPerIncident;
+            }
+
+            // 1. Update the SAME pain point in place for remaining records
+            original.Occurrences__c = remainingCount;
+            original.Impact_Score__c = remainingImpactScore;
+            original.Example_Records__c = JSON.serialize(remaining);
+            // Don't update Fixed_Record_Ids__c on the active record - that goes to the completed record
+            // Status stays as 'New' - still active with remaining records
+
+            System.debug('Updating pain point in place: ' + remainingCount + ' remaining, $' + remainingImpactScore + ' at risk');
+
+            // 2. Create a NEW Completed record for the fixed records
+            if (Schema.sObjectType.Identified_Pain_Point__c.isCreateable()) {
+                List<String> fixedIdsList = new List<String>(fixedIdSet);
+                Identified_Pain_Point__c completedRecord = new Identified_Pain_Point__c(
+                    Name = original.Name + ' (Partial Fix)',
+                    Object_API_Name__c = original.Object_API_Name__c,
+                    Status__c = 'Resolved',
+                    Description__c = original.Description__c,
+                    Occurrences__c = fixedCount,
+                    Impact_Score__c = fixedImpactScore,
+                    Example_Records__c = '[]', // Empty - all these records are fixed
+                    Fixed_Record_Ids__c = JSON.serialize(fixedIdsList),
+                    Unique_Key__c = original.Unique_Key__c + '_' + String.valueOf(System.currentTimeMillis()),
+                    Cost_Per_Incident__c = costPerIncident
+                );
+                insert completedRecord;
+                System.debug('Created Completed record for partial fix: ' + completedRecord.Id + ' with ' + fixedCount + ' fixed records');
+            }
+
+        } else {
+            // FULL FIX: All records remediated - mark as Resolved
+            System.debug('Full fix: All ' + fixedCount + ' records remediated');
+
+            original.Status__c = 'Resolved';
+            original.Occurrences__c = fixedCount;
+            original.Example_Records__c = '[]'; // Clear - all records fixed
+            original.Fixed_Record_Ids__c = cumulativeFixedIds;
+
+            // Calculate impact score for resolved records (for ROI reporting)
+            if (objName == 'opportunity' && String.isNotBlank(fixedRecordIds)) {
+                try {
+                    List<Id> resolvedIds = new List<Id>();
+                    for (String idStr : fixedRecordIds.split(',')) {
+                        String trimmed = idStr.trim();
+                        if (String.isNotBlank(trimmed)) {
+                            resolvedIds.add(Id.valueOf(trimmed));
+                        }
+                    }
+
+                    if (!resolvedIds.isEmpty()) {
+                        AggregateResult[] resolvedResults = [
+                            SELECT SUM(Amount) total
+                            FROM Opportunity
+                            WHERE Id IN :resolvedIds
+                            WITH SECURITY_ENFORCED
+                        ];
+                        if (!resolvedResults.isEmpty() && resolvedResults[0].get('total') != null) {
+                            original.Impact_Score__c = (Decimal)resolvedResults[0].get('total');
+                        }
+                    }
+                } catch (Exception resolvedEx) {
+                    System.debug(LoggingLevel.WARN, 'Failed to query fixed Opportunity amounts: ' + resolvedEx.getMessage());
+                    original.Impact_Score__c = fixedCount * costPerIncident;
+                }
+            } else {
+                original.Impact_Score__c = fixedCount * costPerIncident;
+            }
+        }
+
+        if (!Schema.sObjectType.Identified_Pain_Point__c.isUpdateable()) {
+            throw new AuraHandledException('Insufficient permissions to update Pain Points');
+        }
+        update original;
+        System.debug('Successfully updated pain point ' + original.Id + ': Status=' + original.Status__c + ', Occurrences=' + original.Occurrences__c);
+    }
+
+    /**
+     * @description Extracts the base rule developer name from a Unique_Key__c value.
+     * Pain points created from partial fixes may have timestamped keys like "High_Value_Ghosting_1767994173771".
+     * This method returns the original rule key ("High_Value_Ghosting") that matches the metadata.
+     * @param uniqueKey The Unique_Key__c value from a pain point
+     * @return The base rule developer name without any timestamp suffix
+     */
+    private static String getBaseRuleKey(String uniqueKey) {
+        if (String.isBlank(uniqueKey)) {
+            return uniqueKey;
+        }
+
+        // Check if this key exists as a rule directly
+        List<Behavior_Pattern_Rule__mdt> directMatch = [
+            SELECT DeveloperName FROM Behavior_Pattern_Rule__mdt
+            WHERE DeveloperName = :uniqueKey LIMIT 1
+        ];
+        if (!directMatch.isEmpty()) {
+            return uniqueKey; // It's already a valid rule name
+        }
+
+        // Try to find the base rule by progressively removing underscore-suffixed segments
+        // e.g., "High_Value_Ghosting_1767994173771" -> try "High_Value_Ghosting"
+        String testKey = uniqueKey;
+        while (testKey.contains('_')) {
+            // Remove the last underscore segment
+            Integer lastUnderscore = testKey.lastIndexOf('_');
+            testKey = testKey.substring(0, lastUnderscore);
+
+            List<Behavior_Pattern_Rule__mdt> match = [
+                SELECT DeveloperName FROM Behavior_Pattern_Rule__mdt
+                WHERE DeveloperName = :testKey LIMIT 1
+            ];
+            if (!match.isEmpty()) {
+                return testKey;
+            }
+        }
+
+        // No match found - return original (will likely fail but at least it's clear why)
+        return uniqueKey;
+    }
+
     // --- LEGACY FIX METHODS (Kept for backward compatibility) ---
-    
+
     private static void fixStaleCases(List<Id> recordIds) {
         if (!Schema.sObjectType.Task.isCreateable()) {
             throw new AuraHandledException('Insufficient permissions to create Tasks.');
@@ -368,6 +886,55 @@ public with sharing class WorkflowAnalyticsController {
             return 'Suggestion dismissed successfully.';
         } catch (Exception e) {
             throw new AuraHandledException('Error dismissing suggestion.');
+        }
+    }
+
+    /**
+     * @description Undoes a completed fix, restoring the pain point to Active status.
+     * This is used when an admin wants to revert a fix that was applied via Auto-Fix.
+     * Note: This only changes the pain point status - it does NOT revert the actual
+     * data changes (e.g., task creation, lead reassignment). Those changes remain.
+     * @param painPointId The Id of the resolved pain point to undo
+     * @return Success message string
+     */
+    @AuraEnabled
+    public static String undoPainPointFix(Id painPointId) {
+        if (!Schema.sObjectType.Identified_Pain_Point__c.isUpdateable() ||
+            !Schema.sObjectType.Identified_Pain_Point__c.fields.Status__c.isUpdateable()) {
+            throw new AuraHandledException('Insufficient permissions to update Pain Points.');
+        }
+
+        try {
+            // Verify the pain point exists and is in Resolved status
+            List<Identified_Pain_Point__c> points = [
+                SELECT Id, Status__c, Name
+                FROM Identified_Pain_Point__c
+                WHERE Id = :painPointId
+                WITH SECURITY_ENFORCED
+                LIMIT 1
+            ];
+
+            if (points.isEmpty()) {
+                throw new AuraHandledException('Pain Point not found.');
+            }
+
+            if (points[0].Status__c != 'Resolved') {
+                throw new AuraHandledException('Only resolved pain points can be undone.');
+            }
+
+            Identified_Pain_Point__c point = new Identified_Pain_Point__c(
+                Id = painPointId,
+                Status__c = 'New'
+            );
+
+            SObjectAccessDecision decision = Security.stripInaccessible(AccessType.UPDATABLE, new List<Identified_Pain_Point__c>{point});
+            update decision.getRecords();
+
+            return 'Fix undone - "' + points[0].Name + '" restored to active.';
+        } catch (AuraHandledException ahe) {
+            throw ahe;
+        } catch (Exception e) {
+            throw new AuraHandledException('Error undoing fix: ' + e.getMessage());
         }
     }
 
@@ -542,6 +1109,79 @@ public with sharing class WorkflowAnalyticsController {
     }
 
     /**
+     * @description Returns enhanced system health data with fallback to Behavior_Log__c.
+     * If no System_Health_Log__c exists, falls back to the most recent Behavior_Log__c.
+     * This ensures consistent "Last Scan" time across dashboard and system health panel.
+     */
+    @AuraEnabled(cacheable=true)
+    public static SystemHealthWrapper getEnhancedSystemHealth() {
+        SystemHealthWrapper wrapper = new SystemHealthWrapper();
+
+        try {
+            // First, try to get from System_Health_Log__c
+            List<System_Health_Log__c> healthLogs = [
+                SELECT Id, Job_Name__c, Status__c, CreatedDate
+                FROM System_Health_Log__c
+                WITH SECURITY_ENFORCED
+                ORDER BY CreatedDate DESC
+                LIMIT 1
+            ];
+
+            if (!healthLogs.isEmpty()) {
+                wrapper.lastRunTime = healthLogs[0].CreatedDate;
+                wrapper.status = healthLogs[0].Status__c;
+                wrapper.jobName = healthLogs[0].Job_Name__c;
+                wrapper.source = 'System_Health_Log__c';
+                wrapper.hasData = true;
+                return wrapper;
+            }
+
+            // Fallback: Check Behavior_Log__c for most recent activity
+            if (Schema.sObjectType.Behavior_Log__c.isAccessible()) {
+                List<Behavior_Log__c> behaviorLogs = [
+                    SELECT Id, CreatedDate
+                    FROM Behavior_Log__c
+                    WITH SECURITY_ENFORCED
+                    ORDER BY CreatedDate DESC
+                    LIMIT 1
+                ];
+
+                if (!behaviorLogs.isEmpty()) {
+                    wrapper.lastRunTime = behaviorLogs[0].CreatedDate;
+                    wrapper.status = 'Success';
+                    wrapper.jobName = 'Behavior Tracking';
+                    wrapper.source = 'Behavior_Log__c';
+                    wrapper.hasData = true;
+                    return wrapper;
+                }
+            }
+
+            // No data available
+            wrapper.hasData = false;
+            wrapper.status = 'No Data';
+
+        } catch (Exception e) {
+            wrapper.hasData = false;
+            wrapper.status = 'Error';
+            wrapper.errorMessage = e.getMessage();
+        }
+
+        return wrapper;
+    }
+
+    /**
+     * Wrapper class for enhanced system health data
+     */
+    public class SystemHealthWrapper {
+        @AuraEnabled public Datetime lastRunTime;
+        @AuraEnabled public String status;
+        @AuraEnabled public String jobName;
+        @AuraEnabled public String source;
+        @AuraEnabled public Boolean hasData;
+        @AuraEnabled public String errorMessage;
+    }
+
+    /**
      * @description Returns the total count of Behavior_Log__c records analyzed.
      * Used by the dashboard to display dynamic "Events Analyzed" metric instead of hardcoded values.
      * @return Integer count of all behavior log records, or 0 if none exist or on error
@@ -555,6 +1195,34 @@ public with sharing class WorkflowAnalyticsController {
             return [SELECT COUNT() FROM Behavior_Log__c WITH SECURITY_ENFORCED];
         } catch (Exception e) {
             System.debug(LoggingLevel.WARN, 'getTotalEventsAnalyzed error: ' + e.getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * @description Returns the count of monitored objects from BehaviorIQ configuration.
+     * Used by the dashboard to display accurate "Objects Monitored" metric.
+     * @return Integer count of configured monitored objects
+     */
+    @AuraEnabled(cacheable=true)
+    public static Integer getMonitoredObjectsCount() {
+        try {
+            if (!Schema.sObjectType.BehaviorIQ_Configuration__c.isAccessible()) {
+                return 0;
+            }
+            List<BehaviorIQ_Configuration__c> configs = [
+                SELECT Monitored_Objects__c
+                FROM BehaviorIQ_Configuration__c
+                WITH SECURITY_ENFORCED
+                LIMIT 1
+            ];
+            if (configs.isEmpty() || String.isBlank(configs[0].Monitored_Objects__c)) {
+                return 0;
+            }
+            // Count comma-separated values
+            return configs[0].Monitored_Objects__c.split(',').size();
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'getMonitoredObjectsCount error: ' + e.getMessage());
             return 0;
         }
     }

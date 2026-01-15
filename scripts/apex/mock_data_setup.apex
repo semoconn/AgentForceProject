@@ -149,12 +149,17 @@ try {
 if (projectObjectExists) {
     List<SObject> zombieProjects = new List<SObject>();
     Schema.SObjectType projectType = Schema.getGlobalDescribe().get('Project__c');
+    Schema.DescribeSObjectResult projectDescribe = projectType.getDescribe();
+    Map<String, Schema.SObjectField> fieldMap = projectDescribe.fields.getMap();
+    Boolean hasDescriptionField = fieldMap.containsKey('Description__c');
 
     for (Integer i = 1; i <= 3; i++) {
         SObject proj = projectType.newSObject();
         proj.put('Name', 'Abandoned Project #' + i);
         proj.put('Status__c', 'Active');
-        proj.put('Description__c', '[TEST DATA] Created by mock_data_setup.apex for Zombie Projects detection');
+        if (hasDescriptionField) {
+            proj.put('Description__c', '[TEST DATA] Created by mock_data_setup.apex for Zombie Projects detection');
+        }
         zombieProjects.add(proj);
     }
     insert zombieProjects;

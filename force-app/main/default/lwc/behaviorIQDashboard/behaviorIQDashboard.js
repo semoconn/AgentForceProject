@@ -7,8 +7,10 @@ import getPainPoints from '@salesforce/apex/WorkflowAnalyticsController.getPainP
 import runAutoFix from '@salesforce/apex/WorkflowAnalyticsController.runAutoFix';
 import dismissSuggestion from '@salesforce/apex/WorkflowAnalyticsController.dismissSuggestion';
 import restoreSuggestion from '@salesforce/apex/WorkflowAnalyticsController.restoreSuggestion';
+import markPainPointResolved from '@salesforce/apex/WorkflowAnalyticsController.markPainPointResolved';
 import getDashboardData from '@salesforce/apex/WorkflowAnalyticsController.getDashboardData';
 import getTotalEventsAnalyzed from '@salesforce/apex/WorkflowAnalyticsController.getTotalEventsAnalyzed';
+import getMonitoredObjectsCount from '@salesforce/apex/WorkflowAnalyticsController.getMonitoredObjectsCount';
 
 export default class BehaviorIQDashboard extends LightningElement {
     @track allPainPoints = [];
@@ -31,6 +33,10 @@ export default class BehaviorIQDashboard extends LightningElement {
     @track previewObjectApiName = '';
     @track previewRuleLabel = '';
     @track previewFixType = '';
+    @track previewExampleRecordIds = ''; // Whitelist of record IDs for partial fix filtering
+    @track previewReadOnly = false; // When true, shows records in view-only mode (for completed items)
+    @track previewFixedRecordIds = ''; // Cumulative fixed record IDs for displaying in the modal
+    @track previewFixedAtTimestamp = ''; // Timestamp when records were fixed
 
     // Getter to safely control modal visibility - only show when we have valid data
     get isPreviewModalOpen() {
@@ -44,7 +50,10 @@ export default class BehaviorIQDashboard extends LightningElement {
     _wiredPainPointsResult;
     _wiredDashboardResult;
     _wiredEventsResult;
+    _wiredObjectsCountResult;
+    _currentPainPointId = null; // Track the pain point being fixed for resolution
     @track totalEventsAnalyzed = 0;
+    @track monitoredObjectsCount = 0;
 
     // 0. Load Total Events Analyzed (Dynamic ROI metric)
     @wire(getTotalEventsAnalyzed)
@@ -56,6 +65,19 @@ export default class BehaviorIQDashboard extends LightningElement {
         } else if (result.error) {
             console.error('Error loading events count:', result.error);
             this.totalEventsAnalyzed = 0;
+        }
+    }
+
+    // 0b. Load Monitored Objects Count from Configuration
+    @wire(getMonitoredObjectsCount)
+    wiredObjectsCount(result) {
+        this._wiredObjectsCountResult = result;
+        if (result.data !== undefined) {
+            this.monitoredObjectsCount = result.data;
+            this.updateMetricsWithDynamicData();
+        } else if (result.error) {
+            console.error('Error loading monitored objects count:', result.error);
+            this.monitoredObjectsCount = 0;
         }
     }
 
@@ -91,8 +113,8 @@ export default class BehaviorIQDashboard extends LightningElement {
         // Calculate active users from recent logs (unique users in last 30 days)
         const uniqueUsers = new Set(this.recentLogs.map(log => log.User__c)).size;
 
-        // Calculate objects monitored from recent logs
-        const uniqueObjects = new Set(this.recentLogs.map(log => log.Object_API_Name__c)).size;
+        // Use configured monitored objects count (from BehaviorIQ_Configuration__c)
+        const objectsMonitored = this.monitoredObjectsCount;
 
         // Format last scan time
         const lastScanTime = this.recentLogs.length > 0
@@ -103,7 +125,7 @@ export default class BehaviorIQDashboard extends LightningElement {
         this.metrics = [
             { id: '1', label: 'Events Analyzed', value: formattedEventsCount || '0', key: 'events_analyzed' },
             { id: '2', label: 'Active Users', value: String(uniqueUsers || 0), key: 'active_users' },
-            { id: '3', label: 'Objects Monitored', value: String(uniqueObjects || 0), key: 'objects_monitored' },
+            { id: '3', label: 'Objects Monitored', value: String(objectsMonitored || 0), key: 'objects_monitored' },
             { id: '4', label: 'Last Scan', value: lastScanTime, key: 'last_scan' }
         ];
 
@@ -183,31 +205,86 @@ export default class BehaviorIQDashboard extends LightningElement {
         let filtered;
         switch (this.currentFilter) {
             case 'Active':
-                filtered = this.allPainPoints.filter(item => item.Status !== 'Dismissed' && item.Status !== 'Resolved');
+                // Active: Not dismissed AND not resolved AND has records to show
+                // Filter out pain points with empty ExampleRecords (nothing to remediate)
+                filtered = this.allPainPoints.filter(item => {
+                    if (item.Status === 'Dismissed' || item.Status === 'Resolved') {
+                        return false;
+                    }
+                    // Also filter out items with no example records
+                    if (!item.ExampleRecords || item.ExampleRecords === '[]' || item.ExampleRecords === '') {
+                        return false;
+                    }
+                    return true;
+                });
+                break;
+            case 'Completed':
+                // Completed: Successfully fixed (Resolved status)
+                filtered = this.allPainPoints.filter(item => item.Status === 'Resolved');
                 break;
             case 'Dismissed':
-                filtered = this.allPainPoints.filter(item => item.Status === 'Dismissed' || item.Status === 'Resolved');
+                // Dismissed: Manually dismissed by user (NOT resolved via auto-fix)
+                filtered = this.allPainPoints.filter(item => item.Status === 'Dismissed');
                 break;
             default:
                 filtered = this.allPainPoints;
         }
         // Add computed properties for each point
-        return filtered.map(point => ({
-            ...point,
-            // Show cost per incident only for non-Opportunity/Contract objects that have a cost
-            showCostPerIncident: point.CostPerIncident &&
-                point.ObjectApiName &&
-                point.ObjectApiName.toLowerCase() !== 'opportunity' &&
-                point.ObjectApiName.toLowerCase() !== 'contract',
-            // Track if item is dismissed for UI (restore vs dismiss button)
-            isDismissed: point.Status === 'Dismissed' || point.Status === 'Resolved'
-        }));
+        return filtered.map(point => {
+            // Calculate actual record count based on status
+            let actualCount = point.Occurrences;
+
+            if (point.Status === 'Resolved') {
+                // For Completed items: Use FixedRecordIds count or stored Occurrences
+                // ExampleRecords is [] for completed items, so we need to look at FixedRecordIds
+                if (point.FixedRecordIds) {
+                    try {
+                        const fixedIds = point.FixedRecordIds.startsWith('[')
+                            ? JSON.parse(point.FixedRecordIds)
+                            : point.FixedRecordIds.split(',').filter(id => id.trim());
+                        actualCount = fixedIds.length;
+                    } catch (e) {
+                        // Fall back to stored Occurrences if parsing fails
+                        console.warn('Failed to parse FixedRecordIds:', e);
+                        actualCount = point.Occurrences;
+                    }
+                }
+                // If no FixedRecordIds, keep the stored Occurrences value
+            } else if (point.ExampleRecords && point.ExampleRecords !== '[]' && point.ExampleRecords !== '') {
+                // For Active/Dismissed items: Calculate from ExampleRecords
+                try {
+                    const ids = point.ExampleRecords.startsWith('[')
+                        ? JSON.parse(point.ExampleRecords)
+                        : point.ExampleRecords.split(',').filter(id => id.trim());
+                    actualCount = ids.length;
+                } catch (e) {
+                    // Fall back to Occurrences if parsing fails
+                    console.warn('Failed to parse ExampleRecords:', e);
+                }
+            }
+
+            return {
+                ...point,
+                // Use calculated count for accuracy
+                Occurrences: actualCount,
+                // Show cost per incident only for non-Opportunity/Contract objects that have a cost
+                showCostPerIncident: point.CostPerIncident &&
+                    point.ObjectApiName &&
+                    point.ObjectApiName.toLowerCase() !== 'opportunity' &&
+                    point.ObjectApiName.toLowerCase() !== 'contract',
+                // Track if item is dismissed for UI (restore vs dismiss button)
+                isDismissed: point.Status === 'Dismissed',
+                // Track if item is completed (resolved via auto-fix)
+                isCompleted: point.Status === 'Resolved'
+            };
+        });
     }
 
     get hasPainPoints() { return this.filteredPainPoints.length > 0; }
     get filteredCount() { return this.filteredPainPoints.length; }
     get allVariant() { return this.currentFilter === 'All' ? 'brand' : 'neutral'; }
     get activeVariant() { return this.currentFilter === 'Active' ? 'brand' : 'neutral'; }
+    get completedVariant() { return this.currentFilter === 'Completed' ? 'brand' : 'neutral'; }
     get dismissedVariant() { return this.currentFilter === 'Dismissed' ? 'brand' : 'neutral'; }
     get isFixDisabled() { return !this.isPremium; }
     get autoFixButtonTitle() { return this.isPremium ? 'Apply Auto-Fix' : 'Apply Auto-Fix (Premium)'; }
@@ -215,6 +292,7 @@ export default class BehaviorIQDashboard extends LightningElement {
     // --- Actions ---
     filterAll() { this.currentFilter = 'All'; }
     filterActive() { this.currentFilter = 'Active'; }
+    filterCompleted() { this.currentFilter = 'Completed'; }
     filterDismissed() { this.currentFilter = 'Dismissed'; }
 
     handleRefresh() {
@@ -222,7 +300,8 @@ export default class BehaviorIQDashboard extends LightningElement {
         Promise.all([
             refreshApex(this._wiredDashboardResult),
             refreshApex(this._wiredPainPointsResult),
-            refreshApex(this._wiredEventsResult)
+            refreshApex(this._wiredEventsResult),
+            refreshApex(this._wiredObjectsCountResult)
         ]).then(() => {
             this.isLoading = false;
             this.showToast('Success', 'Dashboard refreshed', 'success');
@@ -236,6 +315,20 @@ export default class BehaviorIQDashboard extends LightningElement {
         let objectApiName = event.currentTarget.dataset.type || (this.selectedRow ? this.selectedRow.ObjectApiName : null);
         let uniqueKey = event.currentTarget.dataset.key || (this.selectedRow ? this.selectedRow.UniqueKey : null);
         let ruleLabel = event.currentTarget.dataset.label || (this.selectedRow ? this.selectedRow.Name : null);
+        let painPointId = event.currentTarget.dataset.painpointId || (this.selectedRow ? this.selectedRow.Id : null);
+        // Get Example_Records__c from the pain point - this is the whitelist of remaining record IDs
+        let exampleRecords = event.currentTarget.dataset.id || (this.selectedRow ? this.selectedRow.ExampleRecords : null);
+        // Get Fixed_Record_Ids__c for cumulative display of previously fixed records
+        let fixedRecordIds = event.currentTarget.dataset.fixedIds || (this.selectedRow ? this.selectedRow.FixedRecordIds : null);
+        // Get LastModifiedDate as the timestamp for when records were previously fixed
+        let fixedAtTimestamp = event.currentTarget.dataset.timestamp || (this.selectedRow ? this.selectedRow.LastModifiedDate : null);
+
+        // Debug: log all dataset values
+        console.log('handleAutoFix - dataset:', event.currentTarget.dataset);
+        console.log('handleAutoFix - painPointId:', painPointId);
+        console.log('handleAutoFix - exampleRecords:', exampleRecords);
+        console.log('handleAutoFix - fixedRecordIds:', fixedRecordIds);
+        console.log('handleAutoFix - fixedAtTimestamp:', fixedAtTimestamp);
 
         if (!objectApiName) {
             return this.showToast('Error', 'Unable to determine object type.', 'error');
@@ -248,6 +341,10 @@ export default class BehaviorIQDashboard extends LightningElement {
             return this.showToast('Error', 'No pattern rule found for this object.', 'warning');
         }
 
+        // Store pain point ID for resolution after fix
+        this._currentPainPointId = painPointId;
+        console.log('handleAutoFix - stored _currentPainPointId:', this._currentPainPointId);
+
         // Close solution modal if open, then open preview modal
         this.closeSolutionModal();
 
@@ -256,6 +353,60 @@ export default class BehaviorIQDashboard extends LightningElement {
         this.previewObjectApiName = objectApiName;
         this.previewRuleLabel = ruleLabel || objectApiName + ' Issues';
         this.previewFixType = this.mapObjectToFixType(objectApiName);
+        // Pass the Example_Records__c as whitelist for filtering - this ensures we only show remaining unfixed records
+        this.previewExampleRecordIds = exampleRecords || '';
+        // Pass Fixed_Record_Ids__c for cumulative display of previously fixed records
+        this.previewFixedRecordIds = fixedRecordIds || '';
+        // Pass the timestamp for when records were previously fixed
+        this.previewFixedAtTimestamp = fixedAtTimestamp || '';
+        this.previewReadOnly = false; // Editable mode for fixing
+        this._isPreviewModalOpen = true;
+    }
+
+    // Handler for viewing fixed records from completed pain points
+    handleViewFixedRecords(event) {
+        // Get pain point info from button data attributes
+        const objectApiName = event.currentTarget.dataset.type;
+        const uniqueKey = event.currentTarget.dataset.key;
+        const ruleLabel = event.currentTarget.dataset.label;
+        // Use Fixed_Record_Ids__c instead of Example_Records__c for completed pain points
+        const fixedRecords = event.currentTarget.dataset.fixedIds;
+        // Get the LastModifiedDate as the timestamp when records were fixed
+        const fixedAtTimestamp = event.currentTarget.dataset.timestamp;
+
+        console.log('handleViewFixedRecords - fixedRecords:', fixedRecords);
+        console.log('handleViewFixedRecords - fixedAtTimestamp:', fixedAtTimestamp);
+
+        if (!objectApiName) {
+            return this.showToast('Error', 'Unable to load fixed records data.', 'error');
+        }
+
+        // If no fixed records, show an info message
+        if (!fixedRecords) {
+            return this.showToast('Info', 'No fixed record IDs found for this pain point.', 'info');
+        }
+
+        // Map object to rule developer name
+        const ruleDeveloperName = this.mapObjectToRuleDeveloperName(objectApiName, uniqueKey);
+
+        if (!ruleDeveloperName) {
+            return this.showToast('Error', 'No pattern rule found for this object.', 'warning');
+        }
+
+        // Close solution modal if open
+        this.closeSolutionModal();
+
+        // Set preview modal properties in READ-ONLY mode
+        this.previewRuleDeveloperName = ruleDeveloperName;
+        this.previewObjectApiName = objectApiName;
+        this.previewRuleLabel = ruleLabel || objectApiName + ' Fixed Records';
+        this.previewFixType = this.mapObjectToFixType(objectApiName);
+        // For completed pain points, use Fixed_Record_Ids__c to show only the fixed records
+        this.previewExampleRecordIds = fixedRecords || '';
+        this.previewFixedRecordIds = ''; // Not needed in read-only mode
+        // Pass the timestamp for when records were fixed
+        this.previewFixedAtTimestamp = fixedAtTimestamp || '';
+        this.previewReadOnly = true; // Read-only mode for viewing fixed records
         this._isPreviewModalOpen = true;
     }
 
@@ -318,35 +469,95 @@ export default class BehaviorIQDashboard extends LightningElement {
         this.previewObjectApiName = '';
         this.previewRuleLabel = '';
         this.previewFixType = '';
+        this.previewExampleRecordIds = '';
+        this.previewFixedRecordIds = '';
+        this.previewFixedAtTimestamp = '';
     }
 
     handlePreviewFixComplete(event) {
-        const { fixedCount, ruleDeveloperName } = event.detail;
+        const { fixedCount, remainingCount, ruleDeveloperName, fixedRecordIds } = event.detail;
         this.handlePreviewClose();
         this.showToast('Success', `Successfully fixed ${fixedCount} record(s).`, 'success');
-        refreshApex(this._wiredPainPointsResult);
+
+        // Debug logging
+        console.log('handlePreviewFixComplete called with:', {
+            fixedCount,
+            remainingCount,
+            ruleDeveloperName,
+            fixedRecordIds,
+            currentPainPointId: this._currentPainPointId
+        });
+
+        // Mark pain point as resolved (handles partial fixes by creating new record for remaining)
+        // IMPORTANT: Wait for the database update to complete before refreshing
+        if (this._currentPainPointId) {
+            const totalCount = fixedCount + (remainingCount || 0);
+            const painPointIdToResolve = this._currentPainPointId;
+            this.isLoading = true;
+
+            console.log('Calling markPainPointResolved with:', {
+                painPointId: painPointIdToResolve,
+                fixedCount: fixedCount,
+                totalCount: totalCount,
+                fixedRecordIds: fixedRecordIds ? fixedRecordIds.join(',') : ''
+            });
+
+            markPainPointResolved({
+                painPointId: painPointIdToResolve,
+                fixedCount: fixedCount,
+                totalCount: totalCount,
+                fixedRecordIds: fixedRecordIds ? fixedRecordIds.join(',') : ''
+            })
+            .then(() => {
+                console.log('markPainPointResolved succeeded, refreshing pain points...');
+                // Now refresh pain points AFTER the database update completes
+                return refreshApex(this._wiredPainPointsResult);
+            })
+            .then(() => {
+                console.log('Pain points refreshed, refreshing health gauge...');
+                // Refresh health gauge after pain points are updated
+                this.refreshHealthGauge();
+            })
+            .catch(err => {
+                console.error('Error in pain point resolution flow:', err);
+                const errorMsg = err?.body?.message || err?.message || 'Unknown error';
+                console.error('Error details:', errorMsg);
+                this.showToast('Error', `Failed to update pain point: ${errorMsg}`, 'error');
+            })
+            .finally(() => {
+                this._currentPainPointId = null;
+                this.isLoading = false;
+            });
+        } else {
+            console.warn('No _currentPainPointId set - cannot mark as resolved');
+            // No pain point ID - just refresh
+            refreshApex(this._wiredPainPointsResult);
+            this.refreshHealthGauge();
+        }
     }
 
     handleDismiss(event) {
         const painPointId = event.currentTarget.dataset.id;
-        if(!painPointId) return;
+        if (!painPointId) return;
         this.isLoading = true;
         dismissSuggestion({ painPointId })
             .then(() => {
                 this.showToast('Dismissed', 'Suggestion dismissed', 'success');
                 refreshApex(this._wiredPainPointsResult);
+                this.refreshHealthGauge();
             })
             .finally(() => this.isLoading = false);
     }
 
     handleRestore(event) {
         const painPointId = event.currentTarget.dataset.id;
-        if(!painPointId) return;
+        if (!painPointId) return;
         this.isLoading = true;
         restoreSuggestion({ painPointId })
             .then(() => {
                 this.showToast('Restored', 'Suggestion restored to active', 'success');
                 refreshApex(this._wiredPainPointsResult);
+                this.refreshHealthGauge();
             })
             .catch(err => this.showToast('Error', err?.body?.message || 'Failed to restore', 'error'))
             .finally(() => this.isLoading = false);
@@ -377,6 +588,14 @@ export default class BehaviorIQDashboard extends LightningElement {
 
     showToast(title, message, variant) {
         this.dispatchEvent(new ShowToastEvent({ title, message, variant }));
+    }
+
+    // Refresh the health gauge component dynamically
+    refreshHealthGauge() {
+        const healthGauge = this.template.querySelector('c-behavior-i-q-health-gauge');
+        if (healthGauge && typeof healthGauge.refresh === 'function') {
+            healthGauge.refresh();
+        }
     }
 
     getStepsForType(type) {

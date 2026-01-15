@@ -1,4 +1,5 @@
-import { LightningElement, wire, track } from 'lwc';
+import { LightningElement, wire, track, api } from 'lwc';
+import { refreshApex } from '@salesforce/apex';
 import getHealthScore from '@salesforce/apex/WorkflowAnalyticsController.getHealthScore';
 
 export default class BehaviorIQHealthGauge extends LightningElement {
@@ -13,8 +14,13 @@ export default class BehaviorIQHealthGauge extends LightningElement {
     // Animated display score (starts at 0 and animates to actual score)
     @track animatedScore = 0;
 
+    // Store wire result for refresh capability
+    _wiredHealthScoreResult;
+
     @wire(getHealthScore)
-    wiredHealthScore({ error, data }) {
+    wiredHealthScore(result) {
+        this._wiredHealthScoreResult = result;
+        const { error, data } = result;
         if (data) {
             this.score = data.score;
             this.statusText = data.status;
@@ -32,6 +38,18 @@ export default class BehaviorIQHealthGauge extends LightningElement {
             this.statusText = 'Healthy';
             this.isLoaded = true;
         }
+    }
+
+    /**
+     * @description Public API method to refresh the health score from parent component.
+     * Called when pain points are dismissed, restored, or fixed.
+     */
+    @api
+    refresh() {
+        if (this._wiredHealthScoreResult) {
+            return refreshApex(this._wiredHealthScoreResult);
+        }
+        return Promise.resolve();
     }
 
     // Animate the score from 0 to actual value
