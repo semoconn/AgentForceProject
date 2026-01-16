@@ -5,7 +5,7 @@
  * @group       BehaviorIQ
  */
 @IsTest
-private class ExclusionBuilderControllerTest {
+private with sharing class ExclusionBuilderControllerTest {
 
     /**
      * @description Sets up test data for the test methods.

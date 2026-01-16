@@ -3,7 +3,7 @@
  * Updated to properly handle Security checks and Permission Sets in Test Context.
  */
 @IsTest
-public class SetupWizardControllerTest {
+public with sharing class SetupWizardControllerTest {
 
     @TestSetup
     static void makeData() {

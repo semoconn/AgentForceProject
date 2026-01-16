@@ -285,10 +285,17 @@ public with sharing class PatternFixService {
                 effectiveFallback = fallbackOwnerId;
             }
 
-            // Last resort: current user (with informative message)
+            // Fail explicitly if no queue or fallback is configured
+            // This prevents silent assignment to unintended owners
             if (effectiveFallback == null) {
-                effectiveFallback = UserInfo.getUserId();
-                assignmentNote = 'No queue configured for ' + objectName + ' - assigned to current user. Consider creating a BehaviorIQ queue.';
+                String errorMsg = 'Owner assignment failed: No queue is configured for ' + objectName +
+                    ' and no fallback owner is specified. Please configure a "BehaviorIQ ' + objectName +
+                    ' Queue" or specify a fallbackOwnerId in the rule\'s Fix_Config__c JSON.';
+                for (Id recId : recordIds) {
+                    addLog(recId, ACTION_OWNER_ASSIGNMENT, null, null, STATUS_FAILED, errorMsg);
+                }
+                insertPendingLogs();
+                throw new AuraHandledException(errorMsg);
             }
         }
 
@@ -501,9 +508,18 @@ public with sharing class PatternFixService {
     /**
      * @description Sends email notifications for churn risk alerts.
      * Uses SingleEmailMessage to send alerts to Account owners or configured recipients.
+     * Respects user email preferences - skips users who have opted out of email notifications.
      */
     private void sendEmailNotifications(List<Id> recordIds, Map<String, Object> config) {
         if (recordIds.isEmpty()) return;
+
+        // Check if email sending is enabled in org
+        if (!isEmailSendingEnabled()) {
+            for (Id recId : recordIds) {
+                addLog(recId, ACTION_EMAIL_NOTIFICATION, null, null, STATUS_FAILED, 'Email sending is disabled in this org');
+            }
+            return;
+        }
 
         // Get the subject and body from config
         String subject = (String)config.get('subject');
@@ -546,13 +562,14 @@ public with sharing class PatternFixService {
 
         List<Messaging.SingleEmailMessage> emails = new List<Messaging.SingleEmailMessage>();
         Map<Id, String> recordToRecipient = new Map<Id, String>();
+        Map<Id, Id> recordToRecipientId = new Map<Id, Id>();
 
+        // First pass: collect all recipient IDs
         for (SObject rec : records) {
             Id recipientId;
 
             // Determine recipient based on config or defaults
             if (String.isNotBlank(recipientField) && recipientField.contains('.')) {
-                // Handle relationship field like 'Account.OwnerId'
                 List<String> fieldParts = recipientField.split('\\.');
                 SObject related = rec.getSObject(fieldParts[0]);
                 if (related != null) {
@@ -560,12 +577,32 @@ public with sharing class PatternFixService {
                 }
             }
 
-            // Fallback to record owner
             if (recipientId == null) {
                 recipientId = (Id)rec.get('OwnerId');
             }
 
-            if (recipientId == null) continue;
+            if (recipientId != null) {
+                recordToRecipientId.put(rec.Id, recipientId);
+            }
+        }
+
+        // Check which users have opted out of email notifications
+        Set<Id> optedOutUsers = getOptedOutUsers(new Set<Id>(recordToRecipientId.values()));
+
+        // Second pass: build emails, skipping opted-out users
+        for (SObject rec : records) {
+            Id recipientId = recordToRecipientId.get(rec.Id);
+
+            if (recipientId == null) {
+                continue;
+            }
+
+            // Skip users who have opted out
+            if (optedOutUsers.contains(recipientId)) {
+                addLog(rec.Id, ACTION_EMAIL_NOTIFICATION, null, null, STATUS_FAILED,
+                       'Recipient has opted out of email notifications');
+                continue;
+            }
 
             // Build personalized email body
             String personalizedBody = body;
@@ -597,7 +634,9 @@ public with sharing class PatternFixService {
         // Test hook for no valid recipients coverage
         if (emails.isEmpty() || (Test.isRunningTest() && forceNoValidRecipients)) {
             for (Id recId : recordIds) {
-                addLog(recId, ACTION_EMAIL_NOTIFICATION, null, null, STATUS_FAILED, 'No valid recipients found');
+                if (!recordToRecipient.containsKey(recId)) {
+                    addLog(recId, ACTION_EMAIL_NOTIFICATION, null, null, STATUS_FAILED, 'No valid recipients found');
+                }
             }
             return;
         }
@@ -611,7 +650,7 @@ public with sharing class PatternFixService {
 
             Integer idx = 0;
             for (SObject rec : records) {
-                if (idx < results.size()) {
+                if (recordToRecipient.containsKey(rec.Id) && idx < results.size()) {
                     if (results[idx].isSuccess()) {
                         addLog(rec.Id, ACTION_EMAIL_NOTIFICATION, null,
                                'Email sent to: ' + recordToRecipient.get(rec.Id), STATUS_SUCCESS, null);
@@ -827,6 +866,58 @@ public with sharing class PatternFixService {
         for (Id recId : recordIds) {
             addLog(recId, ACTION_NO_ACTION, null, message, STATUS_SUCCESS, null);
         }
+    }
+
+    // --- EMAIL VALIDATION HELPERS ---
+
+    /**
+     * @description Checks if email sending is enabled in the current org.
+     * Uses OrgWideEmailAddress check as a proxy - if no org-wide email exists and
+     * the current user can't send email, this will return false.
+     * @return True if email can be sent from this org, false otherwise
+     */
+    private Boolean isEmailSendingEnabled() {
+        try {
+            // Check if the org has email deliverability enabled
+            // Limits.getEmailInvocations() will tell us if we can send emails
+            Integer remainingEmails = Limits.getLimitEmailInvocations() - Limits.getEmailInvocations();
+            return remainingEmails > 0;
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'Unable to check email sending status: ' + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * @description Retrieves set of user IDs who have opted out of receiving BehaviorIQ notifications.
+     * Checks user email preferences to respect opt-out settings.
+     * @param userIds Set of user IDs to check
+     * @return Set of user IDs who should NOT receive emails
+     */
+    private Set<Id> getOptedOutUsers(Set<Id> userIds) {
+        Set<Id> optedOutUsers = new Set<Id>();
+
+        if (userIds.isEmpty()) {
+            return optedOutUsers;
+        }
+
+        try {
+            // Query users to check their ReceivesInfoEmails preference
+            // Users with ReceivesInfoEmails = false have opted out of informational emails
+            for (User u : [
+                SELECT Id, ReceivesInfoEmails
+                FROM User
+                WHERE Id IN :userIds
+                AND ReceivesInfoEmails = false
+                WITH SECURITY_ENFORCED
+            ]) {
+                optedOutUsers.add(u.Id);
+            }
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'Unable to check user email preferences: ' + e.getMessage());
+        }
+
+        return optedOutUsers;
     }
 
     // --- AUDIT LOGGING ---

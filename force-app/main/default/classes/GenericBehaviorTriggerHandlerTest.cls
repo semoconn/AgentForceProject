@@ -3,7 +3,7 @@
  * @version 2.5 - Final version incorporating recursion guard reset for accurate multi-DML testing.
  */
 @isTest
-private class GenericBehaviorTriggerHandlerTest {
+private with sharing class GenericBehaviorTriggerHandlerTest {
 
     @TestSetup
     static void makeData() {

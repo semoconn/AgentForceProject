@@ -1,5 +1,5 @@
 @isTest
-private class UserLeaderboardControllerTest {
+private with sharing class UserLeaderboardControllerTest {
 
     private static User testAdmin;
     private static User testStandardUser;
@@ -694,7 +694,7 @@ private class UserLeaderboardControllerTest {
             if (result.entries.size() > 0) {
                 UserLeaderboardController.LeaderboardEntry entry = result.entries[0];
                 // Free tier should use default photo
-                System.assertEquals('/profilephoto/005/T', entry.photoUrl,
+                System.assertEquals('/img/icon/t4v35/standard/avatar.svg', entry.photoUrl,
                     'Free tier should use default anonymous photo');
             }
         }

@@ -1,7 +1,8 @@
 /**
  * @description Generic batch class for deleting records returned by a SOQL query.
+ * Uses inherited sharing to respect the sharing context of the calling code.
  */
-public virtual class DeleteRecordsBatch implements Database.Batchable<sObject> { // ADDED 'virtual'
+public virtual inherited sharing class DeleteRecordsBatch implements Database.Batchable<sObject> {
     
     private final String query;
     private final String jobName = 'Generic Delete Batch';

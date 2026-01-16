@@ -1,5 +1,5 @@
 @isTest
-private class LicenseServiceTest {
+private with sharing class LicenseServiceTest {
 
     @isTest
     static void testDefaultIsFree() {

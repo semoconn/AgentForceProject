@@ -6,7 +6,7 @@
  * @last modified by  : Gemini
 **/
 @isTest
-private class SolutionGuideControllerTest {
+private with sharing class SolutionGuideControllerTest {
 
     @isTest
     static void testGetSolutionGuide_AllPaths() {

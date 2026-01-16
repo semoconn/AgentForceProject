@@ -99,114 +99,153 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
     }
 
     private void executeRule(Behavior_Pattern_Rule__mdt rule) {
-        // 1. License Gate
-        if (rule.Is_Premium__c && !LicenseService.isPremium()) {
-            return;
-        }
-
-        // 2. Dismissal Check
-        if (dismissedPainPointKeys.contains(rule.DeveloperName)) {
-            return;
-        }
-
-        // 3. Dynamic Object Existence Check (for custom objects that may not be installed)
         String objectApiName = rule.Object_API_Name__c;
-        // Test hook for object accessibility path coverage
+
+        // Guard clauses - early return for conditions that prevent execution
+        if (!canExecuteRule(rule, objectApiName)) {
+            return;
+        }
+
+        // Build and execute the detection query
+        List<SObject> detectedRecords = executeDetectionQuery(rule, objectApiName);
+        if (detectedRecords == null || detectedRecords.isEmpty()) {
+            return;
+        }
+
+        // Generate and persist the pain point
+        persistDetectionResults(rule, objectApiName, detectedRecords);
+    }
+
+    /**
+     * @description Validates whether a rule can be executed based on license, dismissals, and access.
+     * @param rule The pattern rule to validate
+     * @param objectApiName The target object API name
+     * @return True if the rule can be executed, false otherwise
+     */
+    private Boolean canExecuteRule(Behavior_Pattern_Rule__mdt rule, String objectApiName) {
+        // License gate - skip premium rules for non-premium users
+        if (rule.Is_Premium__c && !LicenseService.isPremium()) {
+            return false;
+        }
+
+        // Dismissal check - skip rules the user has dismissed
+        if (dismissedPainPointKeys.contains(rule.DeveloperName)) {
+            return false;
+        }
+
+        // Object existence check - skip rules for objects not in this org
         if ((Test.isRunningTest() && forceObjectNotAccessible) || !isObjectAccessible(objectApiName)) {
-            System.debug(LoggingLevel.INFO, 'Skipping rule [' + rule.DeveloperName + ']: Object ' + objectApiName + ' is not accessible or does not exist.');
-            return;
+            System.debug(LoggingLevel.INFO, 'Skipping rule [' + rule.DeveloperName + ']: Object ' + objectApiName + ' is not accessible.');
+            return false;
         }
 
-        // 4. FLS Check for fields referenced in query condition
-        // Test hook for FLS check failure path coverage
+        // FLS check - skip rules where required fields aren't accessible
         if ((Test.isRunningTest() && forceFLSCheckFailure) || !validateQueryFieldsAccessible(objectApiName, rule.Query_Condition__c)) {
-            System.debug(LoggingLevel.WARN, 'Skipping rule [' + rule.DeveloperName + ']: One or more required fields are not accessible.');
-            return;
+            System.debug(LoggingLevel.WARN, 'Skipping rule [' + rule.DeveloperName + ']: Required fields not accessible.');
+            return false;
         }
 
-        // 5. Dynamic Detection with Admin Configuration Injection
+        return true;
+    }
+
+    /**
+     * @description Builds and executes the detection query for a rule.
+     * @param rule The pattern rule containing query conditions
+     * @param objectApiName The target object API name
+     * @return List of detected records, or null if query failed
+     */
+    private List<SObject> executeDetectionQuery(Behavior_Pattern_Rule__mdt rule, String objectApiName) {
         String effectiveCondition = getEffectiveQuery(rule);
+        String selectFields = getSelectFieldsForObject(objectApiName);
 
-        // For Opportunity and Contract, also select the value field for cumulative risk calculation
-        String selectFields = 'Id';
-        String objLower = objectApiName.toLowerCase();
-        if (objLower == 'opportunity') {
-            selectFields = 'Id, Amount';
-        } else if (objLower == 'contract') {
-            // Contract doesn't have a standard Amount field; we'll use a calculated approach
-            // Check if there's an Account relationship to get contract value context
-            selectFields = 'Id, ContractNumber';
-        }
-
-        String queryString = 'SELECT ' + selectFields + ' FROM ' + String.escapeSingleQuotes(objectApiName) +
+        String queryString = 'SELECT ' + selectFields +
+                             ' FROM ' + String.escapeSingleQuotes(objectApiName) +
                              ' WHERE ' + effectiveCondition +
                              ' LIMIT 2000';
 
-        // Store the executed query for test verification
         lastExecutedQuery = queryString;
 
-        List<SObject> detectedRecords = new List<SObject>();
-
         try {
-            // Test hook for exception coverage
             if (Test.isRunningTest() && forceQueryException) {
                 throw new QueryException('Forced test exception for query execution');
             }
-            // NOTE: We rely on the Admin's rule definition being correct.
-            // Using Database.query without SECURITY_ENFORCED allows the engine to see
-            // records the current user might not, which is intended for system monitoring.
-            detectedRecords = Database.query(queryString);
+            return Database.query(queryString);
         } catch (Exception e) {
             System.debug(LoggingLevel.ERROR, 'Rule Execution Failed [' + rule.DeveloperName + ']: ' + e.getMessage());
-            return;
+            return null;
+        }
+    }
+
+    /**
+     * @description Determines select fields based on object type for impact calculation.
+     * @param objectApiName The target object API name
+     * @return Comma-separated list of fields to query
+     */
+    private String getSelectFieldsForObject(String objectApiName) {
+        String objLower = objectApiName.toLowerCase();
+
+        if (objLower == 'opportunity') {
+            return 'Id, Amount';
+        }
+        if (objLower == 'contract') {
+            return 'Id, ContractNumber';
+        }
+        return 'Id';
+    }
+
+    /**
+     * @description Creates or updates a pain point record from detection results.
+     * @param rule The pattern rule that detected the issue
+     * @param objectApiName The target object API name
+     * @param detectedRecords Records that match the pattern
+     */
+    private void persistDetectionResults(Behavior_Pattern_Rule__mdt rule, String objectApiName, List<SObject> detectedRecords) {
+        Integer count = detectedRecords.size();
+
+        // Collect sample IDs for reference
+        List<Id> exampleIds = new List<Id>();
+        for (Integer i = 0; i < Math.min(count, 5); i++) {
+            exampleIds.add(detectedRecords[i].Id);
         }
 
-        // 6. Result Generation
-        if (!detectedRecords.isEmpty()) {
-            Integer count = detectedRecords.size();
-            List<Id> exampleIds = new List<Id>();
-            for (Integer i = 0; i < Math.min(count, 5); i++) {
-                exampleIds.add(detectedRecords[i].Id);
-            }
+        Decimal totalImpact = calculateFinancialImpact(rule, objectApiName, detectedRecords);
 
-            // Calculate financial impact
-            // For Opportunity: Sum actual Amount values (cumulative risk)
-            // For Contract: Use Cost_Per_Incident as contracts don't have a standard value field
-            // For other objects: count * Cost_Per_Incident
-            Decimal costPerIncident = rule.Cost_Per_Incident__c != null ? rule.Cost_Per_Incident__c : 0;
-            Decimal totalImpact = 0;
+        upsertPainPoint(
+            rule.DeveloperName,
+            rule.MasterLabel,
+            'Automated detection for ' + objectApiName,
+            objectApiName,
+            count,
+            JSON.serialize(exampleIds),
+            totalImpact
+        );
+    }
 
-            if (objLower == 'opportunity') {
-                // Sum actual Opportunity amounts for cumulative risk
-                for (SObject rec : detectedRecords) {
-                    Decimal amt = (Decimal)rec.get('Amount');
-                    if (amt != null) {
-                        totalImpact += amt;
-                    }
+    /**
+     * @description Calculates the financial impact of detected records.
+     * Opportunities use actual Amount values; other objects use cost-per-incident.
+     * @param rule The pattern rule with cost configuration
+     * @param objectApiName The target object API name
+     * @param records The detected records
+     * @return Total financial impact value
+     */
+    private Decimal calculateFinancialImpact(Behavior_Pattern_Rule__mdt rule, String objectApiName, List<SObject> records) {
+        Decimal costPerIncident = rule.Cost_Per_Incident__c != null ? rule.Cost_Per_Incident__c : 0;
+        Integer count = records.size();
+        String objLower = objectApiName.toLowerCase();
+
+        if (objLower == 'opportunity') {
+            Decimal totalAmount = 0;
+            for (SObject rec : records) {
+                Decimal amt = (Decimal)rec.get('Amount');
+                if (amt != null) {
+                    totalAmount += amt;
                 }
-                // If no amounts, fall back to count * cost per incident
-                if (totalImpact == 0) {
-                    totalImpact = count * costPerIncident;
-                }
-            } else if (objLower == 'contract') {
-                // For contracts, use cost per incident * count
-                // (Contracts don't have a standard Amount field; value would need custom field)
-                totalImpact = count * costPerIncident;
-            } else {
-                // Standard calculation: count * cost per incident
-                totalImpact = count * costPerIncident;
             }
-
-            upsertPainPoint(
-                rule.DeveloperName,
-                rule.MasterLabel,
-                'Automated detection for ' + rule.Object_API_Name__c,
-                rule.Object_API_Name__c,
-                count,
-                JSON.serialize(exampleIds),
-                totalImpact
-            );
+            return totalAmount > 0 ? totalAmount : count * costPerIncident;
         }
+
+        return count * costPerIncident;
     }
 
     /**
@@ -745,19 +784,103 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
     }
 
     private void logJobStatus(Database.BatchableContext bc) {
-        if (!Schema.sObjectType.System_Health_Log__c.isCreateable()) return;
-
         String jobId = (bc != null) ? bc.getJobId() : null;
         Integer errors = 0;
-        if(jobId != null) {
-            try { errors = [SELECT NumberOfErrors FROM AsyncApexJob WHERE Id = :jobId].NumberOfErrors; } catch(Exception e){}
+        String extendedStatus = '';
+
+        if (jobId != null) {
+            try {
+                AsyncApexJob job = [
+                    SELECT NumberOfErrors, ExtendedStatus, TotalJobItems, JobItemsProcessed
+                    FROM AsyncApexJob
+                    WHERE Id = :jobId
+                    LIMIT 1
+                ];
+                errors = job.NumberOfErrors;
+                extendedStatus = job.ExtendedStatus;
+            } catch (Exception e) {
+                System.debug(LoggingLevel.WARN, 'Unable to query job status: ' + e.getMessage());
+            }
         }
 
-        System_Health_Log__c log = new System_Health_Log__c(
-            Job_Name__c = JOB_NAME, Job_ID__c = jobId,
-            Status__c = (errors > 0) ? 'Failed' : 'Success', Error_Count__c = errors
-        );
-        try { insert Security.stripInaccessible(AccessType.CREATABLE, new List<System_Health_Log__c>{log}).getRecords(); } catch(Exception e) {}
+        // Log to System_Health_Log__c if accessible
+        if (Schema.sObjectType.System_Health_Log__c.isCreateable()) {
+            System_Health_Log__c log = new System_Health_Log__c(
+                Job_Name__c = JOB_NAME,
+                Job_ID__c = jobId,
+                Status__c = (errors > 0) ? 'Failed' : 'Success',
+                Error_Count__c = errors
+            );
+            try {
+                insert Security.stripInaccessible(AccessType.CREATABLE, new List<System_Health_Log__c>{log}).getRecords();
+            } catch (Exception e) {
+                System.debug(LoggingLevel.WARN, 'Unable to create health log: ' + e.getMessage());
+            }
+        }
+
+        // Send admin notification email on failure
+        if (errors > 0) {
+            sendAdminFailureNotification(jobId, errors, extendedStatus);
+        }
+    }
+
+    /**
+     * @description Sends email notification to system admins when the batch job fails.
+     * Queries for users with the BehaviorIQ_Admin permission set to determine recipients.
+     * @param jobId The AsyncApexJob ID
+     * @param errorCount Number of errors that occurred
+     * @param extendedStatus Additional error details from the job
+     */
+    private void sendAdminFailureNotification(String jobId, Integer errorCount, String extendedStatus) {
+        try {
+            // Find users with BehaviorIQ Admin permission set
+            Set<Id> adminUserIds = new Set<Id>();
+            for (PermissionSetAssignment psa : [
+                SELECT AssigneeId
+                FROM PermissionSetAssignment
+                WHERE PermissionSet.Name = 'BehaviorIQ_Admin'
+                AND Assignee.IsActive = true
+                LIMIT 10
+            ]) {
+                adminUserIds.add(psa.AssigneeId);
+            }
+
+            // If no admins found, try to notify the running user (likely a system admin who scheduled the job)
+            if (adminUserIds.isEmpty()) {
+                adminUserIds.add(UserInfo.getUserId());
+            }
+
+            // Build notification email
+            String subject = 'BehaviorIQ Alert: Pattern Analysis Job Failed';
+            String body = 'The BehaviorIQ Pattern Analysis batch job has completed with errors.\n\n' +
+                'Job ID: ' + (jobId != null ? jobId : 'Unknown') + '\n' +
+                'Error Count: ' + errorCount + '\n' +
+                'Timestamp: ' + Datetime.now().format('yyyy-MM-dd HH:mm:ss z') + '\n\n';
+
+            if (String.isNotBlank(extendedStatus)) {
+                body += 'Error Details:\n' + extendedStatus + '\n\n';
+            }
+
+            body += 'Please review the System Health Log for more details.\n\n' +
+                'This is an automated notification from BehaviorIQ.';
+
+            // Send emails to admin users
+            List<Messaging.SingleEmailMessage> emails = new List<Messaging.SingleEmailMessage>();
+            for (Id adminId : adminUserIds) {
+                Messaging.SingleEmailMessage email = new Messaging.SingleEmailMessage();
+                email.setTargetObjectId(adminId);
+                email.setSubject(subject);
+                email.setPlainTextBody(body);
+                email.setSaveAsActivity(false);
+                emails.add(email);
+            }
+
+            if (!emails.isEmpty()) {
+                Messaging.sendEmail(emails, false);
+            }
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'Failed to send admin failure notification: ' + e.getMessage());
+        }
     }
 
     // --- REMEDIATION PREVIEW API ---

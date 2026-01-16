@@ -7,6 +7,9 @@ public with sharing class UserLeaderboardController {
 
     @TestVisible private static Boolean forcePremiumContext = null;
 
+    // Org-agnostic default avatar - uses standard Salesforce asset that works across all orgs
+    private static final String DEFAULT_ANONYMOUS_AVATAR = '/img/icon/t4v35/standard/avatar.svg';
+
     // Response Wrapper to carry state + data
     public class LeaderboardResult {
         @AuraEnabled public Boolean isPremium;
@@ -120,8 +123,7 @@ public with sharing class UserLeaderboardController {
                 } else {
                     // FREE: Anonymize data
                     String anonName = 'User ' + rankCounter;
-                    String anonPhoto = '/profilephoto/005/T'; 
-                    entry = new LeaderboardEntry(null, anonName, anonPhoto, score, true);
+                    entry = new LeaderboardEntry(null, anonName, DEFAULT_ANONYMOUS_AVATAR, score, true);
                     
                     if (behaviorMap.containsKey(userId)) {
                         entry.topBehaviors = behaviorMap.get(userId);

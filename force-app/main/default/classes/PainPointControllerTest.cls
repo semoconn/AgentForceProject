@@ -3,7 +3,7 @@
  * @version 1.9 - Adjusted AuraHandledException checks to verify exception type rather than exact message string.
  */
 @isTest
-private class PainPointControllerTest {
+private with sharing class PainPointControllerTest {
 
     @TestSetup
     static void setupTestData() {

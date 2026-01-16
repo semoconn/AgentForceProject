@@ -8,7 +8,7 @@
  * Therefore, functional tests run as admin, and security tests verify the code paths exist.
  */
 @isTest
-private class BehaviorLogServiceTest {
+private with sharing class BehaviorLogServiceTest {
 
     /**
      * @description Test: Null input handling.

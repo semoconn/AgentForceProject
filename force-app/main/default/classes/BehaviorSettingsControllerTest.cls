@@ -3,7 +3,7 @@
  * @version 3.0 - Updated to support Pattern Analysis Configuration (Sprint 3.4)
  */
 @isTest
-private class BehaviorSettingsControllerTest {
+private with sharing class BehaviorSettingsControllerTest {
 
     // ==================== METADATA SETTINGS TESTS ====================
 

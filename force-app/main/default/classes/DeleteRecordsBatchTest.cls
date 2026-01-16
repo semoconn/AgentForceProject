@@ -3,7 +3,7 @@
  * @version 1.1 - Fixed deployment errors: removed non-virtual extension/override issues and corrected sublist DML syntax.
  */
 @isTest
-private class DeleteRecordsBatchTest {
+private with sharing class DeleteRecordsBatchTest {
 
     // Removed the FailingDeleteBatch helper class since forcing DML exception is not reliable without external metadata 
     // and the focus is on executable logic (success and empty scope).
