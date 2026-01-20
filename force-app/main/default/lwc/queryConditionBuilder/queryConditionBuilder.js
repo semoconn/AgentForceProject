@@ -121,9 +121,20 @@ export default class QueryConditionBuilder extends LightningElement {
     @track picklistOptions = [];
     @track isLoadingPicklist = false;
 
+    // Track if initial field load has been attempted
+    _hasLoadedFields = false;
+
     connectedCallback() {
         if (this.initialCondition) {
             this.parseInitialCondition();
+        }
+    }
+
+    renderedCallback() {
+        // Load fields once when objectApiName is available
+        if (this.objectApiName && !this._hasLoadedFields && !this.isLoadingFields) {
+            this._hasLoadedFields = true;
+            this.loadFields();
         }
     }
 
@@ -132,6 +143,7 @@ export default class QueryConditionBuilder extends LightningElement {
     set objectName(value) {
         if (value !== this.objectApiName) {
             this.objectApiName = value;
+            this._hasLoadedFields = true; // Prevent duplicate load from renderedCallback
             this.loadFields();
             // Clear conditions when object changes
             this.conditions = [];
