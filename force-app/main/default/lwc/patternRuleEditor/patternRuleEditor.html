@@ -1,0 +1,292 @@
+<template>
+    <section role="dialog" tabindex="-1" aria-modal="true" class="slds-modal slds-fade-in-open slds-modal_large">
+        <div class="slds-modal__container">
+            <!-- Header -->
+            <header class="slds-modal__header">
+                <button class="slds-button slds-button_icon slds-modal__close slds-button_icon-inverse" title="Close" onclick={handleClose}>
+                    <lightning-icon icon-name="utility:close" alternative-text="close" variant="inverse" size="small"></lightning-icon>
+                </button>
+                <h2 class="slds-text-heading_medium slds-hyphenate">{modalTitle}</h2>
+            </header>
+
+            <!-- Content -->
+            <div class="slds-modal__content slds-p-around_medium" style="min-height: 500px;">
+                <!-- Loading State -->
+                <template if:true={isLoading}>
+                    <div class="slds-is-relative" style="height: 300px;">
+                        <lightning-spinner alternative-text="Loading..." size="medium"></lightning-spinner>
+                    </div>
+                </template>
+
+                <template if:false={isLoading}>
+                    <!-- Progress Indicator -->
+                    <lightning-progress-indicator current-step={currentStepString} type="path" variant="base" class="slds-m-bottom_medium">
+                        <lightning-progress-step label="Basic Info" value="1"></lightning-progress-step>
+                        <lightning-progress-step label="Detection Logic" value="2"></lightning-progress-step>
+                        <lightning-progress-step label="Remediation" value="3"></lightning-progress-step>
+                        <lightning-progress-step label="Review" value="4"></lightning-progress-step>
+                    </lightning-progress-indicator>
+
+                    <!-- Step 1: Basic Info -->
+                    <template if:true={isStepOne}>
+                        <div class="slds-form slds-form_stacked">
+                            <h3 class="slds-text-heading_small slds-m-bottom_small">Basic Information</h3>
+
+                            <div class="slds-grid slds-gutters slds-wrap">
+                                <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
+                                    <lightning-input
+                                        type="text"
+                                        label="Rule Label"
+                                        value={label}
+                                        onchange={handleLabelChange}
+                                        required
+                                        placeholder="e.g., Stale Opportunities Over 90 Days"
+                                        class="slds-m-bottom_small">
+                                    </lightning-input>
+                                </div>
+
+                                <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
+                                    <lightning-input
+                                        type="text"
+                                        label="Developer Name"
+                                        value={developerName}
+                                        onchange={handleDeveloperNameChange}
+                                        disabled={developerNameDisabled}
+                                        placeholder="Auto-generated from label"
+                                        field-level-help="Unique API name for this rule"
+                                        class="slds-m-bottom_small">
+                                    </lightning-input>
+                                </div>
+
+                                <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
+                                    <lightning-combobox
+                                        name="object"
+                                        label="Target Object"
+                                        value={objectApiName}
+                                        options={objectOptions}
+                                        onchange={handleObjectChange}
+                                        required
+                                        placeholder="Select an object..."
+                                        class="slds-m-bottom_small">
+                                    </lightning-combobox>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Step 2: Detection Logic -->
+                    <template if:true={isStepTwo}>
+                        <div class="slds-form slds-form_stacked">
+                            <h3 class="slds-text-heading_small slds-m-bottom_small">Detection Logic</h3>
+
+                            <div class="slds-grid slds-gutters slds-wrap slds-m-bottom_medium">
+                                <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
+                                    <lightning-combobox
+                                        name="logicType"
+                                        label="Logic Type"
+                                        value={logicType}
+                                        options={logicTypeOptions}
+                                        onchange={handleLogicTypeChange}
+                                        field-level-help="Standard: Use visual query builder. Apex Plugin: Use custom Apex class."
+                                        class="slds-m-bottom_small">
+                                    </lightning-combobox>
+                                </div>
+
+                                <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
+                                    <lightning-input
+                                        type="number"
+                                        label="Default Threshold"
+                                        value={thresholdDefault}
+                                        onchange={handleThresholdChange}
+                                        placeholder="e.g., 30"
+                                        field-level-help="Default value for threshold (e.g., days, count)"
+                                        class="slds-m-bottom_small">
+                                    </lightning-input>
+                                </div>
+                            </div>
+
+                            <!-- Standard/Declarative: Query Builder -->
+                            <template if:true={showQueryBuilder}>
+                                <c-query-condition-builder
+                                    object-api-name={objectApiName}
+                                    initial-condition={queryCondition}
+                                    onconditionchange={handleConditionChange}>
+                                </c-query-condition-builder>
+
+                                <!-- Test Query Button -->
+                                <div class="slds-m-top_medium slds-grid slds-grid_align-end">
+                                    <lightning-button
+                                        label="Test Query"
+                                        icon-name="utility:preview"
+                                        onclick={handleTestQuery}
+                                        disabled={isTesting}>
+                                        <template if:true={isTesting}>
+                                            <lightning-spinner alternative-text="Testing..." size="small"></lightning-spinner>
+                                        </template>
+                                    </lightning-button>
+                                </div>
+
+                                <!-- Test Result -->
+                                <template if:true={testResult}>
+                                    <div class={testResultClass}>
+                                        <lightning-icon icon-name={testResultIcon} size="x-small" class="slds-m-right_x-small"></lightning-icon>
+                                        {testResult.message}
+                                    </div>
+                                </template>
+                            </template>
+
+                            <!-- Apex Plugin: Handler Class -->
+                            <template if:true={isApexPlugin}>
+                                <div class="slds-box slds-box_x-small slds-theme_shade">
+                                    <h4 class="slds-text-heading_small slds-m-bottom_small">Apex Plugin Configuration</h4>
+                                    <p class="slds-text-body_small slds-text-color_weak slds-m-bottom_small">
+                                        Enter the fully qualified name of an Apex class that implements the PatternPlugin interface.
+                                    </p>
+                                    <lightning-input
+                                        type="text"
+                                        label="Apex Handler Class"
+                                        value={apexHandlerClass}
+                                        onchange={handleApexHandlerChange}
+                                        required
+                                        placeholder="e.g., ExpiredQuoteRequestPlugin">
+                                    </lightning-input>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+
+                    <!-- Step 3: Remediation -->
+                    <template if:true={isStepThree}>
+                        <div class="slds-form slds-form_stacked">
+                            <h3 class="slds-text-heading_small slds-m-bottom_small">Remediation Settings</h3>
+
+                            <div class="slds-grid slds-gutters slds-wrap slds-m-bottom_medium">
+                                <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
+                                    <lightning-combobox
+                                        name="fixType"
+                                        label="Fix Type"
+                                        value={fixType}
+                                        options={fixTypeOptions}
+                                        onchange={handleFixTypeChange}
+                                        required
+                                        class="slds-m-bottom_small">
+                                    </lightning-combobox>
+                                </div>
+
+                                <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
+                                    <lightning-input
+                                        type="number"
+                                        label="Cost Per Incident"
+                                        value={costPerIncident}
+                                        onchange={handleCostChange}
+                                        formatter="currency"
+                                        step="0.01"
+                                        placeholder="0.00"
+                                        field-level-help="Estimated cost/risk per detected incident for ROI calculations"
+                                        class="slds-m-bottom_small">
+                                    </lightning-input>
+                                </div>
+                            </div>
+
+                            <!-- Fix Config Editor -->
+                            <c-fix-config-editor
+                                fix-type={fixType}
+                                initial-config={fixConfig}
+                                onconfigchange={handleConfigChange}>
+                            </c-fix-config-editor>
+                        </div>
+                    </template>
+
+                    <!-- Step 4: Review -->
+                    <template if:true={isStepFour}>
+                        <div class="slds-form slds-form_stacked">
+                            <h3 class="slds-text-heading_small slds-m-bottom_small">Review & Save</h3>
+
+                            <div class="slds-box slds-theme_shade slds-m-bottom_medium">
+                                <dl class="slds-dl_horizontal">
+                                    <dt class="slds-dl_horizontal__label">Rule Label:</dt>
+                                    <dd class="slds-dl_horizontal__detail">{label}</dd>
+
+                                    <dt class="slds-dl_horizontal__label">Developer Name:</dt>
+                                    <dd class="slds-dl_horizontal__detail">{developerName}</dd>
+
+                                    <dt class="slds-dl_horizontal__label">Target Object:</dt>
+                                    <dd class="slds-dl_horizontal__detail">{objectApiName}</dd>
+
+                                    <dt class="slds-dl_horizontal__label">Logic Type:</dt>
+                                    <dd class="slds-dl_horizontal__detail">{logicType}</dd>
+
+                                    <dt class="slds-dl_horizontal__label">Fix Type:</dt>
+                                    <dd class="slds-dl_horizontal__detail">{fixType}</dd>
+
+                                    <template if:true={isPremium}>
+                                        <dt class="slds-dl_horizontal__label">Premium:</dt>
+                                        <dd class="slds-dl_horizontal__detail">Yes</dd>
+                                    </template>
+
+                                    <template if:true={costPerIncident}>
+                                        <dt class="slds-dl_horizontal__label">Cost Per Incident:</dt>
+                                        <dd class="slds-dl_horizontal__detail">
+                                            <lightning-formatted-number value={costPerIncident} format-style="currency" currency-code="USD"></lightning-formatted-number>
+                                        </dd>
+                                    </template>
+
+                                    <template if:true={queryCondition}>
+                                        <dt class="slds-dl_horizontal__label">Query Condition:</dt>
+                                        <dd class="slds-dl_horizontal__detail">
+                                            <code class="slds-text-body_small">{queryCondition}</code>
+                                        </dd>
+                                    </template>
+
+                                    <template if:true={apexHandlerClass}>
+                                        <dt class="slds-dl_horizontal__label">Apex Handler:</dt>
+                                        <dd class="slds-dl_horizontal__detail">{apexHandlerClass}</dd>
+                                    </template>
+                                </dl>
+                            </div>
+
+                            <div class="slds-notify slds-notify_alert slds-alert_warning" role="alert">
+                                <lightning-icon icon-name="utility:warning" size="x-small" variant="warning" class="slds-m-right_x-small"></lightning-icon>
+                                <span class="slds-text-body_small">
+                                    Custom metadata deployment is asynchronous. Changes may take a moment to appear.
+                                </span>
+                            </div>
+                        </div>
+                    </template>
+                </template>
+            </div>
+
+            <!-- Footer -->
+            <footer class="slds-modal__footer slds-grid slds-grid_align-spread">
+                <lightning-button
+                    label="Cancel"
+                    onclick={handleClose}>
+                </lightning-button>
+
+                <div>
+                    <template if:true={canGoBack}>
+                        <lightning-button
+                            label="Back"
+                            icon-name="utility:back"
+                            onclick={handleBack}
+                            class="slds-m-right_x-small">
+                        </lightning-button>
+                    </template>
+
+                    <lightning-button
+                        label={nextButtonLabel}
+                        variant={nextButtonVariant}
+                        icon-name="utility:forward"
+                        icon-position="right"
+                        onclick={handleNext}
+                        disabled={isSaveDisabled}>
+                        <template if:true={isSaving}>
+                            <lightning-spinner alternative-text="Saving..." size="small"></lightning-spinner>
+                        </template>
+                    </lightning-button>
+                </div>
+            </footer>
+        </div>
+    </section>
+    <div class="slds-backdrop slds-backdrop_open"></div>
+</template>

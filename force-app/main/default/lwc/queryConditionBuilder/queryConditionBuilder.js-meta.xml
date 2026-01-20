@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>62.0</apiVersion>
+    <isExposed>false</isExposed>
+    <masterLabel>Query Condition Builder</masterLabel>
+    <description>Visual SOQL WHERE clause builder for pattern detection rules</description>
+</LightningComponentBundle>

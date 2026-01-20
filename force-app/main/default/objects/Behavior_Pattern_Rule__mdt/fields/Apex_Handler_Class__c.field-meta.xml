@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Apex_Handler_Class__c</fullName>
+    <description>The fully qualified name of an Apex class that implements the PatternPlugin interface. Only used when Logic_Type__c is set to Apex_Plugin. The class must be global and implement both analyze() and fix() methods.</description>
+    <externalId>false</externalId>
+    <fieldManageability>DeveloperControlled</fieldManageability>
+    <inlineHelpText>Enter the Apex class name (e.g., MyCustomPlugin or MyNamespace.MyPlugin). The class must implement the PatternPlugin interface.</inlineHelpText>
+    <label>Apex Handler Class</label>
+    <length>255</length>
+    <required>false</required>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

@@ -1,0 +1,21 @@
+.query-builder {
+    background-color: var(--slds-g-color-neutral-base-95, #f3f3f3);
+}
+
+.condition-item {
+    background-color: white;
+    border-radius: 0.25rem;
+}
+
+.condition-text {
+    font-size: 0.875rem;
+}
+
+.condition-text strong {
+    color: var(--slds-g-color-brand-base-50, #0176d3);
+}
+
+.condition-text em {
+    color: var(--slds-g-color-neutral-base-30, #706e6b);
+    font-style: normal;
+}

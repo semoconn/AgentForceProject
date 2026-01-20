@@ -68,7 +68,8 @@ public with sharing class PatternFixService {
             rule = mockRule;
         } else {
             rule = [
-                SELECT Fix_Type__c, Fix_Config__c, Is_Premium__c
+                SELECT Fix_Type__c, Fix_Config__c, Is_Premium__c,
+                       Logic_Type__c, Apex_Handler_Class__c
                 FROM Behavior_Pattern_Rule__mdt
                 WHERE DeveloperName = :ruleDeveloperName
                 LIMIT 1
@@ -86,8 +87,38 @@ public with sharing class PatternFixService {
             config = (Map<String, Object>)JSON.deserializeUntyped(rule.Fix_Config__c);
         }
 
-        // 4. Route Execution
-        switch on rule.Fix_Type__c {
+        // 4. Route Execution based on Logic Type
+        String logicType = String.isNotBlank(rule.Logic_Type__c) ? rule.Logic_Type__c : 'Standard';
+
+        switch on logicType {
+            when 'Apex_Plugin' {
+                // Invoke custom plugin for fix
+                executePluginFix(rule, recordIds, config);
+            }
+            when 'Declarative' {
+                // Execute declarative JSON-based actions
+                executeDeclarativeFix(recordIds, rule.Fix_Config__c);
+            }
+            when else {
+                // 'Standard' - use existing Fix_Type__c routing
+                executeStandardFix(rule.Fix_Type__c, recordIds, config);
+            }
+        }
+
+        // 5. Persist all audit logs
+        insertPendingLogs();
+    }
+
+    // --- LOGIC TYPE ROUTING ---
+
+    /**
+     * @description Routes to standard fix handlers based on Fix_Type__c.
+     * @param fixType The fix type from the rule
+     * @param recordIds Records to fix
+     * @param config Configuration from Fix_Config__c
+     */
+    private void executeStandardFix(String fixType, List<Id> recordIds, Map<String, Object> config) {
+        switch on fixType {
             when 'Task_Creation' {
                 createTasks(recordIds, config);
             }
@@ -110,15 +141,69 @@ public with sharing class PatternFixService {
                 logNoAction(recordIds, config);
             }
             when else {
-                throw new AuraHandledException('Unknown Fix Type: ' + rule.Fix_Type__c);
+                throw new AuraHandledException('Unknown Fix Type: ' + fixType);
             }
         }
-
-        // 5. Persist all audit logs
-        insertPendingLogs();
     }
 
-    // --- FIX IMPLEMENTATIONS ---
+    /**
+     * @description Executes fix using a custom Apex plugin.
+     * @param rule The pattern rule with plugin configuration
+     * @param recordIds Records to fix
+     * @param config Configuration from Fix_Config__c
+     */
+    private void executePluginFix(Behavior_Pattern_Rule__mdt rule, List<Id> recordIds, Map<String, Object> config) {
+        String handlerClass = rule.Apex_Handler_Class__c;
+
+        if (String.isBlank(handlerClass)) {
+            throw new AuraHandledException('Rule has Logic_Type__c = Apex_Plugin but no Apex_Handler_Class__c specified.');
+        }
+
+        try {
+            PatternPluginResult result = PluginInvoker.invokeFix(handlerClass, recordIds, config);
+
+            // Add plugin's audit logs to our pending logs
+            if (result.auditLogs != null && !result.auditLogs.isEmpty()) {
+                pendingLogs.addAll(result.auditLogs);
+            }
+
+            // If plugin had failures, throw exception to notify user
+            if (result.hasFailures()) {
+                String errorSummary = result.failureCount + ' of ' + result.getTotalProcessed() + ' records failed. ';
+                if (!result.errorMessages.isEmpty()) {
+                    errorSummary += 'First error: ' + result.errorMessages[0];
+                }
+                throw new AuraHandledException(errorSummary);
+            }
+
+        } catch (PluginInvoker.PluginException pe) {
+            // Log failure for all records
+            for (Id recId : recordIds) {
+                addLog(recId, 'Apex_Plugin', null, null, STATUS_FAILED, pe.getMessage());
+            }
+            throw new AuraHandledException('Plugin execution failed: ' + pe.getMessage());
+        }
+    }
+
+    /**
+     * @description Executes declarative JSON-based fix actions.
+     * @param recordIds Records to fix
+     * @param fixConfigJson JSON configuration with declarative actions
+     */
+    private void executeDeclarativeFix(List<Id> recordIds, String fixConfigJson) {
+        if (String.isBlank(fixConfigJson)) {
+            throw new AuraHandledException('Declarative fix requires configuration in Fix_Config__c.');
+        }
+
+        try {
+            DeclarativeFixExecutor executor = new DeclarativeFixExecutor(this.pendingLogs, this.currentRuleName);
+            executor.execute(recordIds, fixConfigJson);
+        } catch (DeclarativeFixExecutor.DeclarativeFixException dfe) {
+            throw new AuraHandledException('Declarative fix failed: ' + dfe.getMessage());
+        }
+    }
+
+    // --- STANDARD FIX IMPLEMENTATIONS ---
 
     private void createTasks(List<Id> recordIds, Map<String, Object> config) {
         if (!Schema.sObjectType.Task.isCreateable()) {
