@@ -1,0 +1,115 @@
+<template>
+    <div class="slds-box slds-box_x-small slds-theme_shade fix-config-editor">
+        <h3 class="slds-text-heading_small slds-m-bottom_small">
+            <lightning-icon icon-name="utility:settings" size="x-small" class="slds-m-right_x-small"></lightning-icon>
+            Fix Configuration
+        </h3>
+
+        <!-- Description -->
+        <template if:true={configDescription}>
+            <p class="slds-text-body_small slds-text-color_weak slds-m-bottom_small">
+                {configDescription}
+            </p>
+        </template>
+
+        <!-- No Action Message -->
+        <template if:true={isNoAction}>
+            <div class="slds-box slds-box_x-small slds-theme_default slds-m-top_small">
+                <div class="slds-media slds-media_center">
+                    <div class="slds-media__figure">
+                        <lightning-icon icon-name="utility:info" size="small" variant="inverse" class="info-icon"></lightning-icon>
+                    </div>
+                    <div class="slds-media__body">
+                        <p class="slds-text-body_small">
+                            This rule will only detect records without taking any automatic action.
+                            Use this for monitoring and manual review.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </template>
+
+        <!-- Config Fields -->
+        <template if:true={hasFields}>
+            <div class="slds-form slds-form_stacked">
+                <template for:each={configFields} for:item="field">
+                    <div key={field.name} class="slds-form-element slds-m-bottom_small">
+                        <!-- Text Input -->
+                        <template if:true={field.isText}>
+                            <lightning-input
+                                type="text"
+                                label={field.label}
+                                value={field.value}
+                                placeholder={field.placeholder}
+                                required={field.required}
+                                data-field={field.name}
+                                onchange={handleInputChange}
+                                field-level-help={field.helpText}>
+                            </lightning-input>
+                        </template>
+
+                        <!-- Number Input -->
+                        <template if:true={field.isNumber}>
+                            <lightning-input
+                                type="number"
+                                label={field.label}
+                                value={field.value}
+                                placeholder={field.placeholder}
+                                required={field.required}
+                                data-field={field.name}
+                                onchange={handleInputChange}
+                                field-level-help={field.helpText}>
+                            </lightning-input>
+                        </template>
+
+                        <!-- Textarea Input -->
+                        <template if:true={field.isTextarea}>
+                            <lightning-textarea
+                                label={field.label}
+                                value={field.value}
+                                placeholder={field.placeholder}
+                                required={field.required}
+                                data-field={field.name}
+                                onchange={handleInputChange}
+                                field-level-help={field.helpText}>
+                            </lightning-textarea>
+                        </template>
+
+                        <!-- Checkbox Input -->
+                        <template if:true={field.isCheckbox}>
+                            <lightning-input
+                                type="checkbox"
+                                label={field.label}
+                                checked={field.checked}
+                                data-field={field.name}
+                                onchange={handleInputChange}
+                                field-level-help={field.helpText}>
+                            </lightning-input>
+                        </template>
+
+                        <!-- Picklist Input -->
+                        <template if:true={field.isPicklist}>
+                            <lightning-combobox
+                                label={field.label}
+                                value={field.value}
+                                placeholder="Select..."
+                                options={field.options}
+                                required={field.required}
+                                data-field={field.name}
+                                onchange={handlePicklistChange}
+                                field-level-help={field.helpText}>
+                            </lightning-combobox>
+                        </template>
+                    </div>
+                </template>
+            </div>
+        </template>
+
+        <!-- No Fix Type Selected -->
+        <template if:false={currentConfig}>
+            <div class="slds-text-body_small slds-text-color_weak slds-p-around_medium slds-text-align_center">
+                Select a Fix Type to configure remediation options.
+            </div>
+        </template>
+    </div>
+</template>

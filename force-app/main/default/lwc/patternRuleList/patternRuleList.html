@@ -1,0 +1,20 @@
+<template>
+    <template if:true={isProcessing}>
+        <div class="slds-is-relative" style="height: 100px;">
+            <lightning-spinner alternative-text="Processing..." size="medium"></lightning-spinner>
+        </div>
+    </template>
+
+    <template if:false={isProcessing}>
+        <template if:true={hasRules}>
+            <lightning-datatable
+                key-field="id"
+                data={tableData}
+                columns={columns}
+                onrowaction={handleRowAction}
+                hide-checkbox-column
+                show-row-number-column>
+            </lightning-datatable>
+        </template>
+    </template>
+</template>

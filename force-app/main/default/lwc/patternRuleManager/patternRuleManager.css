@@ -1,0 +1,5 @@
+.filter-container {
+    background-color: var(--slds-g-color-neutral-base-95, #f3f3f3);
+    padding: 0.5rem 1rem;
+    border-radius: 0.25rem;
+}

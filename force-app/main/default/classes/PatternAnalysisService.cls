@@ -84,11 +84,14 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
             }
         }
 
-        // Fetch all defined rules from Metadata
+        // Fetch all active rules from Metadata (including plugin fields)
+        // Is_Active__c defaults to true, so we include rules where Is_Active__c is true OR null (for backward compatibility)
         return [
             SELECT DeveloperName, MasterLabel, Object_API_Name__c, Query_Condition__c,
-                   Is_Premium__c, Threshold_Default__c, Cost_Per_Incident__c
+                   Is_Premium__c, Threshold_Default__c, Cost_Per_Incident__c,
+                   Logic_Type__c, Apex_Handler_Class__c, Fix_Config__c, Is_Active__c
             FROM Behavior_Pattern_Rule__mdt
+            WHERE Is_Active__c = true OR Is_Active__c = null
         ];
     }
 
@@ -106,14 +109,81 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
             return;
         }
 
-        // Build and execute the detection query
-        List<SObject> detectedRecords = executeDetectionQuery(rule, objectApiName);
+        // Route based on Logic Type (default to 'Standard' for backward compatibility)
+        String logicType = String.isNotBlank(rule.Logic_Type__c) ? rule.Logic_Type__c : 'Standard';
+
+        List<SObject> detectedRecords;
+
+        switch on logicType {
+            when 'Apex_Plugin' {
+                // Invoke custom plugin for analysis
+                detectedRecords = executePluginAnalysis(rule, objectApiName);
+            }
+            when else {
+                // 'Standard' and 'Declarative' both use Query_Condition__c for detection
+                detectedRecords = executeDetectionQuery(rule, objectApiName);
+            }
+        }
+
         if (detectedRecords == null || detectedRecords.isEmpty()) {
             return;
         }
 
         // Generate and persist the pain point
         persistDetectionResults(rule, objectApiName, detectedRecords);
+    }
+
+    /**
+     * @description Executes pattern analysis using a custom Apex plugin.
+     * @param rule The pattern rule with plugin configuration
+     * @param objectApiName The target object API name
+     * @return List of detected records from plugin, or null if execution failed
+     */
+    private List<SObject> executePluginAnalysis(Behavior_Pattern_Rule__mdt rule, String objectApiName) {
+        String handlerClass = rule.Apex_Handler_Class__c;
+
+        if (String.isBlank(handlerClass)) {
+            System.debug(LoggingLevel.ERROR, 'Rule [' + rule.DeveloperName + '] has Logic_Type__c = Apex_Plugin but no Apex_Handler_Class__c specified.');
+            return null;
+        }
+
+        try {
+            // Build context for plugin
+            Map<String, Object> config = new Map<String, Object>();
+            if (String.isNotBlank(rule.Fix_Config__c)) {
+                config = (Map<String, Object>) JSON.deserializeUntyped(rule.Fix_Config__c);
+            }
+
+            PatternPluginContext context = new PatternPluginContext(
+                objectApiName,
+                rule.Query_Condition__c,
+                config,
+                rule.DeveloperName
+            );
+
+            // Invoke plugin analyze method
+            List<Id> matchedIds = PluginInvoker.invokeAnalyze(handlerClass, context);
+
+            if (matchedIds == null || matchedIds.isEmpty()) {
+                return new List<SObject>();
+            }
+
+            // Query full records for the matched IDs to enable impact calculation
+            String selectFields = getSelectFieldsForObject(objectApiName);
+            String queryString = 'SELECT ' + selectFields +
+                                 ' FROM ' + String.escapeSingleQuotes(objectApiName) +
+                                 ' WHERE Id IN :matchedIds' +
+                                 ' LIMIT 2000';
+
+            return Database.query(queryString);
+
+        } catch (PluginInvoker.PluginException pe) {
+            System.debug(LoggingLevel.ERROR, 'Plugin execution failed for rule [' + rule.DeveloperName + ']: ' + pe.getMessage());
+            return null;
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'Unexpected error in plugin analysis for rule [' + rule.DeveloperName + ']: ' + e.getMessage());
+            return null;
+        }
     }
 
     /**

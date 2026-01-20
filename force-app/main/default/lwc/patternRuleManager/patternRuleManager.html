@@ -1,0 +1,175 @@
+<template>
+    <lightning-card icon-name="utility:rules" title="Pattern Rules">
+        <!-- License Loading State -->
+        <template if:true={isLicenseLoading}>
+            <div class="slds-p-around_large slds-align_absolute-center" style="min-height: 300px;">
+                <lightning-spinner alternative-text="Loading..." size="medium"></lightning-spinner>
+            </div>
+        </template>
+
+        <!-- Upgrade Screen for Free Users -->
+        <template if:true={showUpgradeScreen}>
+            <div class="slds-p-around_medium">
+                <!-- Header -->
+                <div class="slds-box slds-box_small slds-theme_shade slds-text-align_center slds-m-bottom_medium">
+                    <lightning-icon icon-name="utility:lock" size="large" class="slds-m-bottom_small"></lightning-icon>
+                    <h2 class="slds-text-heading_medium slds-m-bottom_x-small">Premium Feature</h2>
+                    <p class="slds-text-color_weak">
+                        Custom Pattern Rule creation and management requires a BehaviorIQ Premium license.
+                    </p>
+                </div>
+
+                <!-- Feature Benefits -->
+                <div class="slds-grid slds-gutters slds-wrap slds-m-bottom_medium">
+                    <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-3 slds-p-around_x-small">
+                        <div class="slds-box slds-box_x-small" style="height: 100%;">
+                            <div class="slds-text-align_center slds-m-bottom_small">
+                                <lightning-icon icon-name="utility:edit" size="medium"></lightning-icon>
+                            </div>
+                            <h3 class="slds-text-heading_small slds-text-align_center">Create Custom Rules</h3>
+                            <p class="slds-text-body_small slds-text-color_weak slds-text-align_center">
+                                Define your own pattern detection rules tailored to your business processes.
+                            </p>
+                        </div>
+                    </div>
+                    <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-3 slds-p-around_x-small">
+                        <div class="slds-box slds-box_x-small" style="height: 100%;">
+                            <div class="slds-text-align_center slds-m-bottom_small">
+                                <lightning-icon icon-name="utility:apex" size="medium"></lightning-icon>
+                            </div>
+                            <h3 class="slds-text-heading_small slds-text-align_center">Apex Plugin Support</h3>
+                            <p class="slds-text-body_small slds-text-color_weak slds-text-align_center">
+                                Extend detection logic with custom Apex classes for complex business rules.
+                            </p>
+                        </div>
+                    </div>
+                    <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-3 slds-p-around_x-small">
+                        <div class="slds-box slds-box_x-small" style="height: 100%;">
+                            <div class="slds-text-align_center slds-m-bottom_small">
+                                <lightning-icon icon-name="utility:database" size="medium"></lightning-icon>
+                            </div>
+                            <h3 class="slds-text-heading_small slds-text-align_center">Custom Objects</h3>
+                            <p class="slds-text-body_small slds-text-color_weak slds-text-align_center">
+                                Track patterns on any custom object in your org, not just standard objects.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CTA Button -->
+                <div class="slds-text-align_center">
+                    <lightning-button
+                        variant="brand"
+                        label="Upgrade to Premium"
+                        icon-name="utility:diamond"
+                        onclick={handleUpgradeClick}>
+                    </lightning-button>
+                    <p class="slds-text-color_weak slds-m-top_small slds-text-body_small">
+                        Contact your Salesforce administrator or visit AppExchange to upgrade.
+                    </p>
+                </div>
+            </div>
+        </template>
+
+        <!-- Premium User: Full Rule Manager -->
+        <template if:true={showRuleManager}>
+            <div slot="actions">
+                <lightning-button-icon
+                    icon-name="utility:refresh"
+                    alternative-text="Refresh"
+                    title="Refresh Rules"
+                    onclick={handleRefresh}
+                    class="slds-m-right_x-small">
+                </lightning-button-icon>
+                <lightning-button
+                    variant="brand"
+                    label="Create Rule"
+                    icon-name="utility:add"
+                    onclick={handleCreateRule}>
+                </lightning-button>
+            </div>
+
+            <div class="slds-p-horizontal_medium slds-p-bottom_medium">
+                <p class="slds-text-body_small slds-text-color_weak slds-m-bottom_medium">
+                    Create and manage pattern detection rules. Rules define which records to detect and how to remediate them.
+                </p>
+
+                <!-- Filter Bar -->
+                <div class="slds-m-bottom_small filter-container slds-grid slds-grid_vertical-align-center">
+                    <span class="slds-text-title_caps slds-m-right_small">Filter:</span>
+                    <lightning-button-group>
+                        <lightning-button
+                            label={allLabel}
+                            variant={allVariant}
+                            onclick={handleFilterAll}>
+                        </lightning-button>
+                        <lightning-button
+                            label={activeLabel}
+                            variant={activeVariant}
+                            onclick={handleFilterActive}>
+                        </lightning-button>
+                        <lightning-button
+                            label={inactiveLabel}
+                            variant={inactiveVariant}
+                            onclick={handleFilterInactive}>
+                        </lightning-button>
+                        <lightning-button
+                            label={premiumLabel}
+                            variant={premiumVariant}
+                            onclick={handleFilterPremium}>
+                        </lightning-button>
+                    </lightning-button-group>
+                    <div class="slds-col_bump-left slds-text-body_small slds-text-color_weak">
+                        Showing <strong>{ruleCount}</strong> of <strong>{totalCount}</strong> rules
+                    </div>
+                </div>
+
+                <!-- Loading Spinner -->
+                <template if:true={isLoading}>
+                    <div class="slds-is-relative" style="height: 200px;">
+                        <lightning-spinner alternative-text="Loading..." size="medium" variant="brand"></lightning-spinner>
+                    </div>
+                </template>
+
+                <!-- Rule List -->
+                <template if:false={isLoading}>
+                    <c-pattern-rule-list
+                        rules={filteredRules}
+                        onedit={handleEditRule}
+                        onclone={handleCloneRule}
+                        ondeactivate={handleDeactivateRule}
+                        onreactivate={handleReactivateRule}
+                        onruleupdated={handleRuleUpdated}>
+                    </c-pattern-rule-list>
+
+                    <!-- Empty State -->
+                    <template if:false={hasRules}>
+                        <div class="slds-illustration slds-illustration_small slds-p-around_medium slds-align_absolute-center">
+                            <div class="slds-text-longform">
+                                <h3 class="slds-text-heading_medium">No Rules Found</h3>
+                                <p class="slds-text-body_regular">
+                                    <template if:true={isFilterActive}>
+                                        No rules match the current filter. Try a different filter or create a new rule.
+                                    </template>
+                                    <template if:false={isFilterActive}>
+                                        Get started by creating your first pattern detection rule.
+                                    </template>
+                                </p>
+                            </div>
+                        </div>
+                    </template>
+                </template>
+            </div>
+        </template>
+    </lightning-card>
+
+    <!-- Rule Editor Modal -->
+    <template if:true={isEditorOpen}>
+        <c-pattern-rule-editor
+            mode={editorMode}
+            rule={selectedRule}
+            onclose={handleEditorClose}
+            onsave={handleEditorSave}>
+        </c-pattern-rule-editor>
+    </template>
+</template>
