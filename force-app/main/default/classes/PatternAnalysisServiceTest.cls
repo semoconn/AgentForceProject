@@ -2479,7 +2479,12 @@ private with sharing class PatternAnalysisServiceTest {
                 PatternAnalysisService.getPatternMatches('Stale_Case_30', 50, '');
                 System.assert(false, 'Should have thrown exception');
             } catch (AuraHandledException e) {
-                System.assert(e.getMessage() != null, 'Exception should have message');
+                // Validate specific error message for query exception path
+                System.assert(
+                    e.getMessage().contains('Unable to query records') ||
+                    e.getMessage().contains('Script-thrown'),
+                    'Exception should contain query error message. Got: ' + e.getMessage()
+                );
             }
         }
         Test.stopTest();
@@ -2499,7 +2504,12 @@ private with sharing class PatternAnalysisServiceTest {
                 PatternAnalysisService.getPatternMatches('Stale_Case_30', 50, '');
                 System.assert(false, 'Should have thrown exception');
             } catch (AuraHandledException e) {
-                System.assert(e.getMessage() != null, 'Exception should have message');
+                // Validate specific error message for general exception path
+                System.assert(
+                    e.getMessage().contains('Error retrieving records') ||
+                    e.getMessage().contains('Script-thrown'),
+                    'Exception should contain retrieval error message. Got: ' + e.getMessage()
+                );
             }
         }
         Test.stopTest();
@@ -2575,6 +2585,9 @@ private with sharing class PatternAnalysisServiceTest {
     static void testForceObjectNotAccessible() {
         User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
 
+        // Count pain points before to verify no new ones created when object inaccessible
+        Integer painPointsBefore = [SELECT COUNT() FROM Identified_Pain_Point__c];
+
         Test.startTest();
         PatternAnalysisService.forceObjectNotAccessible = true;
         System.runAs(testUser) {
@@ -2584,11 +2597,18 @@ private with sharing class PatternAnalysisServiceTest {
 
         // Batch should complete - rules are skipped when object not accessible
         List<AsyncApexJob> jobs = [
-            SELECT Id, Status FROM AsyncApexJob
+            SELECT Id, Status, NumberOfErrors FROM AsyncApexJob
             WHERE ApexClass.Name = 'PatternAnalysisService'
             ORDER BY CreatedDate DESC LIMIT 1
         ];
         System.assertEquals(1, jobs.size(), 'Batch job should exist');
+        System.assertEquals('Completed', jobs[0].Status, 'Batch should complete successfully');
+        System.assertEquals(0, jobs[0].NumberOfErrors, 'Batch should have no errors');
+
+        // Verify no new pain points created when object is inaccessible (rules skipped)
+        Integer painPointsAfter = [SELECT COUNT() FROM Identified_Pain_Point__c];
+        System.assertEquals(painPointsBefore, painPointsAfter,
+            'No new pain points should be created when object is not accessible');
 
         PatternAnalysisService.resetTestFlags();
         clearMocks();
@@ -3611,4 +3631,52 @@ private with sharing class PatternAnalysisServiceTest {
         clearMocks();
     }
     */
+
+    // ==================== BOUNDARY TESTS ====================
+
+    /**
+     * @description Tests extractBaseRuleName with blank input (line 330-331)
+     */
+    @isTest
+    static void testExtractBaseRuleName_BlankInput() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        Test.startTest();
+        System.runAs(testUser) {
+            // Test with null
+            String result1 = PatternAnalysisService.extractBaseRuleName(null);
+            System.assertEquals(null, result1, 'Null input should return null');
+
+            // Test with blank
+            String result2 = PatternAnalysisService.extractBaseRuleName('');
+            System.assertEquals('', result2, 'Blank input should return blank');
+
+            // Test with single word (no underscores)
+            String result3 = PatternAnalysisService.extractBaseRuleName('SingleWord');
+            System.assertEquals('SingleWord', result3, 'Single word should return itself');
+        }
+        Test.stopTest();
+
+        clearMocks();
+    }
+
+    /**
+     * @description Tests extractBaseRuleName finding a matching rule (line 346-347)
+     */
+    @isTest
+    static void testExtractBaseRuleName_WithTimestampSuffix() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        Test.startTest();
+        System.runAs(testUser) {
+            // Test with timestamped key - should try to find base rule
+            // Even if no match is found, it exercises the while loop
+            String result = PatternAnalysisService.extractBaseRuleName('Some_Rule_Name_1234567890');
+            // Result depends on whether a matching rule exists
+            System.assertNotEquals(null, result, 'Should return a non-null result');
+        }
+        Test.stopTest();
+
+        clearMocks();
+    }
 }
