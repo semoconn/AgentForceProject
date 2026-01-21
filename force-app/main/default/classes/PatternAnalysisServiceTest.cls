@@ -72,6 +72,10 @@ private with sharing class PatternAnalysisServiceTest {
             UserName = 'testpas' + uniqueifier + '@testorg.com'
         );
         insert testUser;
+
+        // Assign BehaviorIQ_Admin permission set to test user for FLS access
+        PermissionSet ps = [SELECT Id FROM PermissionSet WHERE Name = 'BehaviorIQ_Admin' LIMIT 1];
+        insert new PermissionSetAssignment(AssigneeId = testUser.Id, PermissionSetId = ps.Id);
     }
 
     // ==================== BATCH EXECUTION TESTS ====================

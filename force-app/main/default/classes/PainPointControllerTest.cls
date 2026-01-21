@@ -10,21 +10,25 @@ private with sharing class PainPointControllerTest {
         // Create an Admin user for running system tests
         Profile p = [SELECT Id FROM Profile WHERE Name = 'System Administrator'];
         User adminUser = new User(
-            Alias = 'testpp', Email='testpp' + System.currentTimeMillis() + '@testorg.com', 
-            EmailEncodingKey='UTF-8', LastName='TestPP', LanguageLocaleKey='en_US', 
-            LocaleSidKey='en_US', ProfileId = p.Id, TimeZoneSidKey='America/Los_Angeles', 
+            Alias = 'testpp', Email='testpp' + System.currentTimeMillis() + '@testorg.com',
+            EmailEncodingKey='UTF-8', LastName='TestPP', LanguageLocaleKey='en_US',
+            LocaleSidKey='en_US', ProfileId = p.Id, TimeZoneSidKey='America/Los_Angeles',
             UserName='testpp' + System.currentTimeMillis() + '@testorg.com'
         );
         insert adminUser;
-        
+
+        // Assign BehaviorIQ_Admin permission set to admin user for FLS access
+        PermissionSet ps = [SELECT Id FROM PermissionSet WHERE Name = 'BehaviorIQ_Admin' LIMIT 1];
+        insert new PermissionSetAssignment(AssigneeId = adminUser.Id, PermissionSetId = ps.Id);
+
         // Create a user with minimal permissions (Standard User) for negative FLS tests
         // NOTE: In a real scenario, configure this user's profile/perm sets properly to lack access
         // to Identified_Pain_Point__c and/or Suggestion_Dismissal__c for precise testing.
-        Profile pStd = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1]; 
+        Profile pStd = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
         User noAccessUser = new User(
-            Alias = 'noperm', Email='noperm' + System.currentTimeMillis() + '@testorg.com', 
-            EmailEncodingKey='UTF-8', LastName='NoPerm', LanguageLocaleKey='en_US', 
-            LocaleSidKey='en_US', ProfileId = pStd.Id, TimeZoneSidKey='America/Los_Angeles', 
+            Alias = 'noperm', Email='noperm' + System.currentTimeMillis() + '@testorg.com',
+            EmailEncodingKey='UTF-8', LastName='NoPerm', LanguageLocaleKey='en_US',
+            LocaleSidKey='en_US', ProfileId = pStd.Id, TimeZoneSidKey='America/Los_Angeles',
             UserName='noperm' + System.currentTimeMillis() + '@testorg.com'
         );
         insert noAccessUser;
@@ -57,28 +61,44 @@ private with sharing class PainPointControllerTest {
     @isTest
     static void test01_GetOpenPainPoints_Success() {
         User testUser = [SELECT Id FROM User WHERE Alias = 'testpp' LIMIT 1];
-        
+
         System.runAs(testUser) {
             Test.startTest();
             List<Identified_Pain_Point__c> openPoints = PainPointController.getOpenPainPoints();
             Test.stopTest();
-            
+
             // Expected: 5 (New) + 1 (Acknowledged) = 6. Dismissed is excluded.
             System.assertEquals(6, openPoints.size(), 'Should return all non-dismissed pain points.');
-            
-            Boolean dismissedFound = false;
+
+            // Re-query to get Status__c directly since stripInaccessible may have removed it
+            Set<Id> returnedIds = new Set<Id>();
             for (Identified_Pain_Point__c pp : openPoints) {
+                returnedIds.add(pp.Id);
+            }
+
+            // Verify none of the returned records are Dismissed
+            List<Identified_Pain_Point__c> verifyRecords = [
+                SELECT Id, Status__c, Last_Detected__c
+                FROM Identified_Pain_Point__c
+                WHERE Id IN :returnedIds
+            ];
+
+            Boolean dismissedFound = false;
+            for (Identified_Pain_Point__c pp : verifyRecords) {
                 if (pp.Status__c == 'Dismissed') {
                     dismissedFound = true;
                     break;
                 }
             }
-             System.assert(!dismissedFound, 'Dismissed pain points should be excluded.');
+            System.assert(!dismissedFound, 'Dismissed pain points should be excluded.');
 
-             // Verify sorting (most recent Last_Detected__c first)
-             for(Integer i = 0; i < openPoints.size() - 1; i++) {
-                 System.assert(openPoints[i].Last_Detected__c >= openPoints[i+1].Last_Detected__c, 'Results should be sorted by Last_Detected__c DESC.');
-             }
+            // Verify sorting (most recent Last_Detected__c first) using re-queried data
+            Map<Id, Identified_Pain_Point__c> verifyMap = new Map<Id, Identified_Pain_Point__c>(verifyRecords);
+            for(Integer i = 0; i < openPoints.size() - 1; i++) {
+                Identified_Pain_Point__c current = verifyMap.get(openPoints[i].Id);
+                Identified_Pain_Point__c next = verifyMap.get(openPoints[i+1].Id);
+                System.assert(current.Last_Detected__c >= next.Last_Detected__c, 'Results should be sorted by Last_Detected__c DESC.');
+            }
         }
     }
     
@@ -139,8 +159,11 @@ private with sharing class PainPointControllerTest {
     @isTest
     static void test05_DismissPainPoint_Success() {
         User testUser = [SELECT Id FROM User WHERE Alias = 'testpp' LIMIT 1];
-        Identified_Pain_Point__c ppToDismiss = [SELECT Id, Unique_Key__c FROM Identified_Pain_Point__c WHERE Unique_Key__c = 'KEY-PP-0' LIMIT 1];
+        Identified_Pain_Point__c ppToDismiss = [SELECT Id, Unique_Key__c, Status__c FROM Identified_Pain_Point__c WHERE Unique_Key__c = 'KEY-PP-0' LIMIT 1];
         String dismissalReason = 'Reason: No longer relevant';
+
+        // Ensure the pain point is not already dismissed
+        System.assertNotEquals('Dismissed', ppToDismiss.Status__c, 'Pain Point should not be dismissed initially.');
 
         Test.startTest();
         System.runAs(testUser) {
@@ -148,14 +171,14 @@ private with sharing class PainPointControllerTest {
         }
         Test.stopTest();
 
-        // Verify PP status updated
-        Identified_Pain_Point__c updatedPP = [SELECT Status__c FROM Identified_Pain_Point__c WHERE Id = :ppToDismiss.Id];
+        // Verify PP status updated - query directly to avoid stripInaccessible issues
+        Identified_Pain_Point__c updatedPP = [SELECT Status__c FROM Identified_Pain_Point__c WHERE Id = :ppToDismiss.Id LIMIT 1];
         System.assertEquals('Dismissed', updatedPP.Status__c, 'Pain Point status should be updated to Dismissed.');
-        
+
         // Verify Dismissal Log created and reason logged
-        Suggestion_Dismissal__c dismissalLog = [SELECT Dismissal_Key__c, Action_Name__c FROM Suggestion_Dismissal__c WHERE Dismissal_Key__c = :ppToDismiss.Unique_Key__c];
-        System.assertNotEquals(null, dismissalLog, 'A dismissal log record should be created.');
-        System.assertEquals(dismissalReason, dismissalLog.Action_Name__c, 'The reason field should contain the dismissal reason.');
+        List<Suggestion_Dismissal__c> dismissalLogs = [SELECT Dismissal_Key__c, Action_Name__c FROM Suggestion_Dismissal__c WHERE Dismissal_Key__c = :ppToDismiss.Unique_Key__c];
+        System.assertEquals(1, dismissalLogs.size(), 'A dismissal log record should be created.');
+        System.assertEquals(dismissalReason, dismissalLogs[0].Action_Name__c, 'The reason field should contain the dismissal reason.');
     }
     
     @isTest
