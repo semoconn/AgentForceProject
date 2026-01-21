@@ -10,17 +10,21 @@ private with sharing class UserLeaderboardControllerTest {
         Profile stdProfile = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
 
         testAdmin = new User(
-            Alias = 'badmin', Email='admin@behavioriq.test', 
-            EmailEncodingKey='UTF-8', LastName='Admin', LanguageLocaleKey='en_US', 
-            LocaleSidKey='en_US', ProfileId = adminProfile.Id, 
+            Alias = 'badmin', Email='admin@behavioriq.test',
+            EmailEncodingKey='UTF-8', LastName='Admin', LanguageLocaleKey='en_US',
+            LocaleSidKey='en_US', ProfileId = adminProfile.Id,
             TimeZoneSidKey='America/Los_Angeles', UserName='admin@behavioriq.test' + System.currentTimeMillis()
         );
         insert testAdmin;
 
+        // Assign BehaviorIQ_Admin permission set to admin user for FLS access
+        PermissionSet ps = [SELECT Id FROM PermissionSet WHERE Name = 'BehaviorIQ_Admin' LIMIT 1];
+        insert new PermissionSetAssignment(AssigneeId = testAdmin.Id, PermissionSetId = ps.Id);
+
         testStandardUser = new User(
-            Alias = 'bstd', Email='user@behavioriq.test', 
-            EmailEncodingKey='UTF-8', LastName='Standard', LanguageLocaleKey='en_US', 
-            LocaleSidKey='en_US', ProfileId = stdProfile.Id, 
+            Alias = 'bstd', Email='user@behavioriq.test',
+            EmailEncodingKey='UTF-8', LastName='Standard', LanguageLocaleKey='en_US',
+            LocaleSidKey='en_US', ProfileId = stdProfile.Id,
             TimeZoneSidKey='America/Los_Angeles', UserName='user@behavioriq.test' + System.currentTimeMillis()
         );
         insert testStandardUser;
