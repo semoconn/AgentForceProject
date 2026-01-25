@@ -30,4 +30,8 @@
         <field>Is_Active__c</field>
         <value xsi:type="xsd:boolean">true</value>
     </values>
+    <values>
+        <field>Description__c</field>
+        <value xsi:type="xsd:string">Test pattern for coverage testing - detects cases with specific test subject prefix.</value>
+    </values>
 </CustomMetadata>

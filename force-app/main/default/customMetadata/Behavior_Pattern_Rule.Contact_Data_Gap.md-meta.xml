@@ -34,4 +34,8 @@
         <field>Is_Active__c</field>
         <value xsi:type="xsd:boolean">true</value>
     </values>
+    <values>
+        <field>Description__c</field>
+        <value xsi:type="xsd:string">Contacts missing critical communication data (email or phone), blocking outreach and reducing data quality.</value>
+    </values>
 </CustomMetadata>

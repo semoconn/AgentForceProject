@@ -34,4 +34,8 @@
         <field>Is_Active__c</field>
         <value xsi:type="xsd:boolean">true</value>
     </values>
+    <values>
+        <field>Description__c</field>
+        <value xsi:type="xsd:string">Sales reps holding untouched leads for 5+ days without making contact, blocking pipeline flow.</value>
+    </values>
 </CustomMetadata>

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomMetadata xmlns="http://soap.sforce.com/2006/04/metadata" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+    <label>Inactive Owner - Opportunities</label>
+    <protected>false</protected>
+    <values>
+        <field>Object_API_Name__c</field>
+        <value xsi:type="xsd:string">Opportunity</value>
+    </values>
+    <values>
+        <field>Query_Condition__c</field>
+        <value xsi:type="xsd:string">Owner.IsActive = false AND IsClosed = false</value>
+    </values>
+    <values>
+        <field>Fix_Type__c</field>
+        <value xsi:type="xsd:string">Task_Creation</value>
+    </values>
+    <values>
+        <field>Fix_Config__c</field>
+        <value xsi:type="xsd:string">{"taskSubject": "Reassign opportunity from inactive owner", "taskPriority": "High"}</value>
+    </values>
+    <values>
+        <field>Is_Premium__c</field>
+        <value xsi:type="xsd:boolean">true</value>
+    </values>
+    <values>
+        <field>Cost_Per_Incident__c</field>
+        <value xsi:type="xsd:double">200</value>
+    </values>
+    <values>
+        <field>Is_Active__c</field>
+        <value xsi:type="xsd:boolean">true</value>
+    </values>
+    <values>
+        <field>Description__c</field>
+        <value xsi:type="xsd:string">Open opportunities owned by deactivated users, at risk of being neglected and lost.</value>
+    </values>
+</CustomMetadata>

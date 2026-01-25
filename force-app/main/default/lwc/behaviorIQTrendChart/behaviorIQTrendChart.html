@@ -1,0 +1,189 @@
+<template>
+    <lightning-card icon-name="standard:report" title="Issue Trends">
+        <div slot="actions" class="header-actions">
+            <!-- View Mode Toggle -->
+            <lightning-button-group class="slds-m-right_small">
+                <lightning-button
+                    label="Total"
+                    variant={aggregateVariant}
+                    data-mode="aggregate"
+                    onclick={handleViewModeChange}>
+                </lightning-button>
+                <lightning-button
+                    label="By Pattern"
+                    variant={byPatternVariant}
+                    data-mode="byPattern"
+                    onclick={handleViewModeChange}>
+                </lightning-button>
+            </lightning-button-group>
+
+            <!-- Date Range Badge -->
+            <span class="date-range-badge slds-m-right_small">{dateRangeLabel}</span>
+
+            <!-- Truncation Warning -->
+            <template if:true={isTruncated}>
+                <span class="truncation-badge slds-m-right_small" title="Data has been limited for performance">
+                    <lightning-icon icon-name="utility:warning" size="xx-small" variant="warning" class="slds-m-right_xx-small"></lightning-icon>
+                    Limited
+                </span>
+            </template>
+
+            <!-- Refresh Button -->
+            <lightning-button-icon
+                icon-name="utility:refresh"
+                variant="border-filled"
+                alternative-text="Refresh"
+                onclick={handleRefresh}>
+            </lightning-button-icon>
+        </div>
+
+        <div class="chart-container slds-p-around_medium">
+            <!-- Loading State -->
+            <template if:true={isLoading}>
+                <div class="loading-container" style={chartStyles}>
+                    <lightning-spinner alternative-text="Loading trend data" size="medium"></lightning-spinner>
+                </div>
+            </template>
+
+            <!-- Chart Display -->
+            <template if:true={showChart}>
+                <div class="chart-wrapper">
+                    <svg class="trend-chart" viewBox={viewBoxString} preserveAspectRatio="xMidYMid meet">
+                        <!-- Definitions for gradients -->
+                        <defs>
+                            <linearGradient id="areaGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                                <stop offset="0%" style="stop-color:#0176d3;stop-opacity:0.3" />
+                                <stop offset="100%" style="stop-color:#0176d3;stop-opacity:0.05" />
+                            </linearGradient>
+                        </defs>
+
+                        <!-- Grid Lines -->
+                        <g class="grid-lines">
+                            <template for:each={chartData.gridLines} for:item="line">
+                                <line
+                                    key={line.y1}
+                                    x1={line.x1}
+                                    y1={line.y1}
+                                    x2={line.x2}
+                                    y2={line.y2}
+                                    class="grid-line">
+                                </line>
+                            </template>
+                        </g>
+
+                        <!-- Area Fill (only for aggregate view) -->
+                        <template if:true={chartData.paths}>
+                            <template for:each={chartData.paths} for:item="path">
+                                <template if:true={path.areaD}>
+                                    <path
+                                        key={path.name}
+                                        d={path.areaD}
+                                        class="area-fill">
+                                    </path>
+                                </template>
+                            </template>
+                        </template>
+
+                        <!-- Line Paths -->
+                        <g class="line-paths">
+                            <template for:each={chartData.paths} for:item="path">
+                                <path
+                                    key={path.name}
+                                    d={path.d}
+                                    stroke={path.color}
+                                    class="chart-line">
+                                </path>
+                            </template>
+                        </g>
+
+                        <!-- Data Points -->
+                        <g class="data-points">
+                            <template for:each={chartData.points} for:item="point">
+                                <circle
+                                    key={point.x}
+                                    cx={point.x}
+                                    cy={point.y}
+                                    r={point.radius}
+                                    fill={point.color}
+                                    class="data-point">
+                                    <title>{point.label}: {point.value} issues</title>
+                                </circle>
+                            </template>
+                        </g>
+
+                        <!-- Y-Axis Labels -->
+                        <g class="y-axis-labels">
+                            <template for:each={chartData.yLabels} for:item="label">
+                                <text
+                                    key={label.y}
+                                    x={label.x}
+                                    y={label.y}
+                                    class="axis-label y-label">
+                                    {label.value}
+                                </text>
+                            </template>
+                        </g>
+
+                        <!-- X-Axis Labels -->
+                        <g class="x-axis-labels">
+                            <template for:each={chartData.xLabels} for:item="label">
+                                <text
+                                    key={label.x}
+                                    x={label.x}
+                                    y={label.y}
+                                    class="axis-label x-label">
+                                    {label.label}
+                                </text>
+                            </template>
+                        </g>
+
+                        <!-- Axis Lines -->
+                        <line
+                            x1="50"
+                            y1="20"
+                            x2="50"
+                            y2="160"
+                            class="axis-line">
+                        </line>
+                        <line
+                            x1="50"
+                            y1="160"
+                            x2="580"
+                            y2="160"
+                            class="axis-line">
+                        </line>
+                    </svg>
+
+                    <!-- Legend (for pattern view) -->
+                    <template if:true={showPatternLegend}>
+                        <div class="chart-legend slds-m-top_small">
+                            <template for:each={legendItems} for:item="item">
+                                <div key={item.name} class="legend-item">
+                                    <span class="legend-color" style={item.colorStyle}></span>
+                                    <span class="legend-label">{item.name}</span>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+                </div>
+            </template>
+
+            <!-- Empty State -->
+            <template if:true={showEmptyState}>
+                <div class="empty-state" style={chartStyles}>
+                    <div class="empty-state-content">
+                        <lightning-icon
+                            icon-name="utility:trending"
+                            size="large"
+                            class="empty-icon">
+                        </lightning-icon>
+                        <h3 class="slds-text-heading_small slds-m-top_medium">No Trend Data Yet</h3>
+                        <p class="slds-text-color_weak slds-m-top_x-small">
+                            Run pattern analysis multiple times to see trends over time.
+                        </p>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </lightning-card>
+</template>

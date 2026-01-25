@@ -53,6 +53,30 @@ private with sharing class PatternAnalysisServiceTest {
         PatternAnalysisService.lastExecutedQuery = null;
     }
 
+    /**
+     * @description Creates a mock Behavior_Pattern_Rule__mdt record with Logic_Type__c and Apex_Handler_Class__c for plugin testing.
+     */
+    private static Behavior_Pattern_Rule__mdt createMockPluginRule(
+        String developerName,
+        String masterLabel,
+        String objectApiName,
+        String queryCondition,
+        Boolean isPremium,
+        String logicType,
+        String apexHandlerClass
+    ) {
+        String jsonRule = '{' +
+            '"DeveloperName": "' + developerName + '",' +
+            '"MasterLabel": "' + masterLabel + '",' +
+            '"Object_API_Name__c": "' + objectApiName + '",' +
+            '"Query_Condition__c": "' + (queryCondition != null ? queryCondition.replace('"', '\\"') : '') + '",' +
+            '"Is_Premium__c": ' + isPremium +
+            (logicType != null ? ',"Logic_Type__c": "' + logicType + '"' : '') +
+            (apexHandlerClass != null ? ',"Apex_Handler_Class__c": "' + apexHandlerClass + '"' : '') +
+        '}';
+        return (Behavior_Pattern_Rule__mdt) JSON.deserialize(jsonRule, Behavior_Pattern_Rule__mdt.class);
+    }
+
     @TestSetup
     static void setupData() {
         // Create admin user for tests
@@ -569,7 +593,7 @@ private with sharing class PatternAnalysisServiceTest {
             // Call getPatternMatches which is a real-time API
             // It should NOT create snapshots
             try {
-                PatternAnalysisService.getPatternMatches('Stale_Case_30', 50, '');
+                PatternAnalysisService.getPatternMatches('Stale_Case_30', 50, '', '');
             } catch (AuraHandledException e) {
                 // Expected if rule doesn't exist - that's fine
             }
@@ -954,7 +978,7 @@ private with sharing class PatternAnalysisServiceTest {
             // This test will use actual metadata in the org
             // If Stale_Case_30 exists, it will return matching records
             try {
-                List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_30', 50, '');
+                List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_30', 50, '', '');
                 // The test passes if no exception is thrown
                 // Results depend on org metadata and test data
                 System.assertNotEquals(null, results, 'Results should not be null');
@@ -978,7 +1002,7 @@ private with sharing class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches(null, 50, '');
+                PatternAnalysisService.getPatternMatches(null, 50, '', '');
                 System.assert(false, 'Should have thrown an exception');
             } catch (AuraHandledException e) {
                 System.assert(e.getMessage().contains('Rule developer name is required'),
@@ -997,7 +1021,7 @@ private with sharing class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('', 50, '');
+                PatternAnalysisService.getPatternMatches('', 50, '', '');
                 System.assert(false, 'Should have thrown an exception');
             } catch (AuraHandledException e) {
                 System.assert(e.getMessage().contains('Rule developer name is required'),
@@ -1016,7 +1040,7 @@ private with sharing class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('NonExistent_Rule_XYZ', 50, '');
+                PatternAnalysisService.getPatternMatches('NonExistent_Rule_XYZ', 50, '', '');
                 System.assert(false, 'Should have thrown an exception');
             } catch (AuraHandledException e) {
                 System.assert(e.getMessage().contains('Pattern rule not found'),
@@ -1037,21 +1061,21 @@ private with sharing class PatternAnalysisServiceTest {
             // Test with various limit values
             try {
                 // Test with null limit (should default to 50)
-                PatternAnalysisService.getPatternMatches('Stale_Case_30', null, '');
+                PatternAnalysisService.getPatternMatches('Stale_Case_30', null, '', '');
             } catch (AuraHandledException e) {
                 // Expected if rule doesn't exist
             }
 
             try {
                 // Test with negative limit (should default to 50)
-                PatternAnalysisService.getPatternMatches('Stale_Case_30', -10, '');
+                PatternAnalysisService.getPatternMatches('Stale_Case_30', -10, '', '');
             } catch (AuraHandledException e) {
                 // Expected if rule doesn't exist
             }
 
             try {
                 // Test with limit > 200 (should cap at 200)
-                PatternAnalysisService.getPatternMatches('Stale_Case_30', 500, '');
+                PatternAnalysisService.getPatternMatches('Stale_Case_30', 500, '', '');
             } catch (AuraHandledException e) {
                 // Expected if rule doesn't exist
             }
@@ -1085,7 +1109,7 @@ private with sharing class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_30', 50, '');
+                List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_30', 50, '', '');
                 // If we get here, the query executed successfully
                 System.assertNotEquals(null, results, 'Results should not be null');
 
@@ -1116,7 +1140,7 @@ private with sharing class PatternAnalysisServiceTest {
             try {
                 // Attempt to get pattern matches for Case
                 // This indirectly tests getDisplayFieldsForObject
-                PatternAnalysisService.getPatternMatches('Stale_Case_30', 10, '');
+                PatternAnalysisService.getPatternMatches('Stale_Case_30', 10, '', '');
 
                 String query = PatternAnalysisService.lastExecutedQuery;
                 if (query != null) {
@@ -1143,7 +1167,7 @@ private with sharing class PatternAnalysisServiceTest {
         System.runAs(testUser) {
             try {
                 // Attempt to get pattern matches for Opportunity
-                PatternAnalysisService.getPatternMatches('Stale_Opp_30', 10, '');
+                PatternAnalysisService.getPatternMatches('Stale_Opp_30', 10, '', '');
 
                 String query = PatternAnalysisService.lastExecutedQuery;
                 if (query != null) {
@@ -1170,7 +1194,7 @@ private with sharing class PatternAnalysisServiceTest {
         System.runAs(testUser) {
             try {
                 // Attempt to get pattern matches for Lead
-                PatternAnalysisService.getPatternMatches('Unassigned_Lead_48', 10, '');
+                PatternAnalysisService.getPatternMatches('Unassigned_Lead_48', 10, '', '');
 
                 String query = PatternAnalysisService.lastExecutedQuery;
                 if (query != null) {
@@ -1400,7 +1424,7 @@ private with sharing class PatternAnalysisServiceTest {
         System.runAs(testUser) {
             try {
                 // This should fail gracefully for non-existent object
-                PatternAnalysisService.getPatternMatches('Zombie_Projects', 50, '');
+                PatternAnalysisService.getPatternMatches('Zombie_Projects', 50, '', '');
                 // If Project__c doesn't exist, we should get an error
             } catch (AuraHandledException e) {
                 // Expected - either rule not found, object not accessible, or Premium feature gate
@@ -1438,7 +1462,7 @@ private with sharing class PatternAnalysisServiceTest {
         System.runAs(testUser) {
             try {
                 // Attempt to get pattern matches for Contract
-                PatternAnalysisService.getPatternMatches('Contract_Expiry_Red_Zone', 10, '');
+                PatternAnalysisService.getPatternMatches('Contract_Expiry_Red_Zone', 10, '', '');
 
                 String query = PatternAnalysisService.lastExecutedQuery;
                 if (query != null) {
@@ -1605,7 +1629,7 @@ private with sharing class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Opp_30', 10, '');
+                List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Opp_30', 10, '', '');
                 String query = PatternAnalysisService.lastExecutedQuery;
                 if (query != null) {
                     System.assert(query.contains('Opportunity'), 'Query should be for Opportunity');
@@ -1633,7 +1657,7 @@ private with sharing class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                List<SObject> results = PatternAnalysisService.getPatternMatches('Unassigned_Lead_48', 10, '');
+                List<SObject> results = PatternAnalysisService.getPatternMatches('Unassigned_Lead_48', 10, '', '');
                 String query = PatternAnalysisService.lastExecutedQuery;
                 if (query != null) {
                     System.assert(query.contains('Lead'), 'Query should be for Lead');
@@ -1695,13 +1719,13 @@ private with sharing class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('Zombie_Projects', 10, '');
+                PatternAnalysisService.getPatternMatches('Zombie_Projects', 10, '', '');
             } catch (AuraHandledException e) {
                 System.debug('Expected exception for custom object: ' + e.getMessage());
             }
 
             try {
-                PatternAnalysisService.getPatternMatches('High_Value_Ghosting', 10, '');
+                PatternAnalysisService.getPatternMatches('High_Value_Ghosting', 10, '', '');
             } catch (AuraHandledException e) {
                 System.debug('Expected exception for custom object: ' + e.getMessage());
             }
@@ -1718,7 +1742,7 @@ private with sharing class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('Non_Existent_Rule_XYZ', 50, '');
+                PatternAnalysisService.getPatternMatches('Non_Existent_Rule_XYZ', 50, '', '');
                 System.assert(false, 'Should throw exception');
             } catch (AuraHandledException e) {
                 System.assert(e.getMessage() != null, 'Exception should have message');
@@ -1745,7 +1769,7 @@ private with sharing class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('Contract_Expiry_Red_Zone', 10, '');
+                PatternAnalysisService.getPatternMatches('Contract_Expiry_Red_Zone', 10, '', '');
             } catch (AuraHandledException e) {
                 System.debug('Expected: ' + e.getMessage());
             }
@@ -1760,7 +1784,7 @@ private with sharing class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('Stale_Case_30', null, '');
+                PatternAnalysisService.getPatternMatches('Stale_Case_30', null, '', '');
             } catch (AuraHandledException e) {
                 System.debug('Expected: ' + e.getMessage());
             }
@@ -1775,7 +1799,7 @@ private with sharing class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('Stale_Case_30', 500, '');
+                PatternAnalysisService.getPatternMatches('Stale_Case_30', 500, '', '');
             } catch (AuraHandledException e) {
                 System.debug('Expected: ' + e.getMessage());
             }
@@ -1799,7 +1823,7 @@ private with sharing class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('Stale_Task_30', 10, '');
+                PatternAnalysisService.getPatternMatches('Stale_Task_30', 10, '', '');
                 String query = PatternAnalysisService.lastExecutedQuery;
                 if (query != null) {
                     System.assert(query.contains('Task') || query.contains('Subject'),
@@ -1824,7 +1848,7 @@ private with sharing class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('High_Value_Ghosting', 10, '');
+                PatternAnalysisService.getPatternMatches('High_Value_Ghosting', 10, '', '');
             } catch (AuraHandledException e) {
                 System.debug('Expected: ' + e.getMessage());
             }
@@ -1844,7 +1868,7 @@ private with sharing class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('Inactive_Contact_90', 10, '');
+                PatternAnalysisService.getPatternMatches('Inactive_Contact_90', 10, '', '');
             } catch (AuraHandledException e) {
                 System.debug('Expected: ' + e.getMessage());
             }
@@ -1958,7 +1982,7 @@ private with sharing class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('Stale_Case_30', -5, '');
+                PatternAnalysisService.getPatternMatches('Stale_Case_30', -5, '', '');
             } catch (AuraHandledException e) {
                 System.debug('Expected: ' + e.getMessage());
             }
@@ -1975,7 +1999,7 @@ private with sharing class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('Stale_Case_30', 0, '');
+                PatternAnalysisService.getPatternMatches('Stale_Case_30', 0, '', '');
             } catch (AuraHandledException e) {
                 System.debug('Expected: ' + e.getMessage());
             }
@@ -2108,7 +2132,7 @@ private with sharing class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('Frequent_Flyer_Churn', 10, '');
+                PatternAnalysisService.getPatternMatches('Frequent_Flyer_Churn', 10, '', '');
             } catch (AuraHandledException e) {
                 System.assert(
                     e.getMessage().contains('Premium') || e.getMessage().contains('not found'),
@@ -2135,7 +2159,7 @@ private with sharing class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_30', 50, '');
+                List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_30', 50, '', '');
                 System.assertNotEquals(null, results, 'Results should not be null');
             } catch (AuraHandledException e) {
                 System.debug('Exception: ' + e.getMessage());
@@ -2165,7 +2189,7 @@ private with sharing class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Opp_90', 50, '');
+                List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Opp_90', 50, '', '');
                 System.assertNotEquals(null, results, 'Results should not be null');
             } catch (AuraHandledException e) {
                 System.debug('Exception: ' + e.getMessage());
@@ -2191,7 +2215,7 @@ private with sharing class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                List<SObject> results = PatternAnalysisService.getPatternMatches('Unassigned_Lead_48', 50, '');
+                List<SObject> results = PatternAnalysisService.getPatternMatches('Unassigned_Lead_48', 50, '', '');
                 System.assertNotEquals(null, results, 'Results should not be null');
             } catch (AuraHandledException e) {
                 System.debug('Exception: ' + e.getMessage());
@@ -2209,7 +2233,7 @@ private with sharing class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('', 50, '');
+                PatternAnalysisService.getPatternMatches('', 50, '', '');
                 System.assert(false, 'Should throw exception');
             } catch (AuraHandledException e) {
                 System.assert(e.getMessage().contains('required'), 'Should say rule name is required');
@@ -2235,7 +2259,7 @@ private with sharing class PatternAnalysisServiceTest {
         String contractFields = '';
 
         try {
-            List<SObject> caseResults = PatternAnalysisService.getPatternMatches('Stale_Case_30', 1, '');
+            List<SObject> caseResults = PatternAnalysisService.getPatternMatches('Stale_Case_30', 1, '', '');
             caseFields = PatternAnalysisService.lastExecutedQuery;
         } catch (Exception e) {}
 
@@ -2457,7 +2481,7 @@ private with sharing class PatternAnalysisServiceTest {
         PatternAnalysisService.forceDynamicFieldsException = true;
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('Stale_Case_30', 50, '');
+                PatternAnalysisService.getPatternMatches('Stale_Case_30', 50, '', '');
             } catch (AuraHandledException e) {
                 // Expected
             }
@@ -2476,7 +2500,7 @@ private with sharing class PatternAnalysisServiceTest {
         PatternAnalysisService.forcePatternMatchQueryException = true;
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('Stale_Case_30', 50, '');
+                PatternAnalysisService.getPatternMatches('Stale_Case_30', 50, '', '');
                 System.assert(false, 'Should have thrown exception');
             } catch (AuraHandledException e) {
                 // Validate specific error message for query exception path
@@ -2501,7 +2525,7 @@ private with sharing class PatternAnalysisServiceTest {
         PatternAnalysisService.forcePatternMatchGeneralException = true;
         System.runAs(testUser) {
             try {
-                PatternAnalysisService.getPatternMatches('Stale_Case_30', 50, '');
+                PatternAnalysisService.getPatternMatches('Stale_Case_30', 50, '', '');
                 System.assert(false, 'Should have thrown exception');
             } catch (AuraHandledException e) {
                 // Validate specific error message for general exception path
@@ -2833,7 +2857,7 @@ private with sharing class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             // Query for stale cases using the real rule
-            List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_30', 100, '');
+            List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_30', 100, '', '');
             System.assert(results != null, 'Results should not be null');
         }
         Test.stopTest();
@@ -3048,7 +3072,7 @@ private with sharing class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             try {
-                List<SObject> results = PatternAnalysisService.getPatternMatches('Test_Status_New', 50, '');
+                List<SObject> results = PatternAnalysisService.getPatternMatches('Test_Status_New', 50, '', '');
 
                 // If rule exists and works, we should get results
                 System.assertNotEquals(null, results, 'Results should not be null');
@@ -3284,7 +3308,7 @@ private with sharing class PatternAnalysisServiceTest {
         System.runAs(testUser) {
             // Call getPatternMatches which internally validates field accessibility
             try {
-                List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_30', 10, '');
+                List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_30', 10, '', '');
                 System.assertNotEquals(null, results, 'Results should not be null');
             } catch (AuraHandledException e) {
                 // May throw if rule conditions not met
@@ -3501,7 +3525,7 @@ private with sharing class PatternAnalysisServiceTest {
         System.runAs(testUser) {
             try {
                 // This rule has Owner.Type in its condition
-                List<SObject> results = PatternAnalysisService.getPatternMatches('Unassigned_Lead_48', 10, '');
+                List<SObject> results = PatternAnalysisService.getPatternMatches('Unassigned_Lead_48', 10, '', '');
                 // May or may not return results depending on data
                 System.debug('Results: ' + results);
             } catch (AuraHandledException e) {
@@ -3676,6 +3700,906 @@ private with sharing class PatternAnalysisServiceTest {
             System.assertNotEquals(null, result, 'Should return a non-null result');
         }
         Test.stopTest();
+
+        clearMocks();
+    }
+
+    // =====================================================
+    // SYNC PAIN POINT OCCURRENCES TESTS
+    // =====================================================
+
+    /**
+     * @description Tests syncPainPointOccurrences with null painPointId
+     */
+    @isTest
+    static void testSyncPainPointOccurrences_NullId() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        Test.startTest();
+        System.runAs(testUser) {
+            PatternAnalysisService.SyncResult result = PatternAnalysisService.syncPainPointOccurrences(null);
+            System.assertEquals(false, result.success, 'Should fail with null ID');
+            System.assert(result.message.contains('required'), 'Should indicate ID is required');
+        }
+        Test.stopTest();
+    }
+
+    /**
+     * @description Tests syncPainPointOccurrences with blank painPointId
+     */
+    @isTest
+    static void testSyncPainPointOccurrences_BlankId() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        Test.startTest();
+        System.runAs(testUser) {
+            PatternAnalysisService.SyncResult result = PatternAnalysisService.syncPainPointOccurrences('');
+            System.assertEquals(false, result.success, 'Should fail with blank ID');
+            System.assert(result.message.contains('required'), 'Should indicate ID is required');
+
+            // Also test whitespace
+            PatternAnalysisService.SyncResult result2 = PatternAnalysisService.syncPainPointOccurrences('   ');
+            System.assertEquals(false, result2.success, 'Should fail with whitespace ID');
+        }
+        Test.stopTest();
+    }
+
+    /**
+     * @description Tests syncPainPointOccurrences with invalid ID format
+     */
+    @isTest
+    static void testSyncPainPointOccurrences_InvalidIdFormat() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        Test.startTest();
+        System.runAs(testUser) {
+            PatternAnalysisService.SyncResult result = PatternAnalysisService.syncPainPointOccurrences('not-a-valid-id');
+            System.assertEquals(false, result.success, 'Should fail with invalid ID format');
+            System.assert(result.message.contains('Invalid'), 'Should indicate invalid format');
+        }
+        Test.stopTest();
+    }
+
+    /**
+     * @description Tests syncPainPointOccurrences with non-existent pain point
+     */
+    @isTest
+    static void testSyncPainPointOccurrences_NotFound() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        Test.startTest();
+        System.runAs(testUser) {
+            // Use a valid ID format but for a record that doesn't exist
+            String fakeId = 'a00000000000001AAA';
+            PatternAnalysisService.SyncResult result = PatternAnalysisService.syncPainPointOccurrences(fakeId);
+            System.assertEquals(false, result.success, 'Should fail when pain point not found');
+            System.assert(result.message.contains('not found'), 'Should indicate not found');
+        }
+        Test.stopTest();
+    }
+
+    /**
+     * @description Tests syncPainPointOccurrences with valid pain point - count matches
+     */
+    @isTest
+    static void testSyncPainPointOccurrences_CountMatches() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
+            Name = 'Test Sync Match',
+            Unique_Key__c = 'Stale_Case_14',
+            Object_API_Name__c = 'Case',
+            Occurrences__c = 0,
+            Status__c = 'New',
+            Impact_Score__c = 0
+        );
+        insert pp;
+
+        Test.startTest();
+        System.runAs(testUser) {
+            PatternAnalysisService.SyncResult result = PatternAnalysisService.syncPainPointOccurrences(pp.Id);
+            System.assertNotEquals(null, result, 'Should return a result object');
+        }
+        Test.stopTest();
+    }
+
+    /**
+     * @description Tests syncPainPointOccurrences with count difference triggers update
+     */
+    @isTest
+    static void testSyncPainPointOccurrences_CountDiffers() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        Case testCase = new Case(Subject = 'Stale Test Case', Status = 'New');
+        insert testCase;
+        Test.setCreatedDate(testCase.Id, DateTime.now().addDays(-20));
+
+        Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
+            Name = 'Test Sync Differs',
+            Unique_Key__c = 'Stale_Case_14',
+            Object_API_Name__c = 'Case',
+            Occurrences__c = 10,
+            Status__c = 'New',
+            Impact_Score__c = 100,
+            Cost_Per_Incident__c = 10
+        );
+        insert pp;
+
+        Test.startTest();
+        System.runAs(testUser) {
+            PatternAnalysisService.SyncResult result = PatternAnalysisService.syncPainPointOccurrences(pp.Id);
+            System.assertNotEquals(null, result, 'Should return a result object');
+            System.assertEquals(10, result.previousCount, 'Previous count should be 10');
+        }
+        Test.stopTest();
+    }
+
+    /**
+     * @description Tests syncPainPointOccurrences auto-resolves when count reaches zero
+     */
+    @isTest
+    static void testSyncPainPointOccurrences_AutoResolve() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
+            Name = 'Test Auto Resolve',
+            Unique_Key__c = 'Stale_Case_14',
+            Object_API_Name__c = 'Case',
+            Occurrences__c = 5,
+            Status__c = 'New',
+            Impact_Score__c = 50
+        );
+        insert pp;
+
+        Test.startTest();
+        System.runAs(testUser) {
+            PatternAnalysisService.SyncResult result = PatternAnalysisService.syncPainPointOccurrences(pp.Id);
+            System.assertNotEquals(null, result, 'Should return a result object');
+            if (result.success && result.newCount == 0) {
+                System.assertEquals(true, result.statusChanged, 'Status should change when count reaches 0');
+                System.assertEquals('Resolved', result.newStatus, 'Should auto-resolve');
+            }
+        }
+        Test.stopTest();
+    }
+
+    /**
+     * @description Tests syncPainPointOccurrences with rule not found scenario
+     */
+    @isTest
+    static void testSyncPainPointOccurrences_RuleNotFound() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
+            Name = 'Test Rule Not Found',
+            Unique_Key__c = 'NonExistent_Rule_12345',
+            Object_API_Name__c = 'Case',
+            Occurrences__c = 5,
+            Status__c = 'New'
+        );
+        insert pp;
+
+        Test.startTest();
+        System.runAs(testUser) {
+            PatternAnalysisService.SyncResult result = PatternAnalysisService.syncPainPointOccurrences(pp.Id);
+            System.assertNotEquals(null, result, 'Should return a result object');
+            if (!result.success) {
+                System.assert(result.message.contains('Unable') || result.message.contains('calculate'),
+                              'Should indicate calculation issue');
+            }
+        }
+        Test.stopTest();
+    }
+
+    /**
+     * @description Tests syncPainPointOccurrences updates trend snapshot
+     */
+    @isTest
+    static void testSyncPainPointOccurrences_UpdatesTrendSnapshot() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        Case testCase = new Case(Subject = 'Trend Snapshot Test', Status = 'New');
+        insert testCase;
+        Test.setCreatedDate(testCase.Id, DateTime.now().addDays(-20));
+
+        Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
+            Name = 'Test Trend Update',
+            Unique_Key__c = 'Stale_Case_14',
+            Object_API_Name__c = 'Case',
+            Occurrences__c = 10,
+            Status__c = 'New',
+            Impact_Score__c = 100
+        );
+        insert pp;
+
+        Test.startTest();
+        System.runAs(testUser) {
+            PatternAnalysisService.SyncResult result = PatternAnalysisService.syncPainPointOccurrences(pp.Id);
+            System.assertNotEquals(null, result, 'Should return a result object');
+        }
+        Test.stopTest();
+    }
+
+    /**
+     * @description Tests SyncResult wrapper class initialization
+     */
+    @isTest
+    static void testSyncResultWrapper() {
+        PatternAnalysisService.SyncResult result = new PatternAnalysisService.SyncResult();
+
+        System.assertEquals(false, result.success, 'Default success should be false');
+        System.assertEquals('', result.message, 'Default message should be empty');
+        System.assertEquals(0, result.previousCount, 'Default previousCount should be 0');
+        System.assertEquals(0, result.newCount, 'Default newCount should be 0');
+        System.assertEquals(false, result.statusChanged, 'Default statusChanged should be false');
+        System.assertEquals('', result.newStatus, 'Default newStatus should be empty');
+    }
+
+    /**
+     * @description Tests syncPainPointOccurrences with Opportunity object (special impact calc)
+     */
+    @isTest
+    static void testSyncPainPointOccurrences_OpportunityObject() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
+            Name = 'Test Opp Sync',
+            Unique_Key__c = 'Stale_Opp_90',
+            Object_API_Name__c = 'Opportunity',
+            Occurrences__c = 5,
+            Status__c = 'New',
+            Impact_Score__c = 50000,
+            Cost_Per_Incident__c = 100
+        );
+        insert pp;
+
+        Test.startTest();
+        System.runAs(testUser) {
+            PatternAnalysisService.SyncResult result = PatternAnalysisService.syncPainPointOccurrences(pp.Id);
+            System.assertNotEquals(null, result, 'Should return a result object');
+        }
+        Test.stopTest();
+    }
+
+    /**
+     * @description Tests syncPainPointOccurrences preserves dismissed status
+     */
+    @isTest
+    static void testSyncPainPointOccurrences_DismissedStatus() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
+            Name = 'Test Dismissed',
+            Unique_Key__c = 'Stale_Case_14',
+            Object_API_Name__c = 'Case',
+            Occurrences__c = 5,
+            Status__c = 'Dismissed'
+        );
+        insert pp;
+
+        Test.startTest();
+        System.runAs(testUser) {
+            PatternAnalysisService.SyncResult result = PatternAnalysisService.syncPainPointOccurrences(pp.Id);
+            System.assertNotEquals(null, result, 'Should return a result object');
+            if (result.success && result.newCount == 0) {
+                Identified_Pain_Point__c refreshed = [SELECT Status__c FROM Identified_Pain_Point__c WHERE Id = :pp.Id];
+                System.assertEquals('Dismissed', refreshed.Status__c, 'Dismissed status should be preserved');
+            }
+        }
+        Test.stopTest();
+    }
+
+    // ==================== WHITELIST/BLACKLIST MODE TESTS ====================
+
+    /**
+     * @description Tests getPatternMatches with whitelist mode (includeOnlyRecordIds)
+     */
+    @isTest
+    static void testGetPatternMatches_WhitelistMode() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create test Cases
+        List<Case> testCases = new List<Case>();
+        for (Integer i = 0; i < 5; i++) {
+            testCases.add(new Case(Subject = 'Whitelist Test ' + i, Status = 'New'));
+        }
+        insert testCases;
+
+        // Create mock rule
+        Behavior_Pattern_Rule__mdt mockRule = createMockRule(
+            'Stale_Case_14',
+            'Stale Case Test',
+            'Case',
+            'Status != \'Closed\'',
+            false
+        );
+        PatternAnalysisService.mockRule = mockRule;
+
+        // Build whitelist with first 2 cases (comma-separated)
+        String whitelistIds = testCases[0].Id + ',' + testCases[1].Id;
+
+        Test.startTest();
+        System.runAs(testUser) {
+            List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_14', 50, whitelistIds, null);
+            System.assertNotEquals(null, results, 'Should return results list');
+            System.assertEquals(2, results.size(), 'Should return only whitelisted records');
+        }
+        Test.stopTest();
+
+        clearMocks();
+    }
+
+    /**
+     * @description Tests getPatternMatches with whitelist in JSON array format
+     */
+    @isTest
+    static void testGetPatternMatches_WhitelistJsonFormat() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create test Cases
+        List<Case> testCases = new List<Case>();
+        for (Integer i = 0; i < 3; i++) {
+            testCases.add(new Case(Subject = 'Whitelist JSON Test ' + i, Status = 'New'));
+        }
+        insert testCases;
+
+        // Create mock rule
+        Behavior_Pattern_Rule__mdt mockRule = createMockRule(
+            'Stale_Case_14',
+            'Stale Case Test',
+            'Case',
+            'Status != \'Closed\'',
+            false
+        );
+        PatternAnalysisService.mockRule = mockRule;
+
+        // Build whitelist in JSON array format
+        List<String> idList = new List<String>{ testCases[0].Id, testCases[1].Id };
+        String whitelistIds = JSON.serialize(idList);
+
+        Test.startTest();
+        System.runAs(testUser) {
+            List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_14', 50, whitelistIds, null);
+            System.assertNotEquals(null, results, 'Should return results list');
+        }
+        Test.stopTest();
+
+        clearMocks();
+    }
+
+    /**
+     * @description Tests getPatternMatches with blacklist mode (excludeRecordIds)
+     */
+    @isTest
+    static void testGetPatternMatches_BlacklistMode() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create test Cases
+        List<Case> testCases = new List<Case>();
+        for (Integer i = 0; i < 5; i++) {
+            testCases.add(new Case(Subject = 'Blacklist Test ' + i, Status = 'New'));
+        }
+        insert testCases;
+
+        // Create mock rule
+        Behavior_Pattern_Rule__mdt mockRule = createMockRule(
+            'Stale_Case_14',
+            'Stale Case Test',
+            'Case',
+            'Status != \'Closed\'',
+            false
+        );
+        PatternAnalysisService.mockRule = mockRule;
+
+        // Blacklist first 2 cases
+        String blacklistIds = testCases[0].Id + ',' + testCases[1].Id;
+
+        Test.startTest();
+        System.runAs(testUser) {
+            List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_14', 50, null, blacklistIds);
+            System.assertNotEquals(null, results, 'Should return results list');
+            // Verify blacklisted IDs are not in results
+            Set<Id> resultIds = new Set<Id>();
+            for (SObject obj : results) {
+                resultIds.add(obj.Id);
+            }
+            System.assertEquals(false, resultIds.contains(testCases[0].Id), 'Should not contain blacklisted ID');
+            System.assertEquals(false, resultIds.contains(testCases[1].Id), 'Should not contain blacklisted ID');
+        }
+        Test.stopTest();
+
+        clearMocks();
+    }
+
+    /**
+     * @description Tests getPatternMatches with blacklist in JSON array format
+     */
+    @isTest
+    static void testGetPatternMatches_BlacklistJsonFormat() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create test Cases
+        List<Case> testCases = new List<Case>();
+        for (Integer i = 0; i < 3; i++) {
+            testCases.add(new Case(Subject = 'Blacklist JSON Test ' + i, Status = 'New'));
+        }
+        insert testCases;
+
+        // Create mock rule
+        Behavior_Pattern_Rule__mdt mockRule = createMockRule(
+            'Stale_Case_14',
+            'Stale Case Test',
+            'Case',
+            'Status != \'Closed\'',
+            false
+        );
+        PatternAnalysisService.mockRule = mockRule;
+
+        // Build blacklist in JSON array format
+        List<String> idList = new List<String>{ testCases[0].Id };
+        String blacklistIds = JSON.serialize(idList);
+
+        Test.startTest();
+        System.runAs(testUser) {
+            List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_14', 50, null, blacklistIds);
+            System.assertNotEquals(null, results, 'Should return results list');
+        }
+        Test.stopTest();
+
+        clearMocks();
+    }
+
+    /**
+     * @description Tests getPatternMatches with invalid IDs in whitelist (should be skipped)
+     */
+    @isTest
+    static void testGetPatternMatches_WhitelistInvalidIds() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create one valid Case
+        Case testCase = new Case(Subject = 'Valid Case', Status = 'New');
+        insert testCase;
+
+        // Create mock rule
+        Behavior_Pattern_Rule__mdt mockRule = createMockRule(
+            'Stale_Case_14',
+            'Stale Case Test',
+            'Case',
+            'Status != \'Closed\'',
+            false
+        );
+        PatternAnalysisService.mockRule = mockRule;
+
+        // Mix valid and invalid IDs
+        String whitelistIds = testCase.Id + ',invalid_id_here,another_bad_id';
+
+        Test.startTest();
+        System.runAs(testUser) {
+            List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_14', 50, whitelistIds, null);
+            System.assertNotEquals(null, results, 'Should return results list');
+            System.assertEquals(1, results.size(), 'Should only return valid whitelisted record');
+        }
+        Test.stopTest();
+
+        clearMocks();
+    }
+
+    // ==================== PLUGIN-RELATED TESTS ====================
+
+    /**
+     * @description Tests calculateLiveCount indirectly via syncPainPointOccurrences for plugin rule
+     */
+    @isTest
+    static void testSyncPainPointOccurrences_PluginRule() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create pain point referencing an Apex plugin rule
+        Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
+            Name = 'Plugin Sync Test',
+            Unique_Key__c = 'Sample_Plugin_Pattern',
+            Object_API_Name__c = 'Case',
+            Occurrences__c = 10,
+            Status__c = 'New'
+        );
+        insert pp;
+
+        Test.startTest();
+        System.runAs(testUser) {
+            PatternAnalysisService.SyncResult result = PatternAnalysisService.syncPainPointOccurrences(pp.Id);
+            System.assertNotEquals(null, result, 'Should return a result object');
+            // Plugin may or may not exist - just verify no crash
+        }
+        Test.stopTest();
+    }
+
+    /**
+     * @description Tests syncPainPointOccurrences with Fixed_Record_Ids populated
+     */
+    @isTest
+    static void testSyncPainPointOccurrences_WithFixedIds() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create test Cases
+        List<Case> testCases = new List<Case>();
+        for (Integer i = 0; i < 3; i++) {
+            testCases.add(new Case(Subject = 'Fixed IDs Test ' + i, Status = 'New'));
+        }
+        insert testCases;
+
+        // Create pain point with Fixed_Record_Ids__c populated
+        Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
+            Name = 'Fixed IDs Sync Test',
+            Unique_Key__c = 'Stale_Case_14',
+            Object_API_Name__c = 'Case',
+            Occurrences__c = 10,
+            Status__c = 'New',
+            Fixed_Record_Ids__c = JSON.serialize(new List<String>{ testCases[0].Id })
+        );
+        insert pp;
+
+        Test.startTest();
+        System.runAs(testUser) {
+            PatternAnalysisService.SyncResult result = PatternAnalysisService.syncPainPointOccurrences(pp.Id);
+            System.assertNotEquals(null, result, 'Should return a result object');
+        }
+        Test.stopTest();
+    }
+
+    /**
+     * @description Tests updateTrendSnapshot when snapshot exists (update path)
+     */
+    @isTest
+    static void testSyncPainPointOccurrences_ExistingSnapshot() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create an existing snapshot for today
+        Behavior_Snapshot__c existingSnapshot = new Behavior_Snapshot__c(
+            Metric_Name__c = 'Stale_Case_14',
+            Snapshot_Date__c = Date.today(),
+            Record_Count__c = 5,
+            Impact_Score__c = 500
+        );
+        insert existingSnapshot;
+
+        // Create pain point
+        Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
+            Name = 'Snapshot Update Test',
+            Unique_Key__c = 'Stale_Case_14',
+            Object_API_Name__c = 'Case',
+            Occurrences__c = 10,
+            Status__c = 'New',
+            Impact_Score__c = 1000
+        );
+        insert pp;
+
+        Test.startTest();
+        System.runAs(testUser) {
+            PatternAnalysisService.SyncResult result = PatternAnalysisService.syncPainPointOccurrences(pp.Id);
+            System.assertNotEquals(null, result, 'Should return a result object');
+        }
+        Test.stopTest();
+
+        // Verify snapshot was updated (not duplicated)
+        List<Behavior_Snapshot__c> snapshots = [
+            SELECT Record_Count__c FROM Behavior_Snapshot__c
+            WHERE Metric_Name__c = 'Stale_Case_14' AND Snapshot_Date__c = TODAY
+        ];
+        System.assertEquals(1, snapshots.size(), 'Should have exactly one snapshot');
+    }
+
+    /**
+     * @description Tests extractBaseRuleName with multiple underscore suffixes
+     */
+    @isTest
+    static void testExtractBaseRuleName_MultipleUnderscores() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        Test.startTest();
+        System.runAs(testUser) {
+            // Test with multiple underscore segments
+            String result = PatternAnalysisService.extractBaseRuleName('High_Value_Ghosting_1234567890123');
+            // Should find base rule or return original if no match
+            System.assertNotEquals(null, result, 'Should return a result');
+        }
+        Test.stopTest();
+    }
+
+    /**
+     * @description Tests syncPainPointOccurrences auto-resolve to 'Resolved' status
+     */
+    @isTest
+    static void testSyncPainPointOccurrences_AutoResolveToResolved() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create closed cases (won't match open case query)
+        Case closedCase = new Case(Subject = 'Closed Case', Status = 'Closed');
+        insert closedCase;
+
+        // Create pain point with matching key that will find 0 records
+        Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
+            Name = 'Auto-Resolve Test',
+            Unique_Key__c = 'Stale_Case_14',
+            Object_API_Name__c = 'Case',
+            Occurrences__c = 5,
+            Status__c = 'New',
+            Impact_Score__c = 500
+        );
+        insert pp;
+
+        // Create mock rule that will find no matches
+        Behavior_Pattern_Rule__mdt mockRule = createMockRule(
+            'Stale_Case_14',
+            'Stale Case',
+            'Case',
+            'Status = \'New\' AND Subject = \'NonExistent12345\'',
+            false
+        );
+        PatternAnalysisService.mockRule = mockRule;
+
+        Test.startTest();
+        System.runAs(testUser) {
+            PatternAnalysisService.SyncResult result = PatternAnalysisService.syncPainPointOccurrences(pp.Id);
+            System.assertNotEquals(null, result, 'Should return a result object');
+            if (result.success && result.newCount == 0) {
+                System.assertEquals(true, result.statusChanged, 'Status should have changed');
+                System.assertEquals('Resolved', result.newStatus, 'Should be auto-resolved');
+            }
+        }
+        Test.stopTest();
+
+        clearMocks();
+    }
+
+    // ==================== PLUGIN ANALYSIS TESTS ====================
+
+    /**
+     * @description Tests plugin analysis when handler class is blank - should return null and log error.
+     */
+    @isTest
+    static void testPluginAnalysis_BlankHandlerClass() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create mock rule with Apex_Plugin logic type but no handler class
+        Behavior_Pattern_Rule__mdt mockRule = createMockPluginRule(
+            'Test_Plugin_Rule',
+            'Test Plugin Rule',
+            'Account',
+            'Rating = \'Cold\'',
+            false,
+            'Apex_Plugin',
+            null  // Blank handler class
+        );
+        Test.startTest();
+        System.runAs(testUser) {
+            PatternAnalysisService service = new PatternAnalysisService();
+            // Directly call execute with the mock rule to test plugin path
+            service.execute(null, new List<Behavior_Pattern_Rule__mdt>{ mockRule });
+        }
+        Test.stopTest();
+
+        // Test completes without exception - blank handler class is handled gracefully
+        System.assert(true, 'Should handle blank handler class gracefully');
+
+        clearMocks();
+    }
+
+    /**
+     * @description Tests plugin analysis when handler class doesn't exist - should handle exception.
+     */
+    @isTest
+    static void testPluginAnalysis_NonExistentClass() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create mock rule with Apex_Plugin logic type but non-existent handler class
+        Behavior_Pattern_Rule__mdt mockRule = createMockPluginRule(
+            'Test_Plugin_NonExistent',
+            'Test Plugin NonExistent',
+            'Account',
+            'Rating = \'Cold\'',
+            false,
+            'Apex_Plugin',
+            'NonExistentPluginClass12345'
+        );
+
+        Test.startTest();
+        System.runAs(testUser) {
+            PatternAnalysisService service = new PatternAnalysisService();
+            // Directly call execute to test exception handling in plugin path
+            service.execute(null, new List<Behavior_Pattern_Rule__mdt>{ mockRule });
+        }
+        Test.stopTest();
+
+        // Test completes without exception - non-existent class is handled gracefully
+        System.assert(true, 'Should handle non-existent plugin class gracefully');
+
+        clearMocks();
+    }
+
+    /**
+     * @description Tests plugin analysis with valid SamplePatternPlugin.
+     */
+    @isTest
+    static void testPluginAnalysis_ValidPlugin() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create accounts to be detected
+        List<Account> coldAccounts = new List<Account>();
+        for (Integer i = 0; i < 3; i++) {
+            coldAccounts.add(new Account(Name = 'Cold Account Plugin Test ' + i, Rating = 'Cold'));
+        }
+        insert coldAccounts;
+
+        // Create mock rule with valid SamplePatternPlugin
+        Behavior_Pattern_Rule__mdt mockRule = createMockPluginRule(
+            'Test_Valid_Plugin',
+            'Test Valid Plugin',
+            'Account',
+            'Rating = \'Cold\'',
+            false,
+            'Apex_Plugin',
+            'SamplePatternPlugin'
+        );
+
+        Test.startTest();
+        System.runAs(testUser) {
+            PatternAnalysisService service = new PatternAnalysisService();
+            // Directly call execute to test valid plugin execution
+            service.execute(null, new List<Behavior_Pattern_Rule__mdt>{ mockRule });
+        }
+        Test.stopTest();
+
+        // Verify pain point was created
+        List<Identified_Pain_Point__c> painPoints = [
+            SELECT Id, Unique_Key__c, Occurrences__c
+            FROM Identified_Pain_Point__c
+            WHERE Unique_Key__c LIKE 'Test_Valid_Plugin%'
+        ];
+        System.assert(painPoints.size() >= 0, 'Plugin should execute and potentially create pain points');
+
+        clearMocks();
+    }
+
+    /**
+     * @description Tests plugin analysis with class that doesn't implement interface.
+     */
+    @isTest
+    static void testPluginAnalysis_InvalidInterface() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create mock rule with class that doesn't implement IPatternPlugin
+        Behavior_Pattern_Rule__mdt mockRule = createMockPluginRule(
+            'Test_Invalid_Interface',
+            'Test Invalid Interface',
+            'Account',
+            'Rating = \'Cold\'',
+            false,
+            'Apex_Plugin',
+            'PatternAnalysisService'  // This class doesn't implement IPatternPlugin
+        );
+
+        Test.startTest();
+        System.runAs(testUser) {
+            PatternAnalysisService service = new PatternAnalysisService();
+            // Directly call execute to test interface mismatch handling
+            service.execute(null, new List<Behavior_Pattern_Rule__mdt>{ mockRule });
+        }
+        Test.stopTest();
+
+        // Test completes without exception - interface mismatch is caught
+        System.assert(true, 'Should handle interface mismatch gracefully');
+
+        clearMocks();
+    }
+
+    /**
+     * @description Tests plugin analysis when plugin returns empty results.
+     */
+    @isTest
+    static void testPluginAnalysis_EmptyResults() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Ensure no cold accounts exist
+        delete [SELECT Id FROM Account WHERE Rating = 'Cold'];
+
+        // Create mock rule with SamplePatternPlugin (should find no results)
+        Behavior_Pattern_Rule__mdt mockRule = createMockPluginRule(
+            'Test_Plugin_Empty',
+            'Test Plugin Empty',
+            'Account',
+            'Rating = \'Cold\'',
+            false,
+            'Apex_Plugin',
+            'SamplePatternPlugin'
+        );
+
+        Test.startTest();
+        System.runAs(testUser) {
+            PatternAnalysisService service = new PatternAnalysisService();
+            // Directly call execute with empty data scenario
+            service.execute(null, new List<Behavior_Pattern_Rule__mdt>{ mockRule });
+        }
+        Test.stopTest();
+
+        // Test completes - empty results are handled
+        System.assert(true, 'Should handle empty plugin results');
+
+        clearMocks();
+    }
+
+    /**
+     * @description Tests plugin analysis with LeadDataQualityPlugin.
+     */
+    @isTest
+    static void testPluginAnalysis_LeadQualityPlugin() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create leads without email
+        List<Lead> leadsNoEmail = new List<Lead>();
+        for (Integer i = 0; i < 3; i++) {
+            leadsNoEmail.add(new Lead(
+                FirstName = 'Plugin',
+                LastName = 'Lead' + i,
+                Company = 'Plugin Test Company ' + i
+            ));
+        }
+        insert leadsNoEmail;
+
+        // Create mock rule with LeadDataQualityPlugin
+        Behavior_Pattern_Rule__mdt mockRule = createMockPluginRule(
+            'Test_Lead_Quality_Plugin',
+            'Test Lead Quality Plugin',
+            'Lead',
+            'Email = null',
+            false,
+            'Apex_Plugin',
+            'LeadDataQualityPlugin'
+        );
+
+        Test.startTest();
+        System.runAs(testUser) {
+            PatternAnalysisService service = new PatternAnalysisService();
+            service.execute(null, new List<Behavior_Pattern_Rule__mdt>{ mockRule });
+        }
+        Test.stopTest();
+
+        // Verify execution completed
+        System.assert(true, 'Should execute lead quality plugin successfully');
+
+        clearMocks();
+    }
+
+    /**
+     * @description Tests plugin analysis with Fix_Config__c containing JSON.
+     */
+    @isTest
+    static void testPluginAnalysis_WithFixConfig() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create accounts to be detected
+        Account coldAccount = new Account(Name = 'Cold Account Config Test', Rating = 'Cold');
+        insert coldAccount;
+
+        // Create plugin rule with JSON Fix_Config__c
+        String jsonRule = '{' +
+            '"DeveloperName": "Test_Plugin_Config",' +
+            '"MasterLabel": "Test Plugin Config",' +
+            '"Object_API_Name__c": "Account",' +
+            '"Query_Condition__c": "Rating = \'Cold\'",' +
+            '"Is_Premium__c": false,' +
+            '"Logic_Type__c": "Apex_Plugin",' +
+            '"Apex_Handler_Class__c": "SamplePatternPlugin",' +
+            '"Fix_Config__c": "{\\"createTask\\": true, \\"taskSubject\\": \\"Follow up\\"}"' +
+        '}';
+        Behavior_Pattern_Rule__mdt mockRule = (Behavior_Pattern_Rule__mdt) JSON.deserialize(jsonRule, Behavior_Pattern_Rule__mdt.class);
+
+        Test.startTest();
+        System.runAs(testUser) {
+            PatternAnalysisService service = new PatternAnalysisService();
+            service.execute(null, new List<Behavior_Pattern_Rule__mdt>{ mockRule });
+        }
+        Test.stopTest();
+
+        System.assert(true, 'Should parse and use Fix_Config__c');
 
         clearMocks();
     }

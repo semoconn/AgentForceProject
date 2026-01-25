@@ -34,4 +34,8 @@
         <field>Is_Active__c</field>
         <value xsi:type="xsd:boolean">true</value>
     </values>
+    <values>
+        <field>Description__c</field>
+        <value xsi:type="xsd:string">High-value opportunities ($50K+) with no sales activity in 14+ days, putting significant revenue at risk of loss.</value>
+    </values>
 </CustomMetadata>

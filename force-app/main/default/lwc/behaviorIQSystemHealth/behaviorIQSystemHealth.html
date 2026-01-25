@@ -12,7 +12,7 @@
                     System Status
                 </h3>
             </div>
-            <div class="slds-col slds-text-align_right">
+            <div class="slds-col slds-text-align_right slds-grid slds-grid_vertical-align-center">
                 <!-- Loading state -->
                 <template lwc:if={isLoading}>
                     <lightning-spinner alternative-text="Loading" size="small"></lightning-spinner>
@@ -50,6 +50,16 @@
                         <lightning-badge label="No analysis has run yet"></lightning-badge>
                     </template>
                 </template>
+
+                <!-- Run Analysis Now button -->
+                <lightning-button
+                    variant="brand"
+                    label={runButtonLabel}
+                    icon-name="utility:refresh"
+                    onclick={handleRunAnalysis}
+                    disabled={isRunning}
+                    class="slds-m-left_medium">
+                </lightning-button>
             </div>
         </div>
     </div>

@@ -75,6 +75,24 @@ lightning-tabset {
     background-color: #fe9339;
 }
 
+/* What Will Happen info box styling */
+.what-will-happen-box {
+    background: linear-gradient(135deg, #0070d2 0%, #1589ee 100%);
+    border: none;
+    border-radius: 0.5rem;
+    box-shadow: 0 2px 4px rgba(0, 112, 210, 0.2);
+}
+
+.what-will-happen-box h3 {
+    font-size: 0.8125rem;
+    letter-spacing: 0.025rem;
+}
+
+.what-will-happen-box p {
+    font-size: 0.875rem;
+    line-height: 1.5;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
     .slds-modal__container {

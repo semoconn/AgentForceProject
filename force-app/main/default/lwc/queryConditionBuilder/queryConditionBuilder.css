@@ -1,5 +1,45 @@
 .query-builder {
     background-color: var(--slds-g-color-neutral-base-95, #f3f3f3);
+    /* Allow dropdowns to overflow container */
+    overflow: visible;
+}
+
+/* Fix for combobox dropdowns being clipped in modals */
+:host {
+    overflow: visible;
+}
+
+/* Searchable field dropdown styles */
+.slds-dropdown_length-10 {
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.slds-listbox__option {
+    cursor: pointer;
+}
+
+.slds-listbox__option:hover {
+    background-color: var(--slds-g-color-neutral-base-95, #f3f3f3);
+}
+
+.slds-listbox__option.slds-is-selected {
+    background-color: var(--slds-g-color-brand-base-95, #eef4ff);
+}
+
+/* Ensure dropdown appears above other content */
+.slds-combobox_container {
+    position: relative;
+}
+
+.slds-dropdown {
+    position: absolute;
+    z-index: 9001;
+    width: 100%;
+    background: white;
+    border: 1px solid var(--slds-g-color-border-base-1, #c9c9c9);
+    border-radius: 0.25rem;
+    box-shadow: 0 2px 3px 0 rgba(0, 0, 0, 0.16);
 }
 
 .condition-item {

@@ -34,4 +34,8 @@
         <field>Is_Active__c</field>
         <value xsi:type="xsd:boolean">true</value>
     </values>
+    <values>
+        <field>Description__c</field>
+        <value xsi:type="xsd:string">High-priority cases from your most valuable accounts that signal potential customer churn if not resolved quickly.</value>
+    </values>
 </CustomMetadata>

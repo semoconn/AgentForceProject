@@ -1,10 +1,30 @@
+/* Fix for combobox dropdowns being clipped by modal overflow */
+.slds-modal__content {
+    overflow: visible !important;
+}
+
+.slds-modal__container {
+    overflow: visible;
+}
+
+/* Horizontal description list - labels left, values right */
+.slds-dl_horizontal {
+    display: flex;
+    flex-wrap: wrap;
+}
+
 .slds-dl_horizontal__label {
-    width: 150px;
+    flex: 0 0 180px;
+    text-align: left;
     font-weight: bold;
     color: var(--slds-g-color-neutral-base-30, #706e6b);
+    padding: 0.25rem 0.5rem 0.25rem 0;
 }
 
 .slds-dl_horizontal__detail {
+    flex: 1 1 calc(100% - 180px);
+    text-align: left;
+    padding: 0.25rem 0;
     margin-bottom: 0.5rem;
 }
 

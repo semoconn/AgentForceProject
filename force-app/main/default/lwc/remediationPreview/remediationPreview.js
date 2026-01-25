@@ -3,6 +3,7 @@ import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 
 // Apex Controllers
 import getPatternMatches from '@salesforce/apex/PatternAnalysisService.getPatternMatches';
+import syncPainPointOccurrences from '@salesforce/apex/PatternAnalysisService.syncPainPointOccurrences';
 import runAutoFix from '@salesforce/apex/WorkflowAnalyticsController.runAutoFix';
 import getFixConfig from '@salesforce/apex/WorkflowAnalyticsController.getFixConfig';
 import getRecordsByIds from '@salesforce/apex/WorkflowAnalyticsController.getRecordsByIds';
@@ -61,7 +62,8 @@ export default class RemediationPreview extends LightningElement {
     @api objectApiName;
     @api ruleLabel;
     @api fixType;
-    @api exampleRecordIds; // Whitelist of record IDs to filter to (from pain point's Example_Records__c)
+    @api painPointId; // ID of the pain point for syncing occurrence counts
+    @api exampleRecordIds; // Only used in read-only mode for fixed records display (NOT for filtering active records)
     @api readOnly = false; // When true, shows records in view-only mode (no fix button)
     @api fixedRecordIds; // Cumulative fixed record IDs from pain point (for displaying previously fixed records)
     @api fixedAtTimestamp; // Timestamp when records were fixed (for displaying in Fixed At column)
@@ -334,18 +336,25 @@ export default class RemediationPreview extends LightningElement {
         this.isLoading = true;
         this.error = null;
 
-        // Pass exampleRecordIds as whitelist filter if provided
-        // This ensures we only show remaining unfixed records for partial fix scenarios
+        // Build exclusion list from already-fixed records
+        // The fixedRecordIds prop contains cumulative IDs of records that have been fixed
+        // and should NOT appear in the preview anymore
+        let excludeIds = '';
+        if (this.fixedRecordIds) {
+            // fixedRecordIds may be a comma-separated string or JSON array
+            excludeIds = this.fixedRecordIds;
+            console.log('Excluding already-fixed record IDs:', excludeIds);
+        }
+
         console.log('=== remediationPreview.loadRecords ===');
         console.log('ruleDeveloperName:', this.ruleDeveloperName);
-        console.log('exampleRecordIds prop:', this.exampleRecordIds);
-        console.log('exampleRecordIds type:', typeof this.exampleRecordIds);
-        console.log('readOnly mode:', this.readOnly);
+        console.log('excludeRecordIds:', excludeIds || '(none)');
 
         getPatternMatches({
             ruleDeveloperName: this.ruleDeveloperName,
-            limitCount: 50,
-            includeOnlyRecordIds: this.exampleRecordIds || ''
+            limitCount: 200,
+            includeOnlyRecordIds: '', // Don't use whitelist - query all matching records
+            excludeRecordIds: excludeIds // Exclude already-fixed records
         })
         .then(result => {
             let records = result || [];
@@ -373,6 +382,11 @@ export default class RemediationPreview extends LightningElement {
                 // Pre-select all pending rows by default
                 this._selectedRowIds = this.pendingRecords.map(r => r.Id);
                 console.log('Records loaded:', this.pendingRecords.length, 'Selected:', this._selectedRowIds.length);
+
+                // CRITICAL: Sync the pain point's occurrence count with server-calculated live count
+                // This solves the "dual source of truth" problem where dashboard shows stale counts
+                // The server calculates the count to avoid trust boundary issues
+                this.syncOccurrenceCount();
             }
         })
         .catch(err => {
@@ -555,8 +569,12 @@ export default class RemediationPreview extends LightningElement {
     // Actual fix execution (called after confirmation or directly if skipped)
     handleConfirmFix() {
         this.isFixing = true;
-        const effectiveFixType = this.fixType || this.mapObjectToFixType(this.objectApiName);
+        // Use ruleDeveloperName for PatternFixService - this is the metadata key that defines the fix logic
+        // Falls back to fixType or object-based mapping for backward compatibility
+        const effectiveFixType = this.ruleDeveloperName || this.fixType || this.mapObjectToFixType(this.objectApiName);
         const selectedIds = [...this._selectedRowIds];
+
+        console.log('handleConfirmFix - using fix type:', effectiveFixType);
 
         runAutoFix({
             recordIds: selectedIds,
@@ -627,6 +645,62 @@ export default class RemediationPreview extends LightningElement {
             'Opportunity': 'Stale Opportunity'
         };
         return map[apiName] || apiName;
+    }
+
+    /**
+     * @description Synchronizes the pain point's stored occurrence count with the server-calculated live count.
+     * This solves the critical "dual source of truth" issue where:
+     * - Dashboard displays stored Occurrences__c (set by batch job, becomes stale)
+     * - Preview loads live records via getPatternMatches (always current)
+     *
+     * SECURITY: The server calculates the live count to avoid trust boundary issues.
+     * We do NOT pass a client-side count to prevent tampering.
+     */
+    syncOccurrenceCount() {
+        // Only sync if we have a pain point ID
+        if (!this.painPointId) {
+            console.log('No painPointId provided - skipping occurrence sync');
+            return;
+        }
+
+        console.log('Syncing occurrence count: painPointId=' + this.painPointId);
+
+        // Server calculates the count - we don't pass it to avoid trust boundary issues
+        syncPainPointOccurrences({
+            painPointId: this.painPointId
+        })
+        .then(result => {
+            if (result.success) {
+                console.log('Occurrence sync result:', result.message);
+
+                // If count changed, dispatch event to notify parent to refresh
+                if (result.previousCount !== result.newCount) {
+                    console.log('Count changed: ' + result.previousCount + ' → ' + result.newCount);
+                    this.dispatchEvent(new CustomEvent('occurrencesynced', {
+                        bubbles: true,
+                        composed: true,
+                        detail: {
+                            painPointId: this.painPointId,
+                            previousCount: result.previousCount,
+                            newCount: result.newCount,
+                            statusChanged: result.statusChanged,
+                            newStatus: result.newStatus
+                        }
+                    }));
+                }
+
+                // If status changed to Resolved (all records fixed externally), notify user
+                if (result.statusChanged && result.newStatus === 'Resolved') {
+                    this.showToast('Info', 'All affected records have been resolved externally.', 'info');
+                }
+            } else {
+                console.warn('Occurrence sync failed:', result.message);
+            }
+        })
+        .catch(err => {
+            // Non-fatal - just log the error, don't disrupt the preview experience
+            console.error('Error syncing occurrence count:', err);
+        });
     }
 
     showToast(title, message, variant) {

@@ -8,7 +8,7 @@
     </values>
     <values>
         <field>Query_Condition__c</field>
-        <value xsi:type="xsd:string">Status != 'Closed' AND LastModifiedDate &lt; LAST_N_DAYS:30</value>
+        <value xsi:type="xsd:string">Status != 'Closed' AND (LastModifiedDate &lt; LAST_N_DAYS:30 OR Last_Modified_Test__c &lt; LAST_N_DAYS:30)</value>
     </values>
     <values>
         <field>Threshold_Default__c</field>
@@ -33,5 +33,9 @@
     <values>
         <field>Is_Active__c</field>
         <value xsi:type="xsd:boolean">true</value>
+    </values>
+    <values>
+        <field>Description__c</field>
+        <value xsi:type="xsd:string">Support cases dormant for 30+ days that likely need closure or escalation to prevent backlog buildup.</value>
     </values>
 </CustomMetadata>

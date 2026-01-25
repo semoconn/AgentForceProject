@@ -1,0 +1,212 @@
+/* Main Chart Container */
+.chart-container {
+    background: #fff;
+    border-radius: 0.25rem;
+    min-height: 220px;
+}
+
+.chart-wrapper {
+    width: 100%;
+    overflow: hidden;
+}
+
+/* SVG Chart Styling */
+.trend-chart {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+/* Grid Lines */
+.grid-line {
+    stroke: #e5e5e5;
+    stroke-width: 1;
+    stroke-dasharray: 4, 4;
+}
+
+/* Axis Lines */
+.axis-line {
+    stroke: #dddbda;
+    stroke-width: 1;
+}
+
+/* Chart Line */
+.chart-line {
+    fill: none;
+    stroke-width: 2.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transition: stroke-width 0.2s ease;
+}
+
+.chart-line:hover {
+    stroke-width: 3.5;
+}
+
+/* Area Fill (gradient under the line) */
+.area-fill {
+    fill: url(#areaGradient);
+    opacity: 1;
+}
+
+/* Data Points */
+.data-point {
+    stroke: #fff;
+    stroke-width: 2;
+    cursor: pointer;
+    transition: r 0.2s ease, stroke-width 0.2s ease;
+}
+
+.data-point:hover {
+    r: 6;
+    stroke-width: 3;
+}
+
+/* Axis Labels */
+.axis-label {
+    font-family: 'Salesforce Sans', Arial, sans-serif;
+    font-size: 10px;
+    fill: #706e6b;
+}
+
+.y-label {
+    text-anchor: end;
+    dominant-baseline: middle;
+}
+
+.x-label {
+    text-anchor: middle;
+    dominant-baseline: hanging;
+}
+
+/* Legend */
+.chart-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    justify-content: center;
+    padding: 0.5rem 1rem;
+    border-top: 1px solid #e5e5e5;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.75rem;
+    color: #3e3e3c;
+}
+
+.legend-color {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+
+.legend-label {
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Header Actions */
+.header-actions {
+    display: flex;
+    align-items: center;
+}
+
+.date-range-badge {
+    background-color: #f3f2f2;
+    color: #706e6b;
+    padding: 4px 12px;
+    border-radius: 1rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.truncation-badge {
+    background-color: #fff8e6;
+    color: #8c6b1a;
+    padding: 4px 10px;
+    border-radius: 1rem;
+    font-size: 0.7rem;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid #f3d99e;
+}
+
+/* Loading State */
+.loading-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 200px;
+}
+
+/* Empty State */
+.empty-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 200px;
+    background: linear-gradient(135deg, #f8f9fa 0%, #f3f2f2 100%);
+    border-radius: 0.5rem;
+    border: 1px dashed #dddbda;
+}
+
+.empty-state-content {
+    text-align: center;
+    padding: 2rem;
+}
+
+.empty-icon {
+    --slds-c-icon-color-foreground-default: #b0adab;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .header-actions {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .date-range-badge {
+        order: 3;
+        margin-top: 0.5rem;
+    }
+
+    .chart-legend {
+        gap: 0.5rem;
+    }
+
+    .legend-item {
+        font-size: 0.7rem;
+    }
+
+    .legend-label {
+        max-width: 80px;
+    }
+}
+
+/* Animation for chart line appearance */
+@keyframes drawLine {
+    from {
+        stroke-dashoffset: 1000;
+    }
+    to {
+        stroke-dashoffset: 0;
+    }
+}
+
+.chart-line {
+    stroke-dasharray: 1000;
+    animation: drawLine 1.5s ease-out forwards;
+}
+
+/* Tooltip styling (using native title attribute for simplicity) */
+.data-point title {
+    font-family: 'Salesforce Sans', Arial, sans-serif;
+}

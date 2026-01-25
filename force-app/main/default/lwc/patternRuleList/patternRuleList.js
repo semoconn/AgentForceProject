@@ -54,6 +54,10 @@ export default class PatternRuleList extends LightningElement {
     @track columns = COLUMNS;
     @track isProcessing = false;
 
+    // Queue for processing toggle requests sequentially
+    _toggleQueue = [];
+    _isProcessingQueue = false;
+
     // Computed properties
     get hasRules() {
         return this.rules && this.rules.length > 0;
@@ -160,31 +164,78 @@ export default class PatternRuleList extends LightningElement {
 
     // Deactivate rule (public method for parent to call)
     @api
-    async deactivateRule(developerName) {
-        this.isProcessing = true;
-
-        try {
-            await deactivateRule({ developerName });
-            this.dispatchEvent(new CustomEvent('ruleupdated'));
-        } catch (error) {
-            this.showToast('Error', error.body?.message || error.message, 'error');
-        }
-
-        this.isProcessing = false;
+    deactivateRule(developerName) {
+        this.queueToggle(developerName, false);
     }
 
     // Reactivate rule (public method for parent to call)
     @api
-    async reactivateRule(developerName) {
-        this.isProcessing = true;
+    reactivateRule(developerName) {
+        this.queueToggle(developerName, true);
+    }
 
-        try {
-            await reactivateRule({ developerName });
-            this.dispatchEvent(new CustomEvent('ruleupdated'));
-        } catch (error) {
-            this.showToast('Error', error.body?.message || error.message, 'error');
+    /**
+     * Queue a toggle request to ensure sequential processing
+     * This prevents race conditions when admin rapid-fires toggles
+     */
+    queueToggle(developerName, targetActiveState) {
+        // Check if there's already a pending request for this rule
+        const existingIndex = this._toggleQueue.findIndex(
+            item => item.developerName === developerName
+        );
+
+        if (existingIndex !== -1) {
+            // Update the existing queued request with the new target state
+            this._toggleQueue[existingIndex].targetActiveState = targetActiveState;
+        } else {
+            // Add new request to queue
+            this._toggleQueue.push({ developerName, targetActiveState });
         }
 
+        // Dispatch optimistic update immediately for instant UI feedback
+        this.dispatchEvent(new CustomEvent('ruleupdated', {
+            detail: { developerName, isActive: targetActiveState, optimistic: true }
+        }));
+
+        // Start processing queue if not already running
+        this.processQueue();
+    }
+
+    /**
+     * Process queued toggle requests sequentially
+     */
+    async processQueue() {
+        if (this._isProcessingQueue || this._toggleQueue.length === 0) {
+            return;
+        }
+
+        this._isProcessingQueue = true;
+        this.isProcessing = true;
+
+        while (this._toggleQueue.length > 0) {
+            const { developerName, targetActiveState } = this._toggleQueue.shift();
+
+            try {
+                if (targetActiveState) {
+                    await reactivateRule({ developerName });
+                } else {
+                    await deactivateRule({ developerName });
+                }
+
+                // Dispatch confirmed update
+                this.dispatchEvent(new CustomEvent('ruleupdated', {
+                    detail: { developerName, isActive: targetActiveState, optimistic: false }
+                }));
+            } catch (error) {
+                // Rollback on error
+                this.dispatchEvent(new CustomEvent('ruleupdated', {
+                    detail: { developerName, isActive: !targetActiveState, rollback: true }
+                }));
+                this.showToast('Error', error.body?.message || error.message, 'error');
+            }
+        }
+
+        this._isProcessingQueue = false;
         this.isProcessing = false;
     }
 

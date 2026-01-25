@@ -229,6 +229,11 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>System_Health_Log__c.Error_Details__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>System_Health_Log__c.Job_ID__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -242,6 +247,18 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>BehaviorIQ_License__c.Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+
+    <!-- FIELD PERMISSIONS: Test fields for E2E pattern testing (read-only system field workaround) -->
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Case.Last_Modified_Test__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Opportunity.Last_Stage_Change_Test__c</field>
         <readable>true</readable>
     </fieldPermissions>
 
@@ -286,6 +303,16 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Remediation_Log__c.Rule_Developer_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Remediation_Log__c.Object_API_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Remediation_Log__c.Record_Name__c</field>
         <readable>true</readable>
     </fieldPermissions>
 

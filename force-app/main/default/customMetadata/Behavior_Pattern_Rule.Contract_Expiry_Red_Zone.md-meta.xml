@@ -34,4 +34,8 @@
         <field>Is_Active__c</field>
         <value xsi:type="xsd:boolean">true</value>
     </values>
+    <values>
+        <field>Description__c</field>
+        <value xsi:type="xsd:string">Contracts expiring within 30 days without a renewal opportunity, risking revenue loss from lapsed customers.</value>
+    </values>
 </CustomMetadata>

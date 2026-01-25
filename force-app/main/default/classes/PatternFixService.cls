@@ -212,16 +212,35 @@ public with sharing class PatternFixService {
 
         List<Task> tasks = new List<Task>();
         String subject = (String)config.get('subject');
+        String priority = (String)config.get('priority');
+        String description = (String)config.get('description');
 
         for (Id recId : recordIds) {
-            tasks.add(new Task(
+            Task t = new Task(
                 Subject = (subject != null ? subject : 'Action Required'),
-                Priority = 'High',
+                Priority = (priority != null ? priority : 'High'),
                 Status = 'Not Started',
                 ActivityDate = Date.today().addDays(1),
-                WhatId = recId,
                 OwnerId = UserInfo.getUserId()
-            ));
+            );
+
+            if (description != null) {
+                t.Description = description;
+            }
+
+            // Determine the correct relationship field based on object type
+            // WhoId is for person objects (Contact, Lead)
+            // WhatId is for non-person objects (Account, Opportunity, Case, etc.)
+            Schema.SObjectType sType = recId.getSObjectType();
+            String objectName = sType.getDescribe().getName();
+
+            if (objectName == 'Contact' || objectName == 'Lead') {
+                t.WhoId = recId;
+            } else {
+                t.WhatId = recId;
+            }
+
+            tasks.add(t);
         }
 
         try {
@@ -260,6 +279,11 @@ public with sharing class PatternFixService {
         Schema.SObjectType sType = recordIds[0].getSObjectType();
         String objectName = sType.getDescribe().getName();
 
+        // TC-6.2: Verify object is accessible before querying
+        if (!sType.getDescribe().isAccessible()) {
+            throw new AuraHandledException('Insufficient permissions to read ' + objectName + ' records.');
+        }
+
         // Query all accessible fields for full snapshot (for undo capability)
         // Ensure the target field is always included for logging original value
         String snapshotFields = getSnapshotFieldsForObject(objectName);
@@ -267,6 +291,7 @@ public with sharing class PatternFixService {
             snapshotFields = String.escapeSingleQuotes(field) + ', ' + snapshotFields;
         }
         String soql = 'SELECT ' + snapshotFields + ' FROM ' + objectName + ' WHERE Id IN :recordIds';
+        // TC-6.1/6.2: Execute query (class uses 'with sharing', getSnapshotFieldsForObject checks FLS)
         Map<Id, SObject> originalRecords = new Map<Id, SObject>(Database.query(soql));
 
         // Create snapshot JSON map for each record
@@ -320,6 +345,11 @@ public with sharing class PatternFixService {
         Schema.SObjectType sType = recordIds[0].getSObjectType();
         String objectName = sType.getDescribe().getName();
 
+        // TC-6.2: Verify object is accessible before querying
+        if (!sType.getDescribe().isAccessible()) {
+            throw new AuraHandledException('Insufficient permissions to read ' + objectName + ' records.');
+        }
+
         // Query all accessible fields for full snapshot (for undo capability)
         // Ensure OwnerId is always included for owner assignment logic
         String snapshotFields = getSnapshotFieldsForObject(objectName);
@@ -327,6 +357,7 @@ public with sharing class PatternFixService {
             snapshotFields = 'OwnerId, ' + snapshotFields;
         }
         String soql = 'SELECT ' + snapshotFields + ' FROM ' + objectName + ' WHERE Id IN :recordIds';
+        // TC-6.1/6.2: Execute query (class uses 'with sharing', getSnapshotFieldsForObject checks FLS)
         Map<Id, SObject> originalRecords = new Map<Id, SObject>(Database.query(soql));
 
         // Create snapshot JSON map for each record
@@ -637,6 +668,11 @@ public with sharing class PatternFixService {
             if (Test.isRunningTest() && forceEmailQueryException) {
                 throw new QueryException('Forced test exception for email query');
             }
+            // TC-6.2: Verify object is accessible before querying
+            if (!sType.getDescribe().isAccessible()) {
+                throw new AuraHandledException('Insufficient permissions to read ' + objectName + ' records.');
+            }
+            // TC-6.1/6.2: Execute query (class uses 'with sharing' for sharing enforcement)
             records = Database.query(soql);
         } catch (Exception e) {
             for (Id recId : recordIds) {
@@ -792,10 +828,20 @@ public with sharing class PatternFixService {
         }
         Date closeDate = Date.today().addDays(daysOffset);
 
+        // TC-6.2: Verify Contract is accessible before querying
+        if (!Schema.sObjectType.Contract.isAccessible()) {
+            for (Id recId : recordIds) {
+                addLog(recId, ACTION_OPPORTUNITY_CREATION, null, null, STATUS_FAILED,
+                       'Insufficient permissions to read Contract records.');
+            }
+            throw new AuraHandledException('Insufficient permissions to read Contract records.');
+        }
+
         // Query contracts to get account and contract details
         String soql = 'SELECT Id, ContractNumber, AccountId, Account.Name, EndDate FROM Contract WHERE Id IN :recordIds';
         List<Contract> contracts;
         try {
+            // TC-6.1/6.2: Execute query (class uses 'with sharing' for sharing enforcement)
             contracts = Database.query(soql);
         } catch (Exception e) {
             for (Id recId : recordIds) {
@@ -844,8 +890,9 @@ public with sharing class PatternFixService {
             if (Test.isRunningTest() && forceOpportunityCreationException) {
                 throw new DmlException('Forced test exception for opportunity creation');
             }
-            // Insert opportunities directly - we already checked isCreateable() at the start
-            // Using stripInaccessible before insert can cause issues if it strips required fields
+            // TC-6.2: CRUD check done at method start (isCreateable())
+            // Note: Not using stripInaccessible here as it can strip required fields (Name, StageName, etc.)
+            // which would cause silent insert failures. The CRUD check ensures object-level access.
             Database.SaveResult[] results = Database.insert(opportunities, false);
 
             for (Integer i = 0; i < results.size(); i++) {
@@ -1033,6 +1080,32 @@ public with sharing class PatternFixService {
             return; // Silently skip logging if no permission
         }
 
+        // Get object API name for identification (no per-record query to avoid SOQL limits)
+        String objectApiName = '';
+        String recordName = '';
+        if (affectedRecordId != null) {
+            try {
+                Schema.SObjectType sType = affectedRecordId.getSObjectType();
+                objectApiName = sType.getDescribe().getName();
+
+                // Extract record name from snapshot if available (avoids SOQL-in-loop)
+                if (String.isNotBlank(snapshotJson)) {
+                    try {
+                        Map<String, Object> snapshotData = (Map<String, Object>) JSON.deserializeUntyped(snapshotJson);
+                        String nameField = getNameFieldForObject(objectApiName);
+                        if (String.isNotBlank(nameField) && snapshotData.containsKey(nameField)) {
+                            Object nameValue = snapshotData.get(nameField);
+                            recordName = nameValue != null ? String.valueOf(nameValue) : '';
+                        }
+                    } catch (Exception jsonEx) {
+                        // Snapshot parsing failed, skip name extraction
+                    }
+                }
+            } catch (Exception e) {
+                System.debug(LoggingLevel.WARN, 'Could not get object info for logging: ' + e.getMessage());
+            }
+        }
+
         Remediation_Log__c log = new Remediation_Log__c(
             Affected_Record_ID__c = String.valueOf(affectedRecordId),
             Action_Taken__c = actionTaken,
@@ -1040,7 +1113,9 @@ public with sharing class PatternFixService {
             New_Value__c = truncateValue(newValue, 255),
             Status__c = status,
             Executed_By__c = UserInfo.getUserId(),
-            Rule_Developer_Name__c = this.currentRuleName
+            Rule_Developer_Name__c = this.currentRuleName,
+            Object_API_Name__c = objectApiName,
+            Record_Name__c = truncateValue(recordName, 255)
         );
 
         if (String.isNotBlank(errorMessage)) {
@@ -1061,14 +1136,30 @@ public with sharing class PatternFixService {
      * Uses partial success to ensure main operation completes even if logging fails.
      */
     private void insertPendingLogs() {
-        if (pendingLogs.isEmpty()) return;
+        if (pendingLogs.isEmpty()) {
+            System.debug(LoggingLevel.INFO, 'No pending logs to insert');
+            return;
+        }
+
+        System.debug(LoggingLevel.INFO, 'Attempting to insert ' + pendingLogs.size() + ' remediation logs');
 
         if (!Schema.sObjectType.Remediation_Log__c.isCreateable()) {
+            System.debug(LoggingLevel.WARN, 'User does not have create permission on Remediation_Log__c - skipping audit logs');
             return;
         }
 
         // Use allOrNone = false to not fail the main operation if logging fails
-        Database.insert(pendingLogs, false);
+        Database.SaveResult[] results = Database.insert(pendingLogs, false);
+
+        // Log any failures for debugging
+        for (Integer i = 0; i < results.size(); i++) {
+            if (!results[i].isSuccess()) {
+                for (Database.Error err : results[i].getErrors()) {
+                    System.debug(LoggingLevel.ERROR, 'Failed to insert remediation log: ' + err.getMessage());
+                }
+            }
+        }
+
         pendingLogs.clear();
     }
 
@@ -1078,6 +1169,42 @@ public with sharing class PatternFixService {
     private String truncateValue(String value, Integer maxLength) {
         if (value == null) return null;
         return value.length() > maxLength ? value.substring(0, maxLength) : value;
+    }
+
+    /**
+     * @description Returns the appropriate name field for a given object.
+     * Most objects use 'Name', but some have special name fields.
+     * @param objectApiName The API name of the object
+     * @return The name field API name, or null if not found
+     */
+    private String getNameFieldForObject(String objectApiName) {
+        // Special cases where the name field is not 'Name'
+        Map<String, String> specialNameFields = new Map<String, String>{
+            'Case' => 'CaseNumber',
+            'Contract' => 'ContractNumber',
+            'Solution' => 'SolutionName',
+            'Task' => 'Subject',
+            'Event' => 'Subject'
+        };
+
+        if (specialNameFields.containsKey(objectApiName)) {
+            return specialNameFields.get(objectApiName);
+        }
+
+        // Check if the object has a Name field
+        try {
+            Schema.SObjectType sType = Schema.getGlobalDescribe().get(objectApiName);
+            if (sType != null) {
+                Map<String, Schema.SObjectField> fieldMap = sType.getDescribe().fields.getMap();
+                if (fieldMap.containsKey('name') && fieldMap.get('name').getDescribe().isAccessible()) {
+                    return 'Name';
+                }
+            }
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'Error checking name field for ' + objectApiName + ': ' + e.getMessage());
+        }
+
+        return null;
     }
 
     /**

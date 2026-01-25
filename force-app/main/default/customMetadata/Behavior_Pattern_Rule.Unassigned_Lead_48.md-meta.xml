@@ -34,4 +34,8 @@
         <field>Is_Active__c</field>
         <value xsi:type="xsd:boolean">true</value>
     </values>
+    <values>
+        <field>Description__c</field>
+        <value xsi:type="xsd:string">New leads sitting unassigned in queues for 48+ hours, missing the critical window for initial contact.</value>
+    </values>
 </CustomMetadata>
