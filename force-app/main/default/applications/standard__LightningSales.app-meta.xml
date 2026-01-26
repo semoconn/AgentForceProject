@@ -10,6 +10,16 @@
     <navType>Standard</navType>
     <tabs>standard-home</tabs>
     <tabs>BehaviorIQ</tabs>
+    <tabs>Behavior_Log__c</tabs>
+    <tabs>Behavior_Snapshot__c</tabs>
+    <tabs>Identified_Pain_Point__c</tabs>
+    <tabs>Remediation_Log__c</tabs>
+    <tabs>Project__c</tabs>
+    <tabs>Quote_Request__c</tabs>
+    <tabs>Workflow_Log__c</tabs>
+    <tabs>BehaviorIQ_Configuration__c</tabs>
+    <tabs>Suggestion_Dismissal__c</tabs>
+    <tabs>System_Health_Log__c</tabs>
     <tabs>standard-Opportunity</tabs>
     <tabs>standard-Lead</tabs>
     <tabs>standard-Task</tabs>
@@ -25,7 +35,6 @@
     <tabs>standard-OtherUserProfile</tabs>
     <tabs>standard-Case</tabs>
     <tabs>standard-Forecasting3</tabs>
-    <tabs>Behavior_Log__c</tabs>
     <uiType>Lightning</uiType>
     <utilityBar>LightningSales_UtilityBar</utilityBar>
 </CustomApplication>

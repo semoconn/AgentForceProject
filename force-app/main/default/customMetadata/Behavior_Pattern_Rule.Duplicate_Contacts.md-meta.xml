@@ -24,7 +24,7 @@
     </values>
     <values>
         <field>Fix_Config__c</field>
-        <value xsi:type="xsd:string">{"duplicateField": "Email", "excludeNulls": true, "taskSubject": "Review duplicate contact"}</value>
+        <value xsi:type="xsd:string">{"duplicateField": "Email", "excludeNulls": true, "subject": "Review &amp; Merge Duplicate Contact", "priority": "Normal", "description": "This contact has a duplicate email address. Review both records and merge or delete to maintain data quality."}</value>
     </values>
     <values>
         <field>Is_Premium__c</field>

@@ -125,6 +125,9 @@ private with sharing class WorkflowAnalyticsControllerTest {
         Lead l = [SELECT Id FROM Lead LIMIT 1];
         List<String> recordIds = new List<String>{String.valueOf(l.Id)};
 
+        // Set fallback owner for test context (no queues configured in scratch org)
+        PatternFixService.fallbackOwnerId = UserInfo.getUserId();
+
         Test.startTest();
         WorkflowAnalyticsController.AutoFixResult result = WorkflowAnalyticsController.runAutoFix(recordIds, 'Unassigned Lead 48');
         Test.stopTest();
@@ -2064,6 +2067,9 @@ private with sharing class WorkflowAnalyticsControllerTest {
         for (Lead l : leads) {
             recordIds.add(String.valueOf(l.Id));
         }
+
+        // Set fallback owner for test context (no queues configured in scratch org)
+        PatternFixService.fallbackOwnerId = UserInfo.getUserId();
 
         Test.startTest();
         WorkflowAnalyticsController.AutoFixResult result = WorkflowAnalyticsController.runAutoFix(recordIds, 'Unassigned Lead 48');

@@ -314,6 +314,8 @@ export default class BehaviorIQDashboard extends LightningElement {
             refreshApex(this._wiredObjectsCountResult),
             refreshApex(this._wiredSystemHealthResult)
         ]).then(() => {
+            // Also refresh the health gauge component
+            this.refreshHealthGauge();
             this.isLoading = false;
             this.showToast('Success', 'Dashboard refreshed', 'success');
         });

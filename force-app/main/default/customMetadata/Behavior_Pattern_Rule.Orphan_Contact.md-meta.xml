@@ -16,7 +16,7 @@
     </values>
     <values>
         <field>Fix_Config__c</field>
-        <value xsi:type="xsd:string">{"taskSubject": "Associate orphan contact with account", "taskPriority": "Normal"}</value>
+        <value xsi:type="xsd:string">{"subject": "Link Contact to Account", "priority": "Normal", "description": "This contact has no associated account. Please review and link to the appropriate account for proper relationship tracking."}</value>
     </values>
     <values>
         <field>Is_Premium__c</field>

@@ -3,20 +3,16 @@
     <label>Expired Quote Requests</label>
     <protected>false</protected>
     <values>
-        <field>Apex_Handler_Class__c</field>
-        <value xsi:type="xsd:string">ExpiredQuoteRequestPlugin</value>
-    </values>
-    <values>
         <field>Cost_Per_Incident__c</field>
         <value xsi:type="xsd:double">500.0</value>
     </values>
     <values>
         <field>Fix_Config__c</field>
-        <value xsi:type="xsd:string">{"gracePeriodDays": 0, "createTask": true, "taskSubject": "Expired Quote - Customer Follow-up Required"}</value>
+        <value xsi:type="xsd:string">{"gracePeriodDays": 0, "createTask": true, "subject": "Expired Quote - Customer Follow-up Required", "priority": "High", "description": "This quote request has expired while still in draft or pending status. Contact the customer to renew the quote or close the request."}</value>
     </values>
     <values>
         <field>Fix_Type__c</field>
-        <value xsi:type="xsd:string">No_Action</value>
+        <value xsi:type="xsd:string">Task_Creation</value>
     </values>
     <values>
         <field>Is_Premium__c</field>
@@ -24,7 +20,7 @@
     </values>
     <values>
         <field>Logic_Type__c</field>
-        <value xsi:type="xsd:string">Apex_Plugin</value>
+        <value xsi:type="xsd:string">Standard</value>
     </values>
     <values>
         <field>Object_API_Name__c</field>
@@ -40,7 +36,7 @@
     </values>
     <values>
         <field>Is_Active__c</field>
-        <value xsi:type="xsd:boolean">false</value>
+        <value xsi:type="xsd:boolean">true</value>
     </values>
     <values>
         <field>Description__c</field>

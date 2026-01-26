@@ -16,7 +16,7 @@
     </values>
     <values>
         <field>Fix_Config__c</field>
-        <value xsi:type="xsd:string">{"taskSubject": "Associate orphan opportunity with account", "taskPriority": "High"}</value>
+        <value xsi:type="xsd:string">{"subject": "Link Opportunity to Account", "priority": "High", "description": "This opportunity has no associated account. Link to the appropriate account for accurate forecasting and pipeline reporting."}</value>
     </values>
     <values>
         <field>Is_Premium__c</field>

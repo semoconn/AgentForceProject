@@ -24,7 +24,7 @@
     </values>
     <values>
         <field>Fix_Config__c</field>
-        <value xsi:type="xsd:string">{"duplicateField": "Name", "excludeNulls": true, "taskSubject": "Review duplicate account"}</value>
+        <value xsi:type="xsd:string">{"duplicateField": "Name", "excludeNulls": true, "subject": "Review &amp; Merge Duplicate Account", "priority": "Normal", "description": "This account has a duplicate name. Review both records and consolidate to maintain accurate customer data."}</value>
     </values>
     <values>
         <field>Is_Premium__c</field>
