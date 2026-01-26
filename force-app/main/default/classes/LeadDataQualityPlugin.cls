@@ -2,7 +2,7 @@
  * @description Apex plugin that detects Leads with missing or invalid email addresses.
  * Target Object: Lead
  */
-global class LeadDataQualityPlugin implements PatternPlugin {
+global with sharing class LeadDataQualityPlugin implements PatternPlugin {
 
     /**
      * @description Finds Leads with blank email addresses.
@@ -31,6 +31,14 @@ global class LeadDataQualityPlugin implements PatternPlugin {
         PatternPluginResult result = new PatternPluginResult();
         String ruleName = config != null ? (String) config.get('ruleDeveloperName') : 'Lead_Data_Quality';
 
+        // CRUD check before DML
+        if (!Schema.sObjectType.Task.isCreateable()) {
+            for (Id recordId : recordIds) {
+                result.addFailureLog(recordId, 'Task_Creation', 'Insufficient permissions to create Tasks', ruleName);
+            }
+            return result;
+        }
+
         List<Task> tasksToInsert = new List<Task>();
 
         for (Id recordId : recordIds) {
@@ -45,7 +53,9 @@ global class LeadDataQualityPlugin implements PatternPlugin {
         }
 
         try {
-            insert tasksToInsert;
+            // Use Security.stripInaccessible for FLS enforcement, and 'as user' for CRUD/sharing
+            List<SObject> secureTasks = Security.stripInaccessible(AccessType.CREATABLE, tasksToInsert).getRecords();
+            insert as user secureTasks;
             for (Id recordId : recordIds) {
                 result.addSuccessLog(recordId, 'Task_Creation', null, 'Task created', ruleName);
             }

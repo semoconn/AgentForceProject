@@ -150,16 +150,17 @@ public with sharing class UserLeaderboardController {
         if (userIds.isEmpty()) return resultMap;
 
         try {
-            // Raw query first (without security enforcement to verify data existence)
+            // Query with USER_MODE for sharing/FLS enforcement, then stripInaccessible for additional protection
             List<Behavior_Log__c> logs = [
-                SELECT User__c, Action_Name__c 
-                FROM Behavior_Log__c 
-                WHERE User__c IN :userIds 
-                ORDER BY CreatedDate DESC 
+                SELECT User__c, Action_Name__c
+                FROM Behavior_Log__c
+                WHERE User__c IN :userIds
+                WITH USER_MODE
+                ORDER BY CreatedDate DESC
                 LIMIT 500
             ];
-            
-            // Apply security stripping manually
+
+            // Apply security stripping for additional field-level protection
             SObjectAccessDecision securityDecision = Security.stripInaccessible(AccessType.READABLE, logs);
             
             for (SObject obj : securityDecision.getRecords()) {
@@ -204,10 +205,15 @@ public with sharing class UserLeaderboardController {
                 throw new AuraHandledException('User ID is required.');
             }
 
-            // Verify the user exists
-            List<User> users = [SELECT Id, Name FROM User WHERE Id = :userId AND IsActive = true LIMIT 1];
+            // Verify the user exists with USER_MODE for security
+            List<User> users = [SELECT Id, Name FROM User WHERE Id = :userId AND IsActive = true WITH USER_MODE LIMIT 1];
             if (users.isEmpty()) {
                 throw new AuraHandledException('User not found or inactive.');
+            }
+
+            // CRUD check before creating Task
+            if (!Schema.sObjectType.Task.isCreateable()) {
+                throw new AuraHandledException('Insufficient permissions to create Tasks.');
             }
 
             // Create a Task for the user
@@ -219,7 +225,10 @@ public with sharing class UserLeaderboardController {
                 Priority = 'Normal',
                 ActivityDate = Date.today().addDays(3)
             );
-            insert nudgeTask;
+
+            // Use Security.stripInaccessible for FLS enforcement, and 'as user' for CRUD/sharing
+            List<SObject> secureTasks = Security.stripInaccessible(AccessType.CREATABLE, new List<Task>{nudgeTask}).getRecords();
+            insert as user secureTasks;
 
             return 'Nudge sent to ' + users[0].Name;
         } catch (AuraHandledException e) {

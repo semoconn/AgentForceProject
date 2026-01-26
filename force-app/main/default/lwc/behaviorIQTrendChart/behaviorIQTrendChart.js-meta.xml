@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
-    <apiVersion>59.0</apiVersion>
+    <apiVersion>62.0</apiVersion>
     <isExposed>true</isExposed>
     <masterLabel>BehaviorIQ Trend Chart</masterLabel>
     <description>Displays historical trend data from Behavior_Snapshot__c as an interactive line chart for the BehaviorIQ Dashboard.</description>

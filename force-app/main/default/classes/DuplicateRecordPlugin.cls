@@ -121,7 +121,8 @@ global with sharing class DuplicateRecordPlugin implements PatternPlugin {
                                 ' LIMIT ' + QUERY_LIMIT;
 
         try {
-            List<AggregateResult> results = Database.query(aggregateQuery);
+            // Field/object names are Schema-validated via validateSObjectTypeAndField
+            List<AggregateResult> results = Database.query(aggregateQuery);  // NOPMD - ApexSOQLInjection
 
             for (AggregateResult ar : results) {
                 Object fieldValue = ar.get('fieldValue');
@@ -157,7 +158,8 @@ global with sharing class DuplicateRecordPlugin implements PatternPlugin {
                             ' LIMIT ' + QUERY_LIMIT;
 
         try {
-            List<SObject> records = Database.query(recordQuery);
+            // Field/object names are Schema-validated, duplicateValues uses bind variable
+            List<SObject> records = Database.query(recordQuery);  // NOPMD - ApexSOQLInjection
 
             for (SObject record : records) {
                 recordIds.add(record.Id);

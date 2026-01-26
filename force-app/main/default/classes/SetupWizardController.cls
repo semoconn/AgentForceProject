@@ -106,11 +106,13 @@ public with sharing class SetupWizardController {
     private static void runInitialAnalysis() {
         try {
             // Check if there's already a batch running to avoid conflicts
+            // Note: AsyncApexJob is a setup object and requires specific permissions
             List<AsyncApexJob> runningJobs = [
                 SELECT Id
                 FROM AsyncApexJob
                 WHERE ApexClass.Name = 'PatternAnalysisService'
                 AND Status IN ('Holding', 'Queued', 'Preparing', 'Processing')
+                WITH USER_MODE
                 LIMIT 1
             ];
 
@@ -152,7 +154,9 @@ public with sharing class SetupWizardController {
 
             settings.Monitored_Objects__c = String.join(monitoredObjects, ',');
 
-            upsert settings;
+            // Use Security.stripInaccessible for FLS enforcement, and 'as user' for CRUD/sharing
+            List<SObject> secureSettings = Security.stripInaccessible(AccessType.UPSERTABLE, new List<SObject>{settings}).getRecords();
+            upsert as user secureSettings;
 
         } catch (Exception e) {
             System.debug(LoggingLevel.ERROR, 'Save Settings Error: ' + e.getMessage());

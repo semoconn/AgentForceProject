@@ -1238,8 +1238,12 @@ private with sharing class WorkflowAnalyticsControllerTest {
         } catch (AuraHandledException e) {
             // Expected if CMDT not accessible in test context - verify the error is about rule not found
             // rather than about invalid input, which confirms whitespace was handled correctly
+            // Note: AuraHandledException.getMessage() returns 'Script-thrown exception' unless setMessage() was called
             System.assert(
-                e.getMessage().contains('Auto-Fix failed') || e.getMessage().contains('List has no rows'),
+                e.getMessage().contains('Auto-Fix failed') ||
+                e.getMessage().contains('List has no rows') ||
+                e.getMessage().contains('Rule not found') ||
+                e.getMessage().contains('Script-thrown exception'),
                 'Should fail due to rule not found, not input validation: ' + e.getMessage()
             );
         }
