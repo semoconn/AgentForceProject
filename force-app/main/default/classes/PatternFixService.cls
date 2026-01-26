@@ -63,17 +63,22 @@ public with sharing class PatternFixService {
         this.currentRuleName = ruleDeveloperName;
 
         // 1. Fetch Rule (use mock if available in test context)
+        // CMDT queries don't support WITH USER_MODE - CMDT is read-only and admin-controlled
         Behavior_Pattern_Rule__mdt rule;
         if (Test.isRunningTest() && mockRule != null) {
             rule = mockRule;
         } else {
-            rule = [
+            List<Behavior_Pattern_Rule__mdt> rules = [  // NOPMD - ApexCRUDViolation: CMDT doesn't support USER_MODE
                 SELECT Fix_Type__c, Fix_Config__c, Is_Premium__c,
                        Logic_Type__c, Apex_Handler_Class__c
                 FROM Behavior_Pattern_Rule__mdt
                 WHERE DeveloperName = :ruleDeveloperName
                 LIMIT 1
             ];
+            if (rules.isEmpty()) {
+                throw new AuraHandledException('Rule not found: ' + ruleDeveloperName);
+            }
+            rule = rules[0];
         }
 
         // 2. Validate License
@@ -249,7 +254,7 @@ public with sharing class PatternFixService {
                 throw new DmlException('Forced test exception for task creation');
             }
             List<SObject> insertedTasks = Security.stripInaccessible(AccessType.CREATABLE, tasks).getRecords();
-            insert insertedTasks;
+            insert as user insertedTasks;
 
             // Log successful task creations
             for (Integer i = 0; i < recordIds.size(); i++) {
@@ -286,13 +291,14 @@ public with sharing class PatternFixService {
 
         // Query all accessible fields for full snapshot (for undo capability)
         // Ensure the target field is always included for logging original value
+        // Note: snapshotFields are Schema-validated via getSnapshotFieldsForObject which checks FLS
         String snapshotFields = getSnapshotFieldsForObject(objectName);
         if (!snapshotFields.containsIgnoreCase(field)) {
             snapshotFields = String.escapeSingleQuotes(field) + ', ' + snapshotFields;
         }
-        String soql = 'SELECT ' + snapshotFields + ' FROM ' + objectName + ' WHERE Id IN :recordIds';
-        // TC-6.1/6.2: Execute query (class uses 'with sharing', getSnapshotFieldsForObject checks FLS)
-        Map<Id, SObject> originalRecords = new Map<Id, SObject>(Database.query(soql));
+        String soql = 'SELECT ' + snapshotFields + ' FROM ' + String.escapeSingleQuotes(objectName) + ' WHERE Id IN :recordIds WITH USER_MODE';
+        // TC-6.1/6.2: Execute query with USER_MODE for sharing/FLS enforcement
+        Map<Id, SObject> originalRecords = new Map<Id, SObject>(Database.query(soql));  // NOPMD - ApexSOQLInjection
 
         // Create snapshot JSON map for each record
         Map<Id, String> recordSnapshots = new Map<Id, String>();
@@ -352,13 +358,14 @@ public with sharing class PatternFixService {
 
         // Query all accessible fields for full snapshot (for undo capability)
         // Ensure OwnerId is always included for owner assignment logic
+        // Note: snapshotFields are Schema-validated via getSnapshotFieldsForObject which checks FLS
         String snapshotFields = getSnapshotFieldsForObject(objectName);
         if (!snapshotFields.containsIgnoreCase('OwnerId')) {
             snapshotFields = 'OwnerId, ' + snapshotFields;
         }
-        String soql = 'SELECT ' + snapshotFields + ' FROM ' + objectName + ' WHERE Id IN :recordIds';
-        // TC-6.1/6.2: Execute query (class uses 'with sharing', getSnapshotFieldsForObject checks FLS)
-        Map<Id, SObject> originalRecords = new Map<Id, SObject>(Database.query(soql));
+        String soql = 'SELECT ' + snapshotFields + ' FROM ' + String.escapeSingleQuotes(objectName) + ' WHERE Id IN :recordIds WITH USER_MODE';
+        // TC-6.1/6.2: Execute query with USER_MODE for sharing/FLS enforcement
+        Map<Id, SObject> originalRecords = new Map<Id, SObject>(Database.query(soql));  // NOPMD - ApexSOQLInjection
 
         // Create snapshot JSON map for each record
         Map<Id, String> recordSnapshots = new Map<Id, String>();
@@ -445,8 +452,8 @@ public with sharing class PatternFixService {
             List<SObject> safetyNetUpdates = new List<SObject>();
             Set<Id> needsSafetyNet = new Set<Id>();
 
-            // Re-query to get the assigned owners
-            Map<Id, SObject> updatedRecords = new Map<Id, SObject>(Database.query(soql));
+            // Re-query to get the assigned owners (soql already includes WITH USER_MODE)
+            Map<Id, SObject> updatedRecords = new Map<Id, SObject>(Database.query(soql));  // NOPMD - ApexSOQLInjection
 
             for (Integer i = 0; i < results.size(); i++) {
                 Id recId = recordIds[i];
@@ -551,6 +558,7 @@ public with sharing class PatternFixService {
             for (QueueSobject qs : [
                 SELECT QueueId FROM QueueSobject
                 WHERE SobjectType = :objectName
+                WITH USER_MODE
             ]) {
                 supportedQueueIds.add(qs.QueueId);
             }
@@ -567,6 +575,7 @@ public with sharing class PatternFixService {
                     WHERE Type = 'Queue'
                     AND Name = :queueName
                     AND Id IN :supportedQueueIds
+                    WITH USER_MODE
                     LIMIT 1
                 ];
 
@@ -581,6 +590,7 @@ public with sharing class PatternFixService {
                 SELECT Id, Name FROM Group
                 WHERE Type = 'Queue'
                 AND Id IN :supportedQueueIds
+                WITH USER_MODE
                 ORDER BY Name
                 LIMIT 1
             ];
@@ -661,7 +671,7 @@ public with sharing class PatternFixService {
             queryFields = 'Id, OwnerId';
         }
 
-        String soql = 'SELECT ' + queryFields + ' FROM ' + objectName + ' WHERE Id IN :recordIds';
+        String soql = 'SELECT ' + queryFields + ' FROM ' + String.escapeSingleQuotes(objectName) + ' WHERE Id IN :recordIds WITH USER_MODE';
         List<SObject> records;
         try {
             // Test hook for exception coverage
@@ -672,8 +682,8 @@ public with sharing class PatternFixService {
             if (!sType.getDescribe().isAccessible()) {
                 throw new AuraHandledException('Insufficient permissions to read ' + objectName + ' records.');
             }
-            // TC-6.1/6.2: Execute query (class uses 'with sharing' for sharing enforcement)
-            records = Database.query(soql);
+            // TC-6.1/6.2: Execute query with USER_MODE for sharing/FLS enforcement
+            records = Database.query(soql);  // NOPMD - ApexSOQLInjection: queryFields are Schema-validated
         } catch (Exception e) {
             for (Id recId : recordIds) {
                 addLog(recId, ACTION_EMAIL_NOTIFICATION, null, null, STATUS_FAILED, 'Query failed: ' + e.getMessage());
@@ -837,12 +847,12 @@ public with sharing class PatternFixService {
             throw new AuraHandledException('Insufficient permissions to read Contract records.');
         }
 
-        // Query contracts to get account and contract details
-        String soql = 'SELECT Id, ContractNumber, AccountId, Account.Name, EndDate FROM Contract WHERE Id IN :recordIds';
+        // Query contracts to get account and contract details with USER_MODE for security
+        String soql = 'SELECT Id, ContractNumber, AccountId, Account.Name, EndDate FROM Contract WHERE Id IN :recordIds WITH USER_MODE';
         List<Contract> contracts;
         try {
-            // TC-6.1/6.2: Execute query (class uses 'with sharing' for sharing enforcement)
-            contracts = Database.query(soql);
+            // TC-6.1/6.2: Execute query with USER_MODE for sharing/FLS enforcement
+            contracts = Database.query(soql);  // NOPMD - ApexSOQLInjection: static query with bind variable
         } catch (Exception e) {
             for (Id recId : recordIds) {
                 addLog(recId, ACTION_OPPORTUNITY_CREATION, null, null, STATUS_FAILED, 'Query failed: ' + e.getMessage());
@@ -934,13 +944,15 @@ public with sharing class PatternFixService {
             throw new AuraHandledException('Insufficient permissions to update Cases.');
         }
 
-        // Query Cases for snapshot
+        // Query Cases for snapshot with USER_MODE for security
+        // Note: snapshotFields are Schema-validated via getSnapshotFieldsForObject which checks FLS
         String snapshotFields = getSnapshotFieldsForObject('Case');
         if (!snapshotFields.containsIgnoreCase('IsEscalated')) {
             snapshotFields = 'IsEscalated, ' + snapshotFields;
         }
-        String soql = 'SELECT ' + snapshotFields + ' FROM Case WHERE Id IN :recordIds';
-        Map<Id, SObject> originalRecords = new Map<Id, SObject>(Database.query(soql));
+        String soql = 'SELECT ' + snapshotFields + ' FROM Case WHERE Id IN :recordIds WITH USER_MODE';
+        // snapshotFields are Schema-validated via getSnapshotFieldsForObject
+        Map<Id, SObject> originalRecords = new Map<Id, SObject>(Database.query(soql));  // NOPMD - ApexSOQLInjection
 
         // Create snapshot JSON map
         Map<Id, String> recordSnapshots = new Map<Id, String>();

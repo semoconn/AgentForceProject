@@ -17,16 +17,24 @@ public with sharing class BehaviorSettingsController {
     @AuraEnabled(cacheable=true)
     public static Behavior_Setting__mdt getBehaviorSettings() {
         try {
-            return [
-                SELECT Id, 
-                       Stale_Opportunity_Days__c, 
-                       Unassigned_Lead_Age_Hours__c, 
+            // CMDT queries don't support WITH USER_MODE - CMDT is read-only and admin-controlled
+            List<Behavior_Setting__mdt> settings = [  // NOPMD - ApexCRUDViolation: CMDT doesn't support USER_MODE
+                SELECT Id,
+                       Stale_Opportunity_Days__c,
+                       Unassigned_Lead_Age_Hours__c,
                        Sequential_Action_Threshold__c,
-                       Stale_Case_Days__c  // NEW: 4th Field
-                FROM Behavior_Setting__mdt 
-                WHERE DeveloperName = :METADATA_RECORD_NAME 
+                       Stale_Case_Days__c
+                FROM Behavior_Setting__mdt
+                WHERE DeveloperName = :METADATA_RECORD_NAME
                 LIMIT 1
             ];
+
+            if (settings.isEmpty()) {
+                throw new AuraHandledException('Settings record not found.');
+            }
+            return settings[0];
+        } catch (AuraHandledException e) {
+            throw e;
         } catch (Exception e) {
             throw new AuraHandledException('Unable to fetch settings: ' + e.getMessage());
         }
@@ -99,11 +107,11 @@ public with sharing class BehaviorSettingsController {
                 throw new AuraHandledException('You do not have permission to access BehaviorIQ Configuration.');
             }
 
-            // Query without WITH SECURITY_ENFORCED since this is admin configuration
-            // and the fields may not have FLS set up yet. Use stripInaccessible for protection.
+            // Use USER_MODE for sharing/FLS enforcement, then stripInaccessible for additional protection
             List<BehaviorIQ_Configuration__c> configs = [
                 SELECT Id, Name, Stale_Case_Threshold__c, Stale_Opportunity_Threshold__c
                 FROM BehaviorIQ_Configuration__c
+                WITH USER_MODE
                 LIMIT 1
             ];
 
@@ -179,10 +187,11 @@ public with sharing class BehaviorSettingsController {
                 throw new AuraHandledException('You do not have permission to modify BehaviorIQ Configuration.');
             }
 
-            // Try to find existing record
+            // Try to find existing record with USER_MODE for security
             List<BehaviorIQ_Configuration__c> existingConfigs = [
                 SELECT Id, Stale_Case_Threshold__c, Stale_Opportunity_Threshold__c
                 FROM BehaviorIQ_Configuration__c
+                WITH USER_MODE
                 LIMIT 1
             ];
 

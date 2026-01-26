@@ -136,10 +136,11 @@ public with sharing class DeclarativeFixExecutor {
             throw new DeclarativeFixException('Field ' + fieldName + ' is not updateable on ' + objectApiName);
         }
 
-        // Query current values for audit logging
+        // Query current values for audit logging with USER_MODE for security
+        // Note: objectApiName and fieldName are validated via isFieldUpdateable() which uses Schema describe
         String queryString = 'SELECT Id, ' + String.escapeSingleQuotes(fieldName) +
                              ' FROM ' + String.escapeSingleQuotes(objectApiName) +
-                             ' WHERE Id IN :recordIds';
+                             ' WHERE Id IN :recordIds WITH USER_MODE';
         List<SObject> records = Database.query(queryString);
 
         // Build updates
@@ -159,7 +160,7 @@ public with sharing class DeclarativeFixExecutor {
                 throw new DmlException('Forced update exception for testing');
             }
             List<SObject> secureUpdates = Security.stripInaccessible(AccessType.UPDATABLE, updates).getRecords();
-            update secureUpdates;
+            update as user secureUpdates;
 
             // Log success
             for (SObject rec : records) {
@@ -199,11 +200,12 @@ public with sharing class DeclarativeFixExecutor {
             throw new DeclarativeFixException('Target field ' + targetField + ' is not updateable on ' + objectApiName);
         }
 
-        // Query current values
+        // Query current values with USER_MODE for security
+        // Note: objectApiName, targetField, sourceField are validated via isFieldReadable/isFieldUpdateable
         String queryString = 'SELECT Id, ' + String.escapeSingleQuotes(targetField) + ', ' +
                              String.escapeSingleQuotes(sourceField) +
                              ' FROM ' + String.escapeSingleQuotes(objectApiName) +
-                             ' WHERE Id IN :recordIds';
+                             ' WHERE Id IN :recordIds WITH USER_MODE';
         List<SObject> records = Database.query(queryString);
 
         // Build updates
@@ -223,7 +225,7 @@ public with sharing class DeclarativeFixExecutor {
 
         try {
             List<SObject> secureUpdates = Security.stripInaccessible(AccessType.UPDATABLE, updates).getRecords();
-            update secureUpdates;
+            update as user secureUpdates;
 
             for (SObject rec : records) {
                 addLog(rec.Id, ACTION_UPDATE_FIELD_FROM_RECORD,
@@ -276,7 +278,7 @@ public with sharing class DeclarativeFixExecutor {
                 throw new DmlException('Forced task exception for testing');
             }
             List<SObject> secureTasks = Security.stripInaccessible(AccessType.CREATABLE, tasks).getRecords();
-            insert secureTasks;
+            insert as user secureTasks;
 
             for (Id recId : recordIds) {
                 addLog(recId, ACTION_CREATE_TASK, null, 'Task: ' + subject, 'Success', null);
@@ -312,7 +314,8 @@ public with sharing class DeclarativeFixExecutor {
         }
 
         try {
-            insert posts;
+            List<SObject> securePosts = Security.stripInaccessible(AccessType.CREATABLE, posts).getRecords();
+            insert as user securePosts;
 
             for (Id recId : recordIds) {
                 addLog(recId, ACTION_POST_CHATTER, null, 'Posted: ' + message.abbreviate(100), 'Success', null);

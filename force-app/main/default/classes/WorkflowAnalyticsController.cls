@@ -109,9 +109,10 @@ public with sharing class WorkflowAnalyticsController {
             Boolean userIsPremium = LicenseService.isPremium();
 
             // Build set of premium rule names for filtering (only needed for free users)
+            // CMDT queries don't support WITH USER_MODE
             Set<String> premiumRuleNames = new Set<String>();
             if (!userIsPremium) {
-                for (Behavior_Pattern_Rule__mdt rule : [
+                for (Behavior_Pattern_Rule__mdt rule : [  // NOPMD - ApexCRUDViolation: CMDT doesn't support USER_MODE
                     SELECT DeveloperName FROM Behavior_Pattern_Rule__mdt WHERE Is_Premium__c = true
                 ]) {
                     premiumRuleNames.add(rule.DeveloperName);
@@ -119,11 +120,13 @@ public with sharing class WorkflowAnalyticsController {
             }
 
             // Return ALL statuses so LWC can filter by Active/Dismissed tabs
+            // Using USER_MODE for sharing/FLS enforcement
             List<Identified_Pain_Point__c> points = [
                 SELECT Id, Name, Object_API_Name__c, Impact_Score__c, Status__c, Description__c,
                        Occurrences__c, Example_Records__c, Unique_Key__c, Cost_Per_Incident__c,
                        Fixed_Record_Ids__c, LastModifiedDate
                 FROM Identified_Pain_Point__c
+                WITH USER_MODE
                 ORDER BY Impact_Score__c DESC
                 LIMIT 100
             ];
@@ -181,9 +184,9 @@ public with sharing class WorkflowAnalyticsController {
     private static Map<String, Decimal> getRuleCostMap() {
         Map<String, Decimal> costMap = new Map<String, Decimal>();
 
-        // 1. Load defaults from metadata
+        // 1. Load defaults from metadata - CMDT doesn't support USER_MODE
         try {
-            for (Behavior_Pattern_Rule__mdt rule : [
+            for (Behavior_Pattern_Rule__mdt rule : [  // NOPMD - ApexCRUDViolation
                 SELECT DeveloperName, Cost_Per_Incident__c
                 FROM Behavior_Pattern_Rule__mdt
             ]) {
@@ -201,6 +204,7 @@ public with sharing class WorkflowAnalyticsController {
                 List<BehaviorIQ_Configuration__c> configs = [
                     SELECT Cost_Override__c
                     FROM BehaviorIQ_Configuration__c
+                    WITH USER_MODE
                     LIMIT 1
                 ];
 
@@ -287,8 +291,8 @@ public with sharing class WorkflowAnalyticsController {
             // Extract base rule name in case it's a timestamped key from partial fix
             String baseRuleName = extractBaseRuleName(ruleDeveloperName);
 
-            // Query the metadata for fix configuration
-            List<Behavior_Pattern_Rule__mdt> rules = [
+            // Query the metadata for fix configuration - CMDT doesn't support USER_MODE
+            List<Behavior_Pattern_Rule__mdt> rules = [  // NOPMD - ApexCRUDViolation
                 SELECT DeveloperName, Label, Fix_Type__c, Fix_Config__c, Is_Premium__c
                 FROM Behavior_Pattern_Rule__mdt
                 WHERE DeveloperName = :baseRuleName
@@ -297,7 +301,7 @@ public with sharing class WorkflowAnalyticsController {
 
             if (rules.isEmpty()) {
                 // Try with original name if base name didn't match
-                rules = [
+                rules = [  // NOPMD - ApexCRUDViolation
                     SELECT DeveloperName, Label, Fix_Type__c, Fix_Config__c, Is_Premium__c
                     FROM Behavior_Pattern_Rule__mdt
                     WHERE DeveloperName = :ruleDeveloperName
@@ -392,11 +396,12 @@ public with sharing class WorkflowAnalyticsController {
             }
 
             // Build dynamic query based on object type
+            // queryFields are Schema-validated via getDisplayFieldsForObject
             String queryFields = getDisplayFieldsForObject(objectApiName);
             String query = 'SELECT ' + queryFields + ' FROM ' + String.escapeSingleQuotes(objectApiName) +
                           ' WHERE Id IN :idList WITH SECURITY_ENFORCED LIMIT 200';
 
-            return Database.query(query);
+            return Database.query(query);  // NOPMD - ApexSOQLInjection: queryFields are Schema-validated
 
         } catch (Exception e) {
             System.debug(LoggingLevel.ERROR, 'getRecordsByIds Error: ' + e.getMessage());
@@ -784,8 +789,8 @@ public with sharing class WorkflowAnalyticsController {
             return uniqueKey;
         }
 
-        // Check if this key exists as a rule directly
-        List<Behavior_Pattern_Rule__mdt> directMatch = [
+        // Check if this key exists as a rule directly - CMDT doesn't support USER_MODE
+        List<Behavior_Pattern_Rule__mdt> directMatch = [  // NOPMD - ApexCRUDViolation
             SELECT DeveloperName FROM Behavior_Pattern_Rule__mdt
             WHERE DeveloperName = :uniqueKey LIMIT 1
         ];
@@ -801,7 +806,7 @@ public with sharing class WorkflowAnalyticsController {
             Integer lastUnderscore = testKey.lastIndexOf('_');
             testKey = testKey.substring(0, lastUnderscore);
 
-            List<Behavior_Pattern_Rule__mdt> match = [
+            List<Behavior_Pattern_Rule__mdt> match = [  // NOPMD - ApexCRUDViolation
                 SELECT DeveloperName FROM Behavior_Pattern_Rule__mdt
                 WHERE DeveloperName = :testKey LIMIT 1
             ];
@@ -1202,11 +1207,13 @@ public with sharing class WorkflowAnalyticsController {
     public static String runAnalysisNow() {
         try {
             // Check if there's already a batch running
+            // Note: AsyncApexJob is a setup object and requires specific permissions
             List<AsyncApexJob> runningJobs = [
                 SELECT Id, Status, CreatedDate
                 FROM AsyncApexJob
                 WHERE ApexClass.Name = 'PatternAnalysisService'
                 AND Status IN ('Holding', 'Queued', 'Preparing', 'Processing')
+                WITH USER_MODE
                 LIMIT 1
             ];
 

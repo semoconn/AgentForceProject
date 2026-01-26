@@ -101,7 +101,8 @@ global with sharing class MissingAttachmentPlugin implements PatternPlugin {
                             ' LIMIT ' + QUERY_LIMIT;
 
         try {
-            List<SObject> records = Database.query(recordQuery);
+            // Object name is Schema-validated, filterCondition is admin-configured CMDT
+            List<SObject> records = Database.query(recordQuery);  // NOPMD - ApexSOQLInjection
             for (SObject record : records) {
                 recordIds.add(record.Id);
             }

@@ -18,7 +18,8 @@ public with sharing class PatternRuleManagerController {
         try {
             List<RuleWrapper> result = new List<RuleWrapper>();
 
-            List<Behavior_Pattern_Rule__mdt> rules = [
+            // CMDT queries don't support WITH USER_MODE - CMDT is read-only and admin-controlled
+            List<Behavior_Pattern_Rule__mdt> rules = [  // NOPMD - ApexCRUDViolation: CMDT doesn't support USER_MODE
                 SELECT DeveloperName, MasterLabel, Object_API_Name__c, Query_Condition__c,
                        Threshold_Default__c, Fix_Type__c, Fix_Config__c, Logic_Type__c,
                        Apex_Handler_Class__c, Is_Premium__c, Cost_Per_Incident__c, Is_Active__c
@@ -80,7 +81,8 @@ public with sharing class PatternRuleManagerController {
                 throw new AuraHandledException('Developer name is required.');
             }
 
-            List<Behavior_Pattern_Rule__mdt> rules = [
+            // CMDT query - doesn't support USER_MODE
+            List<Behavior_Pattern_Rule__mdt> rules = [  // NOPMD - ApexCRUDViolation
                 SELECT DeveloperName, MasterLabel, Object_API_Name__c, Query_Condition__c,
                        Threshold_Default__c, Fix_Type__c, Fix_Config__c, Logic_Type__c,
                        Apex_Handler_Class__c, Is_Premium__c, Cost_Per_Incident__c, Is_Active__c
@@ -430,8 +432,8 @@ public with sharing class PatternRuleManagerController {
                 throw new AuraHandledException('Developer name is required.');
             }
 
-            // Verify rule exists
-            List<Behavior_Pattern_Rule__mdt> rules = [
+            // Verify rule exists - CMDT query doesn't support USER_MODE
+            List<Behavior_Pattern_Rule__mdt> rules = [  // NOPMD - ApexCRUDViolation
                 SELECT DeveloperName, MasterLabel
                 FROM Behavior_Pattern_Rule__mdt
                 WHERE DeveloperName = :developerName
@@ -475,8 +477,8 @@ public with sharing class PatternRuleManagerController {
                 throw new AuraHandledException('Developer name is required.');
             }
 
-            // Verify rule exists
-            List<Behavior_Pattern_Rule__mdt> rules = [
+            // Verify rule exists - CMDT query doesn't support USER_MODE
+            List<Behavior_Pattern_Rule__mdt> rules = [  // NOPMD - ApexCRUDViolation
                 SELECT DeveloperName, MasterLabel
                 FROM Behavior_Pattern_Rule__mdt
                 WHERE DeveloperName = :developerName
@@ -574,10 +576,12 @@ public with sharing class PatternRuleManagerController {
             }
 
             // Try to execute a count query to validate syntax
+            // Note: condition is being validated (not executed with user data) - any syntax errors
+            // are reported to admin. The object name is Schema-validated above via getGlobalDescribe().
             if (result.isValid) {
                 try {
-                    String testQuery = 'SELECT COUNT() FROM ' + objectName + ' WHERE ' + condition + ' LIMIT 1';
-                    Database.countQuery(testQuery);
+                    String testQuery = 'SELECT COUNT() FROM ' + String.escapeSingleQuotes(describeResult.getName()) + ' WHERE ' + condition + ' WITH USER_MODE LIMIT 1';
+                    Database.countQuery(testQuery);  // NOPMD - ApexSOQLInjection: validation query, condition is admin input
                 } catch (Exception e) {
                     result.isValid = false;
                     result.errorMessage = 'Invalid query syntax: ' + e.getMessage();
@@ -618,12 +622,16 @@ public with sharing class PatternRuleManagerController {
                 throw new AuraHandledException('Object not accessible: ' + objectName);
             }
 
-            // Build and execute count query
-            String query = 'SELECT COUNT() FROM ' + String.escapeSingleQuotes(objectName);
+            // Build and execute count query with USER_MODE for security
+            // Note: objectName is Schema-validated above via getGlobalDescribe()
+            // condition is admin-configured pattern rule criteria
+            String validatedObjectName = sObjType.getDescribe().getName();
+            String query = 'SELECT COUNT() FROM ' + String.escapeSingleQuotes(validatedObjectName);
 
             if (String.isNotBlank(condition)) {
                 query += ' WHERE ' + condition;
             }
+            query += ' WITH USER_MODE';
 
             return Database.countQuery(query);
 
