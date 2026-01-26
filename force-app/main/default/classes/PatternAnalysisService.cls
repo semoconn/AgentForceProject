@@ -49,9 +49,13 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
     private List<Behavior_Snapshot__c> pendingSnapshots;
     private Boolean createSnapshots = false;
 
+    // Track rule-level errors for health reporting (Database.Stateful preserves across batches)
+    private List<String> ruleErrors = new List<String>();
+
     public PatternAnalysisService() {
         dismissedPainPointKeys = new Set<String>();
         pendingSnapshots = new List<Behavior_Snapshot__c>();
+        ruleErrors = new List<String>();
         loadDismissals();
     }
 
@@ -71,9 +75,11 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
                 if (Test.isRunningTest() && forceSnapshotDeleteException) {
                     throw new DmlException('Forced test exception for snapshot deletion');
                 }
+                // TC-6.1: Enforce FLS with SECURITY_ENFORCED
                 List<Behavior_Snapshot__c> todaysSnapshots = [
                     SELECT Id FROM Behavior_Snapshot__c
                     WHERE Snapshot_Date__c = TODAY
+                    WITH SECURITY_ENFORCED
                     LIMIT 10000
                 ];
                 if (!todaysSnapshots.isEmpty()) {
@@ -85,13 +91,14 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
         }
 
         // Fetch all active rules from Metadata (including plugin fields)
-        // Is_Active__c defaults to true, so we include rules where Is_Active__c is true OR null (for backward compatibility)
+        // Explicitly exclude inactive rules (Is_Active__c = false)
+        // Include rules where Is_Active__c is true OR null (for backward compatibility with rules created before Is_Active__c existed)
         return [
             SELECT DeveloperName, MasterLabel, Object_API_Name__c, Query_Condition__c,
                    Is_Premium__c, Threshold_Default__c, Cost_Per_Incident__c,
-                   Logic_Type__c, Apex_Handler_Class__c, Fix_Config__c, Is_Active__c
+                   Logic_Type__c, Apex_Handler_Class__c, Fix_Config__c, Is_Active__c, Description__c
             FROM Behavior_Pattern_Rule__mdt
-            WHERE Is_Active__c = true OR Is_Active__c = null
+            WHERE Is_Active__c != false
         ];
     }
 
@@ -175,6 +182,7 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
                                  ' WHERE Id IN :matchedIds' +
                                  ' LIMIT 2000';
 
+            // TC-6.1/6.2: Execute query (class uses 'with sharing' for sharing enforcement)
             return Database.query(queryString);
 
         } catch (PluginInvoker.PluginException pe) {
@@ -239,9 +247,14 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
             if (Test.isRunningTest() && forceQueryException) {
                 throw new QueryException('Forced test exception for query execution');
             }
+            // TC-6.1/6.2: Execute query (class uses 'with sharing' for sharing enforcement)
+            // FLS is handled by validateQueryFieldsAccessible() before building query
             return Database.query(queryString);
         } catch (Exception e) {
-            System.debug(LoggingLevel.ERROR, 'Rule Execution Failed [' + rule.DeveloperName + ']: ' + e.getMessage());
+            String errorMsg = 'Rule [' + rule.DeveloperName + ']: ' + e.getMessage();
+            System.debug(LoggingLevel.ERROR, 'Rule Execution Failed - ' + errorMsg);
+            // Track for health log reporting
+            ruleErrors.add(errorMsg);
             return null;
         }
     }
@@ -280,10 +293,15 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
 
         Decimal totalImpact = calculateFinancialImpact(rule, objectApiName, detectedRecords);
 
+        // Use description from metadata if available, otherwise fall back to generic description
+        String description = String.isNotBlank(rule.Description__c)
+            ? rule.Description__c
+            : 'Automated detection for ' + objectApiName;
+
         upsertPainPoint(
             rule.DeveloperName,
             rule.MasterLabel,
-            'Automated detection for ' + objectApiName,
+            description,
             objectApiName,
             count,
             JSON.serialize(exampleIds),
@@ -740,6 +758,8 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
                 if (Test.isRunningTest() && forceConfigQueryException) {
                     throw new QueryException('Forced test exception for config query');
                 }
+                // TC-6.1/6.2: Query config - CRUD check done above, class uses 'with sharing'
+                // Note: Configuration is admin-level data; if user lacks FLS, defaults are used (via catch block)
                 List<BehaviorIQ_Configuration__c> configs = [
                     SELECT Id, Stale_Case_Threshold__c, Stale_Opportunity_Threshold__c, Global_Exclusion_Filter__c
                     FROM BehaviorIQ_Configuration__c
@@ -855,7 +875,7 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
 
     private void logJobStatus(Database.BatchableContext bc) {
         String jobId = (bc != null) ? bc.getJobId() : null;
-        Integer errors = 0;
+        Integer batchErrors = 0;
         String extendedStatus = '';
 
         if (jobId != null) {
@@ -866,11 +886,27 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
                     WHERE Id = :jobId
                     LIMIT 1
                 ];
-                errors = job.NumberOfErrors;
+                batchErrors = job.NumberOfErrors;
                 extendedStatus = job.ExtendedStatus;
             } catch (Exception e) {
                 System.debug(LoggingLevel.WARN, 'Unable to query job status: ' + e.getMessage());
             }
+        }
+
+        // Combine batch-level errors with rule-level errors
+        Integer totalErrors = batchErrors + (ruleErrors != null ? ruleErrors.size() : 0);
+        Boolean hasRuleErrors = ruleErrors != null && !ruleErrors.isEmpty();
+
+        // Build extended status with rule errors if any
+        if (hasRuleErrors) {
+            String ruleErrorSummary = 'Rule errors: ' + String.join(ruleErrors, '; ');
+            // Truncate if too long (field limit)
+            if (ruleErrorSummary.length() > 255) {
+                ruleErrorSummary = ruleErrorSummary.substring(0, 252) + '...';
+            }
+            extendedStatus = String.isNotBlank(extendedStatus)
+                ? extendedStatus + ' | ' + ruleErrorSummary
+                : ruleErrorSummary;
         }
 
         // Log to System_Health_Log__c if accessible
@@ -878,9 +914,13 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
             System_Health_Log__c log = new System_Health_Log__c(
                 Job_Name__c = JOB_NAME,
                 Job_ID__c = jobId,
-                Status__c = (errors > 0) ? 'Failed' : 'Success',
-                Error_Count__c = errors
+                Status__c = (totalErrors > 0) ? 'Failed' : 'Success',
+                Error_Count__c = totalErrors
             );
+            // Add error details if field is accessible
+            if (hasRuleErrors && Schema.sObjectType.System_Health_Log__c.fields.Error_Details__c.isCreateable()) {
+                log.Error_Details__c = String.join(ruleErrors, '\n');
+            }
             try {
                 insert Security.stripInaccessible(AccessType.CREATABLE, new List<System_Health_Log__c>{log}).getRecords();
             } catch (Exception e) {
@@ -888,9 +928,9 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
             }
         }
 
-        // Send admin notification email on failure
-        if (errors > 0) {
-            sendAdminFailureNotification(jobId, errors, extendedStatus);
+        // Send admin notification email on failure (batch errors or rule errors)
+        if (totalErrors > 0) {
+            sendAdminFailureNotification(jobId, totalErrors, extendedStatus);
         }
     }
 
@@ -967,10 +1007,12 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
      * @param limitCount Maximum number of records to return (default 50, max 200)
      * @param includeOnlyRecordIds Optional comma-separated list of record IDs to filter to (whitelist).
      *                             When provided, only these records are returned (if they still match the pattern).
+     * @param excludeRecordIds Optional comma-separated list of record IDs to exclude (blacklist).
+     *                         Used to filter out already-fixed records from the preview.
      * @return List<SObject> The matching records with key fields for display
      */
     @AuraEnabled
-    public static List<SObject> getPatternMatches(String ruleDeveloperName, Integer limitCount, String includeOnlyRecordIds) {
+    public static List<SObject> getPatternMatches(String ruleDeveloperName, Integer limitCount, String includeOnlyRecordIds, String excludeRecordIds) {
         // Validate inputs
         if (String.isBlank(ruleDeveloperName)) {
             AuraHandledException e = new AuraHandledException('Rule developer name is required.');
@@ -986,12 +1028,13 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
             limitCount = 200;
         }
 
-        // Fetch the rule from metadata
+        // Fetch the rule from metadata (including plugin fields)
         // First try exact match, then try to find base rule name (for timestamped keys from partial fixes)
         String effectiveRuleName = ruleDeveloperName;
         List<Behavior_Pattern_Rule__mdt> rules = [
             SELECT DeveloperName, MasterLabel, Object_API_Name__c, Query_Condition__c,
-                   Is_Premium__c, Threshold_Default__c, Cost_Per_Incident__c
+                   Is_Premium__c, Threshold_Default__c, Cost_Per_Incident__c,
+                   Logic_Type__c, Apex_Handler_Class__c, Fix_Config__c
             FROM Behavior_Pattern_Rule__mdt
             WHERE DeveloperName = :ruleDeveloperName
             LIMIT 1
@@ -1003,7 +1046,8 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
             if (effectiveRuleName != ruleDeveloperName) {
                 rules = [
                     SELECT DeveloperName, MasterLabel, Object_API_Name__c, Query_Condition__c,
-                           Is_Premium__c, Threshold_Default__c, Cost_Per_Incident__c
+                           Is_Premium__c, Threshold_Default__c, Cost_Per_Incident__c,
+                           Logic_Type__c, Apex_Handler_Class__c, Fix_Config__c
                     FROM Behavior_Pattern_Rule__mdt
                     WHERE DeveloperName = :effectiveRuleName
                     LIMIT 1
@@ -1038,8 +1082,11 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
             throw e;
         }
 
-        // Validate FLS for query fields
-        if (!validateQueryFieldsAccessible(objectApiName, rule.Query_Condition__c)) {
+        // Check if this is an Apex Plugin rule
+        Boolean isApexPlugin = rule.Logic_Type__c == 'Apex_Plugin' && String.isNotBlank(rule.Apex_Handler_Class__c);
+
+        // Validate FLS for query fields (skip for pure Apex plugins without query condition)
+        if (!isApexPlugin && !validateQueryFieldsAccessible(objectApiName, rule.Query_Condition__c)) {
             String msg = 'One or more fields in the rule are not accessible. Please contact your administrator.';
             AuraHandledException e = new AuraHandledException(msg);
             e.setMessage(msg);
@@ -1050,7 +1097,8 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
         PatternAnalysisService service = new PatternAnalysisService();
         String effectiveCondition = service.getEffectiveQuery(rule);
 
-        if (String.isBlank(effectiveCondition)) {
+        // For Apex plugins without a query condition, we'll use the plugin to get record IDs
+        if (String.isBlank(effectiveCondition) && !isApexPlugin) {
             String msg = 'Rule has no query condition defined.';
             AuraHandledException e = new AuraHandledException(msg);
             e.setMessage(msg);
@@ -1059,6 +1107,36 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
 
         // Build dynamic query with display fields based on object type
         String displayFields = getDisplayFieldsForObject(objectApiName);
+
+        // For Apex plugins, invoke the plugin to get matching record IDs
+        Set<Id> pluginMatchedIds = new Set<Id>();
+        if (isApexPlugin) {
+            try {
+                Map<String, Object> config = new Map<String, Object>();
+                if (String.isNotBlank(rule.Fix_Config__c)) {
+                    config = (Map<String, Object>) JSON.deserializeUntyped(rule.Fix_Config__c);
+                }
+                PatternPluginContext context = new PatternPluginContext(
+                    objectApiName,
+                    rule.Query_Condition__c,
+                    config,
+                    rule.DeveloperName
+                );
+                List<Id> matchedIds = PluginInvoker.invokeAnalyze(rule.Apex_Handler_Class__c, context);
+                if (matchedIds != null) {
+                    pluginMatchedIds.addAll(matchedIds);
+                }
+            } catch (Exception pluginEx) {
+                String msg = 'Plugin execution failed: ' + pluginEx.getMessage();
+                AuraHandledException e = new AuraHandledException(msg);
+                e.setMessage(msg);
+                throw e;
+            }
+
+            if (pluginMatchedIds.isEmpty()) {
+                return new List<SObject>(); // No matches from plugin
+            }
+        }
 
         // Parse whitelist IDs if provided (for partial fix scenarios)
         Set<Id> whitelistIds = new Set<Id>();
@@ -1094,6 +1172,40 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
             System.debug(LoggingLevel.INFO, 'Whitelist mode: filtering to ' + whitelistIds.size() + ' specific record IDs');
         }
 
+        // Parse blacklist IDs if provided (for excluding already-fixed records)
+        Set<Id> blacklistIds = new Set<Id>();
+        if (String.isNotBlank(excludeRecordIds)) {
+            // Parse the comma-separated or JSON array of IDs
+            String cleanIds = excludeRecordIds.trim();
+            List<String> idStrings;
+
+            if (cleanIds.startsWith('[')) {
+                // JSON array format: ["001...", "001..."]
+                try {
+                    idStrings = (List<String>)JSON.deserialize(cleanIds, List<String>.class);
+                } catch (Exception jsonEx) {
+                    // Fall back to comma-separated
+                    cleanIds = cleanIds.replace('[', '').replace(']', '').replace('"', '');
+                    idStrings = cleanIds.split(',');
+                }
+            } else {
+                // Comma-separated format: 001...,001...
+                idStrings = cleanIds.split(',');
+            }
+
+            for (String idStr : idStrings) {
+                String trimmedId = idStr.trim();
+                if (String.isNotBlank(trimmedId)) {
+                    try {
+                        blacklistIds.add(Id.valueOf(trimmedId));
+                    } catch (Exception idEx) {
+                        System.debug(LoggingLevel.WARN, 'Invalid ID in blacklist: ' + trimmedId);
+                    }
+                }
+            }
+            System.debug(LoggingLevel.INFO, 'Blacklist mode: excluding ' + blacklistIds.size() + ' already-fixed record IDs');
+        }
+
         // Build the query - if whitelist is provided, use simple ID filter instead of pattern query
         String queryString;
         if (!whitelistIds.isEmpty()) {
@@ -1102,6 +1214,24 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
             queryString = 'SELECT ' + displayFields +
                          ' FROM ' + String.escapeSingleQuotes(objectApiName) +
                          ' WHERE Id IN :whitelistIds' +
+                         ' ORDER BY CreatedDate DESC' +
+                         ' LIMIT ' + limitCount;
+        } else if (!pluginMatchedIds.isEmpty()) {
+            // APEX PLUGIN MODE: Use IDs returned by the plugin's analyze() method
+            if (!blacklistIds.isEmpty()) {
+                // Exclude already-fixed records from plugin results
+                pluginMatchedIds.removeAll(blacklistIds);
+            }
+            queryString = 'SELECT ' + displayFields +
+                         ' FROM ' + String.escapeSingleQuotes(objectApiName) +
+                         ' WHERE Id IN :pluginMatchedIds' +
+                         ' ORDER BY CreatedDate DESC' +
+                         ' LIMIT ' + limitCount;
+        } else if (!blacklistIds.isEmpty()) {
+            // BLACKLIST MODE: Run pattern query but exclude already-fixed records
+            queryString = 'SELECT ' + displayFields +
+                         ' FROM ' + String.escapeSingleQuotes(objectApiName) +
+                         ' WHERE (' + effectiveCondition + ') AND Id NOT IN :blacklistIds' +
                          ' ORDER BY CreatedDate DESC' +
                          ' LIMIT ' + limitCount;
         } else {
@@ -1118,7 +1248,15 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
         System.debug(LoggingLevel.INFO, '=== PatternAnalysisService.getPatternMatches ===');
         System.debug(LoggingLevel.INFO, 'Rule: ' + ruleDeveloperName);
         System.debug(LoggingLevel.INFO, 'Object: ' + objectApiName);
-        System.debug(LoggingLevel.INFO, 'Mode: ' + (whitelistIds.isEmpty() ? 'STANDARD (full pattern query)' : 'WHITELIST (' + whitelistIds.size() + ' specific IDs)'));
+        String modeDescription = 'STANDARD (full pattern query)';
+        if (!whitelistIds.isEmpty()) {
+            modeDescription = 'WHITELIST (' + whitelistIds.size() + ' specific IDs)';
+        } else if (!pluginMatchedIds.isEmpty()) {
+            modeDescription = 'APEX_PLUGIN (' + pluginMatchedIds.size() + ' IDs from plugin)';
+        } else if (!blacklistIds.isEmpty()) {
+            modeDescription = 'BLACKLIST (excluding ' + blacklistIds.size() + ' fixed IDs)';
+        }
+        System.debug(LoggingLevel.INFO, 'Mode: ' + modeDescription);
         if (whitelistIds.isEmpty()) {
             System.debug(LoggingLevel.INFO, 'Original condition: ' + rule.Query_Condition__c);
             System.debug(LoggingLevel.INFO, 'Effective condition: ' + effectiveCondition);
@@ -1133,11 +1271,13 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
             if (Test.isRunningTest() && forcePatternMatchGeneralException) {
                 throw new System.TypeException('Forced test general exception for pattern match');
             }
+            // TC-6.1/6.2: Execute query (class uses 'with sharing' for sharing enforcement)
+            // FLS is validated by validateQueryFieldsAccessible() before building query
             List<SObject> results = Database.query(queryString);
 
             // Apply field-level security by stripping inaccessible fields
-            // This is more flexible than WITH SECURITY_ENFORCED as it doesn't fail,
-            // it just removes fields the user can't see
+            // This provides defense-in-depth - stripInaccessible ensures no
+            // inaccessible fields leak to the client
             SObjectAccessDecision securityDecision = Security.stripInaccessible(AccessType.READABLE, results);
             return securityDecision.getRecords();
         } catch (QueryException qe) {
@@ -1256,5 +1396,499 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
         }
 
         return fields;
+    }
+
+    // Status constants to avoid magic strings
+    private static final String STATUS_RESOLVED = 'Resolved';
+    private static final String STATUS_DISMISSED = 'Dismissed';
+    private static final String STATUS_NEW = 'New';
+
+    /**
+     * @description Synchronizes a pain point's Occurrences__c with the live query count.
+     * CRITICAL: This method calculates the count SERVER-SIDE using the same query logic
+     * as getPatternMatches, rather than accepting a client-provided count (trust boundary).
+     *
+     * This solves the "dual source of truth" problem where:
+     * - Dashboard shows stored Occurrences__c (set by batch, can become stale)
+     * - Preview shows live query results (always current)
+     *
+     * @param painPointId The ID of the Identified_Pain_Point__c record to sync
+     * @return SyncResult containing the updated occurrence count and any status changes
+     */
+    @AuraEnabled
+    public static SyncResult syncPainPointOccurrences(String painPointId) {
+        SyncResult result = new SyncResult();
+
+        if (String.isBlank(painPointId)) {
+            result.success = false;
+            result.message = 'Pain point ID is required';
+            return result;
+        }
+
+        // Validate painPointId is a valid Id format before querying
+        try {
+            Id.valueOf(painPointId);
+        } catch (Exception idEx) {
+            result.success = false;
+            result.message = 'Invalid pain point ID format';
+            return result;
+        }
+
+        try {
+            // CRUD check for query
+            if (!Schema.sObjectType.Identified_Pain_Point__c.isAccessible()) {
+                result.success = false;
+                result.message = 'Insufficient permissions to access pain points';
+                return result;
+            }
+
+            // Query the pain point with FOR UPDATE to prevent race conditions
+            List<Identified_Pain_Point__c> painPoints = [
+                SELECT Id, Name, Occurrences__c, Status__c, Unique_Key__c,
+                       Impact_Score__c, Cost_Per_Incident__c, Object_API_Name__c,
+                       Fixed_Record_Ids__c
+                FROM Identified_Pain_Point__c
+                WHERE Id = :painPointId
+                WITH SECURITY_ENFORCED
+                LIMIT 1
+                FOR UPDATE
+            ];
+
+            if (painPoints.isEmpty()) {
+                result.success = false;
+                result.message = 'Pain point not found';
+                return result;
+            }
+
+            Identified_Pain_Point__c pp = painPoints[0];
+            Integer previousCount = pp.Occurrences__c != null ? pp.Occurrences__c.intValue() : 0;
+
+            // Calculate the LIVE COUNT server-side using the same query logic as getPatternMatches
+            // This avoids trust boundary issues with client-provided counts
+            // Returns null on errors to distinguish from "true zero" (no matching records)
+            Integer liveCount = calculateLiveCount(pp);
+
+            // Handle calculation errors - null means error, not zero
+            if (liveCount == null) {
+                result.success = false;
+                result.message = 'Unable to calculate live count. Check permissions and rule configuration.';
+                result.previousCount = previousCount;
+                result.newCount = previousCount; // Keep previous count on error
+                return result;
+            }
+
+            result.previousCount = previousCount;
+            result.newCount = liveCount;
+
+            // Only update if the count has changed
+            if (previousCount != liveCount) {
+                System.debug(LoggingLevel.DEBUG, 'Syncing pain point ' + pp.Name +
+                             ': stored=' + previousCount + ', live=' + liveCount);
+
+                // CRUD check for update
+                if (!Schema.sObjectType.Identified_Pain_Point__c.isUpdateable()) {
+                    result.success = false;
+                    result.message = 'Insufficient permissions to update pain points';
+                    return result;
+                }
+
+                // Update the occurrence count
+                pp.Occurrences__c = liveCount;
+
+                // Recalculate impact score based on new count
+                // For Opportunity/Contract, keep the stored value (it's cumulative value, not count-based)
+                String objName = pp.Object_API_Name__c != null ? pp.Object_API_Name__c.toLowerCase() : '';
+                if (objName != 'opportunity' && objName != 'contract') {
+                    Decimal costPerIncident = pp.Cost_Per_Incident__c != null ? pp.Cost_Per_Incident__c : 0;
+                    pp.Impact_Score__c = liveCount * costPerIncident;
+                }
+
+                // If count drops to zero, mark as resolved (all records fixed externally)
+                if (liveCount == 0 && pp.Status__c != STATUS_RESOLVED && pp.Status__c != STATUS_DISMISSED) {
+                    pp.Status__c = STATUS_RESOLVED;
+                    result.statusChanged = true;
+                    result.newStatus = STATUS_RESOLVED;
+                    System.debug(LoggingLevel.DEBUG, 'Auto-resolving pain point - no matching records remain');
+                }
+
+                // Apply FLS enforcement before DML - strip any inaccessible fields
+                SObjectAccessDecision decision = Security.stripInaccessible(
+                    AccessType.UPDATABLE,
+                    new List<Identified_Pain_Point__c>{ pp }
+                );
+                List<Identified_Pain_Point__c> securedRecords = (List<Identified_Pain_Point__c>) decision.getRecords();
+
+                if (securedRecords.isEmpty()) {
+                    result.success = false;
+                    result.message = 'Insufficient field permissions to update pain point';
+                    return result;
+                }
+
+                // Validate that critical fields weren't stripped
+                Map<String, Set<String>> removedFields = decision.getRemovedFields();
+                if (removedFields.containsKey('Identified_Pain_Point__c')) {
+                    Set<String> stripped = removedFields.get('Identified_Pain_Point__c');
+                    if (stripped.contains('Occurrences__c') || stripped.contains('Status__c') || stripped.contains('Impact_Score__c')) {
+                        result.success = false;
+                        result.message = 'Insufficient field-level permissions to update required fields';
+                        return result;
+                    }
+                }
+
+                update securedRecords[0];
+
+                result.success = true;
+                result.message = 'Synced: ' + previousCount + ' → ' + liveCount;
+
+                System.debug(LoggingLevel.DEBUG, 'Pain point synced successfully: ' + result.message);
+
+                // CRITICAL: Update Behavior_Snapshot__c to keep trend chart in sync
+                // This ensures the trend chart reflects accurate live counts
+                updateTrendSnapshot(pp, liveCount);
+            } else {
+                // Counts match - no update needed
+                result.success = true;
+                result.message = 'Count already in sync';
+            }
+
+        } catch (DmlException dmlEx) {
+            // Handle specific DML errors like row lock contention
+            System.debug(LoggingLevel.ERROR, 'DML error syncing pain point: ' + dmlEx.getMessage());
+            result.success = false;
+            if (dmlEx.getMessage().contains('UNABLE_TO_LOCK_ROW')) {
+                result.message = 'Record is being updated by another user. Please try again.';
+            } else {
+                result.message = 'Unable to update pain point. Please try again.';
+            }
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'Error syncing pain point: ' + e.getMessage());
+            result.success = false;
+            result.message = 'Unable to sync occurrence count. Please try again.';
+        }
+
+        return result;
+    }
+
+    /**
+     * @description Calculates the live count of records matching a pain point's pattern rule.
+     * Uses the same query logic as getPatternMatches but returns a COUNT instead of records.
+     * This runs server-side to avoid trust boundary issues with client-provided counts.
+     *
+     * SECURITY: Validates object/field accessibility before executing dynamic queries.
+     * Returns null on errors to distinguish from "true zero" (no matching records).
+     *
+     * @param painPoint The pain point record containing rule key and exclusion info
+     * @return The count of currently matching records, or null if calculation failed
+     */
+    private static Integer calculateLiveCount(Identified_Pain_Point__c painPoint) {
+        if (painPoint == null || String.isBlank(painPoint.Unique_Key__c)) {
+            return null; // Invalid input - return null to indicate error, not zero
+        }
+
+        try {
+            // Extract base rule name from potentially timestamped key
+            String baseRuleName = extractBaseRuleName(painPoint.Unique_Key__c);
+
+            // Query the rule from metadata
+            List<Behavior_Pattern_Rule__mdt> rules = [
+                SELECT DeveloperName, Object_API_Name__c, Query_Condition__c,
+                       Logic_Type__c, Apex_Handler_Class__c, Fix_Config__c
+                FROM Behavior_Pattern_Rule__mdt
+                WHERE DeveloperName = :baseRuleName
+                LIMIT 1
+            ];
+
+            if (rules.isEmpty()) {
+                System.debug(LoggingLevel.WARN, 'Rule not found for key: ' + baseRuleName);
+                return null; // Rule not found - return null to indicate error
+            }
+
+            Behavior_Pattern_Rule__mdt rule = rules[0];
+            String objectApiName = rule.Object_API_Name__c;
+
+            // SECURITY: Validate object name against Schema (not escapeSingleQuotes)
+            Map<String, Schema.SObjectType> globalDescribe = Schema.getGlobalDescribe();
+            Schema.SObjectType sObjectType = globalDescribe.get(objectApiName.toLowerCase());
+            if (sObjectType == null) {
+                System.debug(LoggingLevel.WARN, 'Object not found in schema: ' + objectApiName);
+                return null;
+            }
+
+            // Use canonical object name from describe
+            String canonicalObjectName = sObjectType.getDescribe().getName();
+
+            // Check object accessibility
+            if (!sObjectType.getDescribe().isAccessible()) {
+                System.debug(LoggingLevel.WARN, 'Object not accessible: ' + canonicalObjectName);
+                return null;
+            }
+
+            // Build exclusion list from Fixed_Record_Ids__c (with size cap to prevent heap issues)
+            Set<Id> excludeIds = parseExcludeIds(painPoint.Fixed_Record_Ids__c, 5000);
+
+            // Check for Apex Plugin rule
+            Boolean isApexPlugin = rule.Logic_Type__c == 'Apex_Plugin' && String.isNotBlank(rule.Apex_Handler_Class__c);
+
+            if (isApexPlugin) {
+                return calculatePluginCount(rule, canonicalObjectName, excludeIds);
+            }
+
+            // Get effective query condition with admin threshold injection
+            PatternAnalysisService service = new PatternAnalysisService();
+            String effectiveCondition = service.getEffectiveQuery(rule);
+
+            if (String.isBlank(effectiveCondition)) {
+                return null;
+            }
+
+            // SECURITY: Validate FLS for fields in the query condition before executing
+            // This uses the existing validateQueryFieldsAccessible method
+            if (!validateQueryFieldsAccessible(canonicalObjectName, effectiveCondition)) {
+                System.debug(LoggingLevel.WARN, 'FLS check failed for query condition fields');
+                return null;
+            }
+
+            // Build COUNT query using validated canonical object name
+            String countQuery = 'SELECT COUNT() FROM ' + canonicalObjectName +
+                               ' WHERE (' + effectiveCondition + ')';
+
+            if (!excludeIds.isEmpty()) {
+                countQuery += ' AND Id NOT IN :excludeIds';
+            }
+
+            // Execute count query (class uses 'with sharing' for sharing enforcement)
+            Integer count = Database.countQuery(countQuery);
+            return count;
+
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'Error calculating live count: ' + e.getMessage());
+            return null; // Error - return null to indicate failure, not zero
+        }
+    }
+
+    /**
+     * @description Calculates count for Apex Plugin rules with sharing enforcement.
+     * Re-validates plugin IDs by querying them with sharing to ensure user has access.
+     *
+     * @param rule The pattern rule metadata
+     * @param objectApiName The canonical object API name
+     * @param excludeIds Set of IDs to exclude from count
+     * @return The count of accessible matching records, or null on error
+     */
+    private static Integer calculatePluginCount(Behavior_Pattern_Rule__mdt rule, String objectApiName, Set<Id> excludeIds) {
+        try {
+            Map<String, Object> config = new Map<String, Object>();
+            if (String.isNotBlank(rule.Fix_Config__c)) {
+                config = (Map<String, Object>) JSON.deserializeUntyped(rule.Fix_Config__c);
+            }
+            PatternPluginContext context = new PatternPluginContext(
+                objectApiName,
+                rule.Query_Condition__c,
+                config,
+                rule.DeveloperName
+            );
+            List<Id> matchedIds = PluginInvoker.invokeAnalyze(rule.Apex_Handler_Class__c, context);
+
+            if (matchedIds == null || matchedIds.isEmpty()) {
+                return 0; // True zero - no matches from plugin
+            }
+
+            // Cap plugin results to prevent heap issues
+            if (matchedIds.size() > 10000) {
+                System.debug(LoggingLevel.WARN, 'Plugin returned too many IDs: ' + matchedIds.size());
+                return null;
+            }
+
+            // Remove excluded IDs
+            Set<Id> matchedSet = new Set<Id>(matchedIds);
+            matchedSet.removeAll(excludeIds);
+
+            if (matchedSet.isEmpty()) {
+                return 0; // True zero - all matches were excluded
+            }
+
+            // SECURITY: Re-validate plugin IDs with sharing enforcement
+            // Query IDs to ensure user has access (class is 'with sharing')
+            String validationQuery = 'SELECT COUNT() FROM ' + objectApiName +
+                                    ' WHERE Id IN :matchedSet';
+            Integer accessibleCount = Database.countQuery(validationQuery);
+
+            return accessibleCount;
+
+        } catch (Exception pluginEx) {
+            System.debug(LoggingLevel.ERROR, 'Plugin count failed: ' + pluginEx.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * @description Parses a string of record IDs into a Set with a size cap.
+     * Handles both JSON array and comma-separated formats.
+     *
+     * @param idsString The string containing record IDs
+     * @param maxSize Maximum number of IDs to parse (heap protection)
+     * @return Set of parsed IDs
+     */
+    private static Set<Id> parseExcludeIds(String idsString, Integer maxSize) {
+        Set<Id> excludeIds = new Set<Id>();
+
+        if (String.isBlank(idsString)) {
+            return excludeIds;
+        }
+
+        String cleanIds = idsString.trim();
+        List<String> idStrings;
+
+        if (cleanIds.startsWith('[')) {
+            try {
+                idStrings = (List<String>)JSON.deserialize(cleanIds, List<String>.class);
+            } catch (Exception jsonEx) {
+                cleanIds = cleanIds.replace('[', '').replace(']', '').replace('"', '');
+                idStrings = cleanIds.split(',');
+            }
+        } else {
+            idStrings = cleanIds.split(',');
+        }
+
+        Integer count = 0;
+        for (String idStr : idStrings) {
+            if (count >= maxSize) {
+                System.debug(LoggingLevel.WARN, 'Exclude IDs capped at ' + maxSize);
+                break;
+            }
+            String trimmedId = idStr.trim();
+            if (String.isNotBlank(trimmedId)) {
+                try {
+                    excludeIds.add(Id.valueOf(trimmedId));
+                    count++;
+                } catch (Exception idEx) {
+                    // Skip invalid IDs
+                }
+            }
+        }
+
+        return excludeIds;
+    }
+
+    /**
+     * @description Updates or creates a Behavior_Snapshot__c record for today to keep trend chart in sync.
+     * Called after syncPainPointOccurrences updates a pain point's occurrence count.
+     * This ensures the trend chart reflects accurate live counts, not just batch-created snapshots.
+     *
+     * CONTEXT: This method is designed for single-record real-time sync (called once per user
+     * interaction with the preview modal). It is NOT intended for bulk batch processing.
+     * The calling method (syncPainPointOccurrences) processes one pain point per invocation.
+     *
+     * SECURITY: Enforces operation-specific CRUD/FLS checks before DML operations.
+     *
+     * @param painPoint The pain point that was synced
+     * @param newCount The new occurrence count
+     */
+    private static void updateTrendSnapshot(Identified_Pain_Point__c painPoint, Integer newCount) {
+        if (painPoint == null || String.isBlank(painPoint.Unique_Key__c)) {
+            return;
+        }
+
+        try {
+            // Extract base rule name for consistent metric naming
+            String metricName = extractBaseRuleName(painPoint.Unique_Key__c);
+            Date today = Date.today();
+            Boolean isInsert = false;
+            Behavior_Snapshot__c snapshot;
+
+            // Look for existing snapshot for this metric today
+            // WITH SECURITY_ENFORCED handles query-time FLS enforcement
+            List<Behavior_Snapshot__c> existingSnapshots = [
+                SELECT Id, Record_Count__c, Impact_Score__c
+                FROM Behavior_Snapshot__c
+                WHERE Metric_Name__c = :metricName
+                AND Snapshot_Date__c = :today
+                WITH SECURITY_ENFORCED
+                LIMIT 1
+            ];
+
+            if (!existingSnapshots.isEmpty()) {
+                // UPDATE PATH: Check update permissions only
+                if (!Schema.sObjectType.Behavior_Snapshot__c.isUpdateable()) {
+                    System.debug(LoggingLevel.WARN, 'No update permission for Behavior_Snapshot__c - skipping trend update');
+                    return;
+                }
+
+                snapshot = existingSnapshots[0];
+                snapshot.Record_Count__c = newCount;
+                snapshot.Impact_Score__c = painPoint.Impact_Score__c;
+                isInsert = false;
+            } else {
+                // INSERT PATH: Check create permissions only
+                if (!Schema.sObjectType.Behavior_Snapshot__c.isCreateable()) {
+                    System.debug(LoggingLevel.WARN, 'No create permission for Behavior_Snapshot__c - skipping trend update');
+                    return;
+                }
+
+                snapshot = new Behavior_Snapshot__c(
+                    Metric_Name__c = metricName,
+                    Snapshot_Date__c = today,
+                    Record_Count__c = newCount,
+                    Impact_Score__c = painPoint.Impact_Score__c
+                );
+                isInsert = true;
+            }
+
+            // Apply FLS enforcement before DML - use operation-specific access type
+            AccessType accessType = isInsert ? AccessType.CREATABLE : AccessType.UPDATABLE;
+            SObjectAccessDecision decision = Security.stripInaccessible(
+                accessType,
+                new List<Behavior_Snapshot__c>{ snapshot }
+            );
+            List<Behavior_Snapshot__c> securedSnapshots = (List<Behavior_Snapshot__c>) decision.getRecords();
+
+            if (securedSnapshots.isEmpty()) {
+                System.debug(LoggingLevel.WARN, 'FLS stripped all fields - cannot update snapshot');
+                return;
+            }
+
+            // Validate that required fields weren't stripped (especially for inserts)
+            Map<String, Set<String>> removedFields = decision.getRemovedFields();
+            if (removedFields.containsKey('Behavior_Snapshot__c')) {
+                Set<String> stripped = removedFields.get('Behavior_Snapshot__c');
+                // For inserts, Metric_Name__c and Snapshot_Date__c are required
+                if (isInsert && (stripped.contains('Metric_Name__c') || stripped.contains('Snapshot_Date__c'))) {
+                    System.debug(LoggingLevel.WARN, 'FLS stripped required fields (Metric_Name__c or Snapshot_Date__c) - cannot create snapshot');
+                    return;
+                }
+                // Record_Count__c is the primary value we're trying to sync
+                if (stripped.contains('Record_Count__c')) {
+                    System.debug(LoggingLevel.WARN, 'FLS stripped Record_Count__c - snapshot update would be ineffective');
+                    return;
+                }
+            }
+
+            if (isInsert) {
+                insert securedSnapshots;
+                System.debug(LoggingLevel.DEBUG, 'Created trend snapshot for ' + metricName + ': count=' + newCount);
+            } else {
+                update securedSnapshots;
+                System.debug(LoggingLevel.DEBUG, 'Updated trend snapshot for ' + metricName + ': count=' + newCount);
+            }
+
+        } catch (Exception e) {
+            // Log but don't fail the sync - trend update is secondary to the core sync operation
+            // Debug logging is acceptable here since this is a "best effort" secondary operation
+            System.debug(LoggingLevel.WARN, 'Failed to update trend snapshot for pain point ' +
+                         painPoint.Id + ': ' + e.getMessage());
+        }
+    }
+
+    /**
+     * @description Result wrapper for the syncPainPointOccurrences method.
+     * Provides detailed feedback about the sync operation.
+     */
+    public class SyncResult {
+        @AuraEnabled public Boolean success = false;
+        @AuraEnabled public String message = '';
+        @AuraEnabled public Integer previousCount = 0;
+        @AuraEnabled public Integer newCount = 0;
+        @AuraEnabled public Boolean statusChanged = false;
+        @AuraEnabled public String newStatus = '';
     }
 }

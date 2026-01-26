@@ -105,6 +105,19 @@ public with sharing class WorkflowAnalyticsController {
         }
 
         try {
+            // Check premium status once for filtering
+            Boolean userIsPremium = LicenseService.isPremium();
+
+            // Build set of premium rule names for filtering (only needed for free users)
+            Set<String> premiumRuleNames = new Set<String>();
+            if (!userIsPremium) {
+                for (Behavior_Pattern_Rule__mdt rule : [
+                    SELECT DeveloperName FROM Behavior_Pattern_Rule__mdt WHERE Is_Premium__c = true
+                ]) {
+                    premiumRuleNames.add(rule.DeveloperName);
+                }
+            }
+
             // Return ALL statuses so LWC can filter by Active/Dismissed tabs
             List<Identified_Pain_Point__c> points = [
                 SELECT Id, Name, Object_API_Name__c, Impact_Score__c, Status__c, Description__c,
@@ -130,6 +143,13 @@ public with sharing class WorkflowAnalyticsController {
                 // Extract base rule name for partial fix pain points with timestamped keys
                 // e.g., "Lead_Hoarding_1767994173771" -> "Lead_Hoarding"
                 String baseKey = extractBaseRuleName(pp.Unique_Key__c);
+
+                // PREMIUM GATING: Skip premium pain points for free users
+                // Check both the base key and original key (for timestamped partial fix records)
+                if (!userIsPremium && (premiumRuleNames.contains(baseKey) || premiumRuleNames.contains(pp.Unique_Key__c))) {
+                    continue; // Skip this premium pain point for free users
+                }
+
                 Decimal costPerIncident = ruleCostMap.get(baseKey);
 
                 // Fallback: if still null, try the original key (in case it's not timestamped)
@@ -461,35 +481,18 @@ public with sharing class WorkflowAnalyticsController {
         System.debug('  Converted to Id List: ' + idList);
 
         try {
-            // Normalize the fixType to handle variations
-            String normalizedType = (fixType != null) ? fixType.toLowerCase().trim() : '';
-            String successMessage;
+            // Use PatternFixService for ALL fix types - it handles:
+            // Task_Creation, Field_Update, Owner_Assignment, Escalation_Revert, Opportunity_Creation, No_Action
+            // The fixType parameter should be the rule's DeveloperName (e.g., "Contact_Data_Gap", "Stale_Case_14")
+            String ruleDeveloperName = (fixType != null) ? fixType.replace(' ', '_').trim() : '';
 
-            // Route to appropriate fix method based on type
-            if (normalizedType.contains('case')) {
-                fixStaleCases(idList);
-                successMessage = 'Created high-priority tasks for ' + idList.size() + ' stale cases.';
-            } else if (normalizedType.contains('lead')) {
-                fixUnassignedLeads(idList);
-                successMessage = 'Ownership claimed for ' + idList.size() + ' leads.';
-            } else if (normalizedType.contains('opportunity')) {
-                fixStaleOpportunities(idList);
-                successMessage = 'Created follow-up tasks for ' + idList.size() + ' stale opportunities.';
-            } else {
-                // Try metadata-driven approach for other types
-                try {
-                    PatternFixService service = new PatternFixService();
-                    String metaName = fixType.replace(' ', '_');
-                    service.executeFix(idList, metaName);
-                    successMessage = 'Auto-Fix executed for ' + fixType;
-                } catch (Exception metaEx) {
-                    System.debug(LoggingLevel.ERROR, 'Metadata-driven fix failed: ' + metaEx.getMessage());
-                    String msg = 'Auto-Fix not yet implemented for: ' + fixType;
-                    AuraHandledException e = new AuraHandledException(msg);
-                    e.setMessage(msg);
-                    throw e;
-                }
-            }
+            System.debug('Executing PatternFixService for rule: ' + ruleDeveloperName);
+
+            PatternFixService service = new PatternFixService();
+            service.executeFix(idList, ruleDeveloperName);
+
+            // Build success message based on the rule
+            String successMessage = 'Auto-Fix completed for ' + idList.size() + ' record(s).';
 
             // Return result with fixed record IDs for UI state management
             return new AutoFixResult(successMessage, idList);
@@ -602,7 +605,13 @@ public with sharing class WorkflowAnalyticsController {
             }
         }
 
-        Integer remainingCount = remaining.size();
+        // IMPORTANT: Use the totalCount from the LWC (from actual pattern query) to calculate
+        // remaining records, NOT the size of Example_Records__c which is just a sample.
+        // The LWC sends totalCount = fixedCount + remainingCount, so:
+        Integer actualRemainingCount = (totalCount != null && totalCount > 0) ? (totalCount - fixedCount) : remaining.size();
+        System.debug('Calculated remaining count: totalCount=' + totalCount + ', fixedCount=' + fixedCount +
+                     ', actualRemainingCount=' + actualRemainingCount + ', sample remaining=' + remaining.size());
+
         Decimal costPerIncident = original.Cost_Per_Incident__c != null ? original.Cost_Per_Incident__c : 0;
         String objName = original.Object_API_Name__c != null ? original.Object_API_Name__c.toLowerCase() : '';
 
@@ -618,11 +627,11 @@ public with sharing class WorkflowAnalyticsController {
         }
 
         // Check if this is a partial fix (remaining records exist)
-        if (remainingCount > 0) {
+        if (actualRemainingCount > 0) {
             // PARTIAL FIX: Two-part update:
             // 1. Update the SAME pain point with remaining records (stays in Active)
             // 2. Create a NEW Completed record for the fixed records (shows in Completed)
-            System.debug('Partial fix: ' + fixedCount + ' fixed, ' + remainingCount + ' remaining');
+            System.debug('Partial fix: ' + fixedCount + ' fixed, ' + actualRemainingCount + ' remaining');
 
             // Calculate new impact score for remaining records
             Decimal remainingImpactScore = 0;
@@ -653,7 +662,7 @@ public with sharing class WorkflowAnalyticsController {
                         }
                     } catch (Exception oppEx) {
                         System.debug(LoggingLevel.WARN, 'Failed to query Opportunity amounts for remaining impact: ' + oppEx.getMessage());
-                        remainingImpactScore = remainingCount * costPerIncident;
+                        remainingImpactScore = actualRemainingCount * costPerIncident;
                     }
                 }
 
@@ -683,17 +692,19 @@ public with sharing class WorkflowAnalyticsController {
                     }
                 }
             } else {
-                remainingImpactScore = remainingCount * costPerIncident;
+                remainingImpactScore = actualRemainingCount * costPerIncident;
             }
 
             // 1. Update the SAME pain point in place for remaining records
-            original.Occurrences__c = remainingCount;
+            original.Occurrences__c = actualRemainingCount;
             original.Impact_Score__c = remainingImpactScore;
             original.Example_Records__c = JSON.serialize(remaining);
-            // Don't update Fixed_Record_Ids__c on the active record - that goes to the completed record
+            // ALSO update Fixed_Record_Ids__c on active record so preview can exclude already-fixed records
+            original.Fixed_Record_Ids__c = cumulativeFixedIds;
             // Status stays as 'New' - still active with remaining records
 
-            System.debug('Updating pain point in place: ' + remainingCount + ' remaining, $' + remainingImpactScore + ' at risk');
+            System.debug('Updating pain point in place: ' + actualRemainingCount + ' remaining, $' + remainingImpactScore + ' at risk');
+            System.debug('Cumulative fixed IDs for filtering: ' + cumulativeFixedIds);
 
             // 2. Create a NEW Completed record for the fixed records
             if (Schema.sObjectType.Identified_Pain_Point__c.isCreateable()) {
@@ -1182,6 +1193,39 @@ public with sharing class WorkflowAnalyticsController {
     }
 
     /**
+     * @description Manually triggers the pattern analysis batch job.
+     * Allows admins to run analysis on-demand instead of waiting for the scheduled 2 AM run.
+     * Checks if a job is already running to prevent duplicate executions.
+     * @return String message indicating success or if a job is already in progress
+     */
+    @AuraEnabled
+    public static String runAnalysisNow() {
+        try {
+            // Check if there's already a batch running
+            List<AsyncApexJob> runningJobs = [
+                SELECT Id, Status, CreatedDate
+                FROM AsyncApexJob
+                WHERE ApexClass.Name = 'PatternAnalysisService'
+                AND Status IN ('Holding', 'Queued', 'Preparing', 'Processing')
+                LIMIT 1
+            ];
+
+            if (!runningJobs.isEmpty()) {
+                return 'Analysis job is already running. Please wait for it to complete.';
+            }
+
+            // Start the batch job
+            Database.executeBatch(new PatternAnalysisService(), 50);
+
+            return 'Analysis job started successfully. Results will appear shortly.';
+
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'runAnalysisNow Error: ' + e.getMessage());
+            throw new AuraHandledException('Failed to start analysis: ' + e.getMessage());
+        }
+    }
+
+    /**
      * @description Returns the total count of Behavior_Log__c records analyzed.
      * Used by the dashboard to display dynamic "Events Analyzed" metric instead of hardcoded values.
      * @return Integer count of all behavior log records, or 0 if none exist or on error
@@ -1224,6 +1268,247 @@ public with sharing class WorkflowAnalyticsController {
         } catch (Exception e) {
             System.debug(LoggingLevel.WARN, 'getMonitoredObjectsCount error: ' + e.getMessage());
             return 0;
+        }
+    }
+
+    // --- NEW: Trend Data for Charts ---
+
+    // Constants for trend data retrieval - documented rationale:
+    // MAX_DAYS_BACK: 90 days provides sufficient historical context while limiting query scope
+    // MAX_TREND_ROWS: 2000 rows accommodates ~20 metrics * 90 days with buffer
+    // MAX_AGG_POINTS: 90 points = max 1 per day for 90 days
+    private static final Integer MAX_DAYS_BACK = 90;
+    private static final Integer DEFAULT_DAYS_BACK = 30;
+    private static final Integer MAX_TREND_ROWS = 2000;
+    private static final Integer MAX_AGG_POINTS = 90;
+
+    // Date formatting cache to reduce CPU overhead
+    private static Map<Date, String> dateFormatCache = new Map<Date, String>();
+
+    /**
+     * @description Wrapper for trend data point used in the trend chart visualization.
+     * Each data point represents a snapshot in time with associated metrics.
+     */
+    public class TrendDataPoint {
+        @AuraEnabled public Date snapshotDate { get; set; }
+        @AuraEnabled public String metricName { get; set; }
+        @AuraEnabled public Integer recordCount { get; set; }
+        @AuraEnabled public Decimal impactScore { get; set; }
+        @AuraEnabled public String formattedDate { get; set; }
+
+        public TrendDataPoint(Behavior_Snapshot__c snapshot) {
+            this.snapshotDate = snapshot.Snapshot_Date__c;
+            this.metricName = snapshot.Metric_Name__c;
+            this.recordCount = snapshot.Record_Count__c != null ? snapshot.Record_Count__c.intValue() : 0;
+            this.impactScore = snapshot.Impact_Score__c != null ? snapshot.Impact_Score__c : 0;
+            // Use cached date formatting to reduce CPU overhead
+            this.formattedDate = formatDateCached(snapshot.Snapshot_Date__c);
+        }
+    }
+
+    /**
+     * @description Formats a date with caching to reduce CPU overhead at scale.
+     * Uses GMT formatting for consistent output across user timezones.
+     * @param d The date to format
+     * @return Formatted string like "Jan 15"
+     */
+    private static String formatDateCached(Date d) {
+        if (d == null) {
+            return '';
+        }
+        if (dateFormatCache.containsKey(d)) {
+            return dateFormatCache.get(d);
+        }
+        Datetime dt = Datetime.newInstanceGmt(d, Time.newInstance(0, 0, 0, 0));
+        String formatted = dt.formatGmt('MMM d');
+        dateFormatCache.put(d, formatted);
+        return formatted;
+    }
+
+    /**
+     * @description Wrapper for aggregated trend data grouped by metric/pattern.
+     * Contains multiple data points for charting trends over time.
+     */
+    public class TrendSeries {
+        @AuraEnabled public String metricName { get; set; }
+        @AuraEnabled public String displayName { get; set; }
+        @AuraEnabled public List<TrendDataPoint> dataPoints { get; set; }
+        @AuraEnabled public String color { get; set; }
+
+        public TrendSeries(String metricName) {
+            this.metricName = metricName;
+            this.displayName = WorkflowAnalyticsController.formatMetricDisplayName(metricName);
+            this.dataPoints = new List<TrendDataPoint>();
+            this.color = WorkflowAnalyticsController.getColorForMetric(metricName);
+        }
+    }
+
+    /**
+     * @description Converts snake_case metric name to space-separated display name.
+     * Example: "High_Value_Ghosting" -> "High Value Ghosting"
+     */
+    private static String formatMetricDisplayName(String metricName) {
+        if (String.isBlank(metricName)) return 'Unknown';
+        return metricName.replace('_', ' ');
+    }
+
+    /**
+     * @description Assigns a consistent color based on metric name hash.
+     * Null-safe: treats blank/null as 'Other' for consistent coloring.
+     */
+    private static String getColorForMetric(String metricName) {
+        List<String> colors = new List<String>{
+            '#0176d3', // Salesforce blue
+            '#ff5d2d', // Orange
+            '#4bca81', // Green
+            '#9050e9', // Purple
+            '#ffb75d', // Yellow
+            '#ff538a', // Pink
+            '#1589ee', // Light blue
+            '#c23934'  // Red
+        };
+        // Null-safe: use 'Other' for blank metric names
+        String safeName = String.isBlank(metricName) ? 'Other' : metricName;
+        Integer hash = Math.abs(safeName.hashCode());
+        return colors[Math.mod(hash, colors.size())];
+    }
+
+    /**
+     * @description Wrapper for trend data response including truncation metadata.
+     */
+    public class TrendDataResponse {
+        @AuraEnabled public List<TrendSeries> series { get; set; }
+        @AuraEnabled public Boolean isTruncated { get; set; }
+        @AuraEnabled public Integer totalRecordsQueried { get; set; }
+
+        public TrendDataResponse() {
+            this.series = new List<TrendSeries>();
+            this.isTruncated = false;
+            this.totalRecordsQueried = 0;
+        }
+    }
+
+    /**
+     * @description Retrieves trend data from Behavior_Snapshot__c for the trend chart.
+     * Returns data grouped by metric/pattern name over the specified time period.
+     * Results are sorted alphabetically by metric name for deterministic ordering.
+     * @param daysBack Number of days to look back (default 30, max 90)
+     * @return TrendDataResponse containing sorted TrendSeries and truncation metadata
+     */
+    @AuraEnabled(cacheable=true)
+    public static TrendDataResponse getTrendData(Integer daysBack) {
+        TrendDataResponse response = new TrendDataResponse();
+
+        if (!Schema.sObjectType.Behavior_Snapshot__c.isAccessible()) {
+            return response;
+        }
+
+        try {
+            // Validate and constrain daysBack parameter
+            if (daysBack == null || daysBack <= 0) {
+                daysBack = DEFAULT_DAYS_BACK;
+            }
+            daysBack = Math.min(daysBack, MAX_DAYS_BACK);
+
+            Date startDate = Date.today().addDays(-daysBack);
+
+            // Query snapshots - ordered by metric and date for efficient grouping
+            List<Behavior_Snapshot__c> snapshots = [
+                SELECT Id, Snapshot_Date__c, Metric_Name__c, Record_Count__c, Impact_Score__c
+                FROM Behavior_Snapshot__c
+                WHERE Snapshot_Date__c >= :startDate
+                WITH SECURITY_ENFORCED
+                ORDER BY Metric_Name__c ASC, Snapshot_Date__c ASC
+                LIMIT :MAX_TREND_ROWS
+            ];
+
+            response.totalRecordsQueried = snapshots.size();
+            response.isTruncated = snapshots.size() >= MAX_TREND_ROWS;
+
+            // Group by metric name using ordered map for deterministic output
+            Map<String, TrendSeries> seriesMap = new Map<String, TrendSeries>();
+
+            for (Behavior_Snapshot__c snapshot : snapshots) {
+                String metricName = snapshot.Metric_Name__c;
+                if (String.isBlank(metricName)) {
+                    metricName = 'Other';
+                }
+
+                if (!seriesMap.containsKey(metricName)) {
+                    seriesMap.put(metricName, new TrendSeries(metricName));
+                }
+
+                seriesMap.get(metricName).dataPoints.add(new TrendDataPoint(snapshot));
+            }
+
+            // Sort series alphabetically for deterministic ordering
+            List<String> sortedMetricNames = new List<String>(seriesMap.keySet());
+            sortedMetricNames.sort();
+
+            for (String metricName : sortedMetricNames) {
+                response.series.add(seriesMap.get(metricName));
+            }
+
+            return response;
+
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'getTrendData Error: ' + e.getMessage() + ' | Stack: ' + e.getStackTraceString());
+            // Throw user-friendly exception rather than silently returning empty data
+            throw new AuraHandledException('Unable to load trend data. Please try again or contact your administrator.');
+        }
+    }
+
+    /**
+     * @description Gets aggregated trend data showing total issues over time.
+     * Useful for showing overall org health trend on the dashboard.
+     * @param daysBack Number of days to look back (default 30, max 90)
+     * @return List of aggregated data points with total counts per date, ordered by date
+     */
+    @AuraEnabled(cacheable=true)
+    public static List<TrendDataPoint> getAggregatedTrendData(Integer daysBack) {
+        if (!Schema.sObjectType.Behavior_Snapshot__c.isAccessible()) {
+            return new List<TrendDataPoint>();
+        }
+
+        try {
+            // Validate and constrain daysBack parameter
+            if (daysBack == null || daysBack <= 0) {
+                daysBack = DEFAULT_DAYS_BACK;
+            }
+            daysBack = Math.min(daysBack, MAX_DAYS_BACK);
+
+            Date startDate = Date.today().addDays(-daysBack);
+
+            // Aggregate by date - MAX_AGG_POINTS accommodates 1 point per day for max days
+            List<AggregateResult> results = [
+                SELECT Snapshot_Date__c snapDate,
+                       SUM(Record_Count__c) totalRecords,
+                       SUM(Impact_Score__c) totalImpact
+                FROM Behavior_Snapshot__c
+                WHERE Snapshot_Date__c >= :startDate
+                WITH SECURITY_ENFORCED
+                GROUP BY Snapshot_Date__c
+                ORDER BY Snapshot_Date__c ASC
+                LIMIT :MAX_AGG_POINTS
+            ];
+
+            List<TrendDataPoint> dataPoints = new List<TrendDataPoint>();
+            for (AggregateResult ar : results) {
+                TrendDataPoint point = new TrendDataPoint(new Behavior_Snapshot__c(
+                    Snapshot_Date__c = (Date)ar.get('snapDate'),
+                    Metric_Name__c = 'Total Issues',
+                    Record_Count__c = (Decimal)ar.get('totalRecords'),
+                    Impact_Score__c = (Decimal)ar.get('totalImpact')
+                ));
+                dataPoints.add(point);
+            }
+
+            return dataPoints;
+
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'getAggregatedTrendData Error: ' + e.getMessage() + ' | Stack: ' + e.getStackTraceString());
+            // Throw user-friendly exception rather than silently returning empty data
+            throw new AuraHandledException('Unable to load aggregated trend data. Please try again or contact your administrator.');
         }
     }
 

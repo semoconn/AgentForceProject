@@ -34,4 +34,8 @@
         <field>Is_Active__c</field>
         <value xsi:type="xsd:boolean">true</value>
     </values>
+    <values>
+        <field>Description__c</field>
+        <value xsi:type="xsd:string">Support cases with no updates in 14+ days, risking customer dissatisfaction and SLA breaches.</value>
+    </values>
 </CustomMetadata>

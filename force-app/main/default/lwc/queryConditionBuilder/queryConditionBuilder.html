@@ -34,18 +34,68 @@
                     </div>
                 </template>
 
-                <!-- Field Selector -->
+                <!-- Field Selector (Searchable) -->
                 <div class="slds-col slds-size_1-of-1 slds-small-size_1-of-4 slds-m-bottom_x-small">
-                    <lightning-combobox
-                        name="field"
-                        label="Field"
-                        placeholder="Select Field"
-                        options={fieldOptions}
-                        value={currentField}
-                        onchange={handleFieldChange}
-                        disabled={isFieldDisabled}
-                        variant="label-stacked">
-                    </lightning-combobox>
+                    <div class="slds-form-element">
+                        <label class="slds-form-element__label" for="field-search">Field</label>
+                        <div class="slds-form-element__control">
+                            <div class="slds-combobox_container">
+                                <div class={fieldComboboxClass} data-id="field-combobox" role="combobox" aria-expanded={isFieldDropdownOpen} aria-haspopup="listbox">
+                                    <div class="slds-combobox__form-element slds-input-has-icon slds-input-has-icon_right" role="none">
+                                        <input
+                                            type="text"
+                                            class="slds-input slds-combobox__input"
+                                            id="field-search"
+                                            aria-autocomplete="list"
+                                            aria-controls="field-listbox"
+                                            autocomplete="off"
+                                            role="textbox"
+                                            placeholder="Search fields..."
+                                            value={fieldSearchTerm}
+                                            onfocus={handleFieldInputFocus}
+                                            onblur={handleFieldInputBlur}
+                                            oninput={handleFieldSearchInput}
+                                            onkeydown={handleFieldKeyDown}
+                                            disabled={isFieldDisabled}>
+                                        <span class="slds-icon_container slds-icon-utility-search slds-input__icon slds-input__icon_right">
+                                            <lightning-icon icon-name="utility:search" size="x-small" alternative-text="Search"></lightning-icon>
+                                        </span>
+                                    </div>
+                                    <div id="field-listbox" class="slds-dropdown slds-dropdown_length-10 slds-dropdown_fluid" role="listbox" onmousedown={handleDropdownMouseDown}>
+                                        <ul class="slds-listbox slds-listbox_vertical" role="presentation">
+                                            <template if:true={hasFilteredFields}>
+                                                <template for:each={filteredFieldOptions} for:item="field">
+                                                    <li key={field.value} role="presentation" class="slds-listbox__item">
+                                                        <div
+                                                            class={field.itemClass}
+                                                            role="option"
+                                                            data-value={field.value}
+                                                            onclick={handleFieldSelect}>
+                                                            <span class="slds-media__body">
+                                                                <span class="slds-truncate" title={field.label}>
+                                                                    {field.label}
+                                                                    <span class="slds-text-body_small slds-text-color_weak slds-m-left_xx-small">({field.value})</span>
+                                                                </span>
+                                                            </span>
+                                                        </div>
+                                                    </li>
+                                                </template>
+                                            </template>
+                                            <template if:false={hasFilteredFields}>
+                                                <li role="presentation" class="slds-listbox__item">
+                                                    <div class="slds-media slds-listbox__option slds-listbox__option_plain">
+                                                        <span class="slds-media__body">
+                                                            <span class="slds-truncate slds-text-color_weak">No matching fields</span>
+                                                        </span>
+                                                    </div>
+                                                </li>
+                                            </template>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Operator Selector -->

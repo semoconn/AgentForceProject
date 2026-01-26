@@ -20,7 +20,7 @@
     </values>
     <values>
         <field>Fix_Config__c</field>
-        <value xsi:type="xsd:string">{"strategy": "RoundRobin", "group": "Sales_Team_A"}</value>
+        <value xsi:type="xsd:string">{"strategy": "RoundRobin", "group": "Sales_Team_A", "useAssignmentRules": true}</value>
     </values>
     <values>
         <field>Is_Premium__c</field>
@@ -33,5 +33,9 @@
     <values>
         <field>Is_Active__c</field>
         <value xsi:type="xsd:boolean">true</value>
+    </values>
+    <values>
+        <field>Description__c</field>
+        <value xsi:type="xsd:string">New leads sitting unassigned in queues for 48+ hours, missing the critical window for initial contact.</value>
     </values>
 </CustomMetadata>

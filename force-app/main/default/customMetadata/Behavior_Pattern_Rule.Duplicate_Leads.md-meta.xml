@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomMetadata xmlns="http://soap.sforce.com/2006/04/metadata" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+    <label>Duplicate Leads (Data Quality)</label>
+    <protected>false</protected>
+    <values>
+        <field>Object_API_Name__c</field>
+        <value xsi:type="xsd:string">Lead</value>
+    </values>
+    <values>
+        <field>Query_Condition__c</field>
+        <value xsi:type="xsd:string">Email != null</value>
+    </values>
+    <values>
+        <field>Logic_Type__c</field>
+        <value xsi:type="xsd:string">Apex_Plugin</value>
+    </values>
+    <values>
+        <field>Apex_Handler_Class__c</field>
+        <value xsi:type="xsd:string">DuplicateRecordPlugin</value>
+    </values>
+    <values>
+        <field>Fix_Type__c</field>
+        <value xsi:type="xsd:string">Task_Creation</value>
+    </values>
+    <values>
+        <field>Fix_Config__c</field>
+        <value xsi:type="xsd:string">{"duplicateField": "Email", "excludeNulls": true, "subject": "Review &amp; Merge Duplicate Lead", "priority": "Normal", "description": "This lead has a duplicate email address. Review both records and merge or delete to maintain data quality."}</value>
+    </values>
+    <values>
+        <field>Is_Premium__c</field>
+        <value xsi:type="xsd:boolean">true</value>
+    </values>
+    <values>
+        <field>Cost_Per_Incident__c</field>
+        <value xsi:type="xsd:double">100</value>
+    </values>
+    <values>
+        <field>Is_Active__c</field>
+        <value xsi:type="xsd:boolean">true</value>
+    </values>
+    <values>
+        <field>Description__c</field>
+        <value xsi:type="xsd:string">Leads with duplicate email addresses, indicating potential data quality issues or redundant outreach.</value>
+    </values>
+</CustomMetadata>

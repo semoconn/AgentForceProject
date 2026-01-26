@@ -11,6 +11,7 @@ import markPainPointResolved from '@salesforce/apex/WorkflowAnalyticsController.
 import getDashboardData from '@salesforce/apex/WorkflowAnalyticsController.getDashboardData';
 import getTotalEventsAnalyzed from '@salesforce/apex/WorkflowAnalyticsController.getTotalEventsAnalyzed';
 import getMonitoredObjectsCount from '@salesforce/apex/WorkflowAnalyticsController.getMonitoredObjectsCount';
+import getEnhancedSystemHealth from '@salesforce/apex/WorkflowAnalyticsController.getEnhancedSystemHealth';
 
 export default class BehaviorIQDashboard extends LightningElement {
     @track allPainPoints = [];
@@ -33,6 +34,7 @@ export default class BehaviorIQDashboard extends LightningElement {
     @track previewObjectApiName = '';
     @track previewRuleLabel = '';
     @track previewFixType = '';
+    @track previewPainPointId = ''; // Pain point ID for occurrence count synchronization
     @track previewExampleRecordIds = ''; // Whitelist of record IDs for partial fix filtering
     @track previewReadOnly = false; // When true, shows records in view-only mode (for completed items)
     @track previewFixedRecordIds = ''; // Cumulative fixed record IDs for displaying in the modal
@@ -51,9 +53,11 @@ export default class BehaviorIQDashboard extends LightningElement {
     _wiredDashboardResult;
     _wiredEventsResult;
     _wiredObjectsCountResult;
+    _wiredSystemHealthResult;
     _currentPainPointId = null; // Track the pain point being fixed for resolution
     @track totalEventsAnalyzed = 0;
     @track monitoredObjectsCount = 0;
+    @track lastScanTime = null; // From System_Health_Log__c for accurate analysis job timing
 
     // 0. Load Total Events Analyzed (Dynamic ROI metric)
     @wire(getTotalEventsAnalyzed)
@@ -78,6 +82,19 @@ export default class BehaviorIQDashboard extends LightningElement {
         } else if (result.error) {
             console.error('Error loading monitored objects count:', result.error);
             this.monitoredObjectsCount = 0;
+        }
+    }
+
+    // 0c. Load System Health for Last Scan time (analysis job completion time)
+    @wire(getEnhancedSystemHealth)
+    wiredSystemHealth(result) {
+        this._wiredSystemHealthResult = result;
+        if (result.data) {
+            this.lastScanTime = result.data.lastRunTime;
+            this.updateMetricsWithDynamicData();
+        } else if (result.error) {
+            console.error('Error loading system health:', result.error);
+            this.lastScanTime = null;
         }
     }
 
@@ -116,9 +133,9 @@ export default class BehaviorIQDashboard extends LightningElement {
         // Use configured monitored objects count (from BehaviorIQ_Configuration__c)
         const objectsMonitored = this.monitoredObjectsCount;
 
-        // Format last scan time
-        const lastScanTime = this.recentLogs.length > 0
-            ? this.formatLastScan(this.recentLogs[0].CreatedDate)
+        // Format last scan time from System_Health_Log__c (analysis job completion time)
+        const lastScanDisplay = this.lastScanTime
+            ? this.formatLastScan(this.lastScanTime)
             : 'No data';
 
         // Build metrics with real data (fallback to sensible defaults if no data)
@@ -126,7 +143,7 @@ export default class BehaviorIQDashboard extends LightningElement {
             { id: '1', label: 'Events Analyzed', value: formattedEventsCount || '0', key: 'events_analyzed' },
             { id: '2', label: 'Active Users', value: String(uniqueUsers || 0), key: 'active_users' },
             { id: '3', label: 'Objects Monitored', value: String(objectsMonitored || 0), key: 'objects_monitored' },
-            { id: '4', label: 'Last Scan', value: lastScanTime, key: 'last_scan' }
+            { id: '4', label: 'Last Scan', value: lastScanDisplay, key: 'last_scan' }
         ];
 
         // Apply Icons and Colors
@@ -234,34 +251,27 @@ export default class BehaviorIQDashboard extends LightningElement {
             // Calculate actual record count based on status
             let actualCount = point.Occurrences;
 
-            if (point.Status === 'Resolved') {
-                // For Completed items: Use FixedRecordIds count or stored Occurrences
-                // ExampleRecords is [] for completed items, so we need to look at FixedRecordIds
-                if (point.FixedRecordIds) {
-                    try {
-                        const fixedIds = point.FixedRecordIds.startsWith('[')
-                            ? JSON.parse(point.FixedRecordIds)
-                            : point.FixedRecordIds.split(',').filter(id => id.trim());
-                        actualCount = fixedIds.length;
-                    } catch (e) {
-                        // Fall back to stored Occurrences if parsing fails
-                        console.warn('Failed to parse FixedRecordIds:', e);
-                        actualCount = point.Occurrences;
-                    }
-                }
-                // If no FixedRecordIds, keep the stored Occurrences value
-            } else if (point.ExampleRecords && point.ExampleRecords !== '[]' && point.ExampleRecords !== '') {
-                // For Active/Dismissed items: Calculate from ExampleRecords
+            // IMPORTANT: Always trust the database Occurrences__c value for Active/Dismissed items.
+            // ExampleRecords is just a SAMPLE of record IDs (limited to ~5 for storage efficiency),
+            // NOT the full list. The Occurrences field has the accurate total count from the batch job.
+            // Only recalculate from FixedRecordIds for Resolved items where we need to show
+            // how many records were actually fixed.
+            if (point.Status === 'Resolved' && point.FixedRecordIds) {
+                // For Completed items: Use FixedRecordIds count if available
+                // This shows how many records were actually fixed
                 try {
-                    const ids = point.ExampleRecords.startsWith('[')
-                        ? JSON.parse(point.ExampleRecords)
-                        : point.ExampleRecords.split(',').filter(id => id.trim());
-                    actualCount = ids.length;
+                    const fixedIds = point.FixedRecordIds.startsWith('[')
+                        ? JSON.parse(point.FixedRecordIds)
+                        : point.FixedRecordIds.split(',').filter(id => id.trim());
+                    actualCount = fixedIds.length;
                 } catch (e) {
-                    // Fall back to Occurrences if parsing fails
-                    console.warn('Failed to parse ExampleRecords:', e);
+                    // Fall back to stored Occurrences if parsing fails
+                    console.warn('Failed to parse FixedRecordIds:', e);
+                    actualCount = point.Occurrences;
                 }
             }
+            // For Active/Dismissed items: Always use Occurrences from the database
+            // Do NOT recalculate from ExampleRecords - that's just a sample, not the full count!
 
             return {
                 ...point,
@@ -301,8 +311,11 @@ export default class BehaviorIQDashboard extends LightningElement {
             refreshApex(this._wiredDashboardResult),
             refreshApex(this._wiredPainPointsResult),
             refreshApex(this._wiredEventsResult),
-            refreshApex(this._wiredObjectsCountResult)
+            refreshApex(this._wiredObjectsCountResult),
+            refreshApex(this._wiredSystemHealthResult)
         ]).then(() => {
+            // Also refresh the health gauge component
+            this.refreshHealthGauge();
             this.isLoading = false;
             this.showToast('Success', 'Dashboard refreshed', 'success');
         });
@@ -353,6 +366,9 @@ export default class BehaviorIQDashboard extends LightningElement {
         this.previewObjectApiName = objectApiName;
         this.previewRuleLabel = ruleLabel || objectApiName + ' Issues';
         this.previewFixType = this.mapObjectToFixType(objectApiName);
+        // CRITICAL: Pass the pain point ID for occurrence count synchronization
+        // This enables the preview to sync the dashboard count with the live query result
+        this.previewPainPointId = painPointId || '';
         // Pass the Example_Records__c as whitelist for filtering - this ensures we only show remaining unfixed records
         this.previewExampleRecordIds = exampleRecords || '';
         // Pass Fixed_Record_Ids__c for cumulative display of previously fixed records
@@ -469,9 +485,34 @@ export default class BehaviorIQDashboard extends LightningElement {
         this.previewObjectApiName = '';
         this.previewRuleLabel = '';
         this.previewFixType = '';
+        this.previewPainPointId = '';
         this.previewExampleRecordIds = '';
         this.previewFixedRecordIds = '';
         this.previewFixedAtTimestamp = '';
+    }
+
+    /**
+     * @description Handles the occurrence sync event from the remediation preview.
+     * This is triggered when the preview detects that the live record count differs
+     * from the stored Occurrences__c value and syncs them.
+     * @param {CustomEvent} event - Contains previousCount, newCount, statusChanged, newStatus
+     */
+    handleOccurrenceSynced(event) {
+        const { painPointId, previousCount, newCount, statusChanged, newStatus } = event.detail;
+        console.log('Occurrence synced event received:', event.detail);
+
+        // Refresh the pain points list to show the updated count
+        refreshApex(this._wiredPainPointsResult);
+
+        // If status changed (e.g., auto-resolved because count hit 0), refresh health gauge too
+        if (statusChanged) {
+            this.refreshHealthGauge();
+
+            // Show toast for status change
+            if (newStatus === 'Resolved') {
+                this.showToast('Info', `Pain point auto-resolved: all ${previousCount} records have been fixed externally.`, 'info');
+            }
+        }
     }
 
     handlePreviewFixComplete(event) {

@@ -74,20 +74,52 @@ public with sharing class SetupWizardController {
                 WITH SECURITY_ENFORCED
             ];
 
-            // If job already exists, return success (idempotent operation)
+            String scheduleId;
+
+            // If job already exists, use existing ID (idempotent operation)
             // This allows the setup wizard to complete even if the job was previously scheduled
             if (!existingJobs.isEmpty()) {
-                return existingJobs[0].Id;
+                scheduleId = existingJobs[0].Id;
+            } else {
+                // Schedule the nightly job at 2 AM
+                PatternAnalysisService service = new PatternAnalysisService();
+                String cronExpression = '0 0 2 * * ?';
+                scheduleId = System.schedule(SCHEDULE_JOB_NAME, cronExpression, service);
             }
 
-            PatternAnalysisService service = new PatternAnalysisService();
-            String cronExpression = '0 0 2 * * ?';
+            // Also run the batch immediately so users see data right away
+            // This provides immediate value after setup instead of waiting until 2 AM
+            runInitialAnalysis();
 
-            return System.schedule(SCHEDULE_JOB_NAME, cronExpression, service);
+            return scheduleId;
 
         } catch (Exception e) {
             System.debug(LoggingLevel.ERROR, 'Scheduling Error: ' + e.getMessage());
             throw new AuraHandledException('Failed to schedule the analysis job. ' + e.getMessage());
+        }
+    }
+
+    /**
+     * @description Runs the pattern analysis batch job immediately.
+     * Called after setup wizard completes to provide immediate value.
+     */
+    private static void runInitialAnalysis() {
+        try {
+            // Check if there's already a batch running to avoid conflicts
+            List<AsyncApexJob> runningJobs = [
+                SELECT Id
+                FROM AsyncApexJob
+                WHERE ApexClass.Name = 'PatternAnalysisService'
+                AND Status IN ('Holding', 'Queued', 'Preparing', 'Processing')
+                LIMIT 1
+            ];
+
+            if (runningJobs.isEmpty()) {
+                Database.executeBatch(new PatternAnalysisService(), 50);
+            }
+        } catch (Exception e) {
+            // Don't fail the setup if batch execution fails - the scheduled job will run later
+            System.debug(LoggingLevel.WARN, 'Initial analysis batch could not be started: ' + e.getMessage());
         }
     }
 

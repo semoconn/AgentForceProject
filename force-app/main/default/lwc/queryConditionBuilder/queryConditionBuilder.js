@@ -121,6 +121,11 @@ export default class QueryConditionBuilder extends LightningElement {
     @track picklistOptions = [];
     @track isLoadingPicklist = false;
 
+    // Searchable field picker state
+    @track fieldSearchTerm = '';
+    @track isFieldDropdownOpen = false;
+    _fieldBlurTimeout = null;
+
     // Track if initial field load has been attempted
     _hasLoadedFields = false;
 
@@ -182,6 +187,37 @@ export default class QueryConditionBuilder extends LightningElement {
     // Computed properties
     get fieldOptions() {
         return this.fields;
+    }
+
+    // Searchable field picker computed properties
+    get filteredFieldOptions() {
+        const searchLower = (this.fieldSearchTerm || '').toLowerCase();
+        let filtered = this.fields;
+
+        if (searchLower) {
+            filtered = this.fields.filter(f =>
+                f.label.toLowerCase().includes(searchLower) ||
+                f.value.toLowerCase().includes(searchLower)
+            );
+        }
+
+        // Add selection styling
+        return filtered.map(f => ({
+            ...f,
+            itemClass: f.value === this.currentField
+                ? 'slds-media slds-listbox__option slds-listbox__option_plain slds-media_small slds-is-selected'
+                : 'slds-media slds-listbox__option slds-listbox__option_plain slds-media_small'
+        }));
+    }
+
+    get hasFilteredFields() {
+        return this.filteredFieldOptions.length > 0;
+    }
+
+    get fieldComboboxClass() {
+        return this.isFieldDropdownOpen
+            ? 'slds-combobox slds-dropdown-trigger slds-dropdown-trigger_click slds-is-open'
+            : 'slds-combobox slds-dropdown-trigger slds-dropdown-trigger_click';
     }
 
     get operatorOptions() {
@@ -306,7 +342,71 @@ export default class QueryConditionBuilder extends LightningElement {
         return typeMap[type?.toUpperCase()] || 'STRING';
     }
 
-    // Event handlers
+    // Searchable field picker event handlers
+    handleFieldInputFocus() {
+        if (this._fieldBlurTimeout) {
+            clearTimeout(this._fieldBlurTimeout);
+            this._fieldBlurTimeout = null;
+        }
+        this.isFieldDropdownOpen = true;
+    }
+
+    handleFieldInputBlur() {
+        // Delay closing to allow click events on dropdown items
+        this._fieldBlurTimeout = setTimeout(() => {
+            this.isFieldDropdownOpen = false;
+        }, 200);
+    }
+
+    handleFieldSearchInput(event) {
+        this.fieldSearchTerm = event.target.value;
+        this.isFieldDropdownOpen = true;
+    }
+
+    handleFieldSelect(event) {
+        const fieldValue = event.currentTarget.dataset.value;
+        this.selectField(fieldValue);
+    }
+
+    handleFieldKeyDown(event) {
+        if (event.key === 'Escape') {
+            this.isFieldDropdownOpen = false;
+        } else if (event.key === 'Enter' && this.filteredFieldOptions.length === 1) {
+            // Auto-select if only one match
+            this.selectField(this.filteredFieldOptions[0].value);
+            event.preventDefault();
+        }
+    }
+
+    handleDropdownMouseDown(event) {
+        // Prevent blur from firing when clicking dropdown
+        event.preventDefault();
+    }
+
+    selectField(fieldValue) {
+        this.currentField = fieldValue;
+
+        // Find field and set display
+        const field = this.fields.find(f => f.value === fieldValue);
+        this.fieldSearchTerm = field ? field.label : fieldValue;
+        this.currentFieldType = field ? field.dataType : '';
+
+        // Close dropdown
+        this.isFieldDropdownOpen = false;
+
+        // Reset operator and value
+        this.currentOperator = '';
+        this.currentValue = '';
+        this.currentDateLiteral = '';
+        this.currentDateN = '';
+
+        // Load picklist values if needed
+        if (this.normalizeFieldType(this.currentFieldType) === 'PICKLIST') {
+            this.loadPicklistValues();
+        }
+    }
+
+    // Legacy event handler (kept for compatibility)
     handleFieldChange(event) {
         this.currentField = event.detail.value;
 
@@ -496,6 +596,8 @@ export default class QueryConditionBuilder extends LightningElement {
         this.currentDateLiteral = '';
         this.currentDateN = '';
         this.currentLogic = 'AND';
+        this.fieldSearchTerm = '';
+        this.isFieldDropdownOpen = false;
     }
 
     // Build the full WHERE clause

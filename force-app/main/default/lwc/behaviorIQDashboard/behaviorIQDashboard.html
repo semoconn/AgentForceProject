@@ -224,6 +224,11 @@
                 <div class="slds-m-top_medium">
                     <c-behavior-i-q-health-gauge></c-behavior-i-q-health-gauge>
                 </div>
+
+                <!-- Trend Chart - Below Health Gauge -->
+                <div class="slds-m-top_medium">
+                    <c-behavior-i-q-trend-chart days-back="30" chart-height="220" show-legend="true"></c-behavior-i-q-trend-chart>
+                </div>
             </div>
 
             <!-- Right Column: Leaderboard & Feed -->
@@ -359,12 +364,14 @@
                 object-api-name={previewObjectApiName}
                 rule-label={previewRuleLabel}
                 fix-type={previewFixType}
+                pain-point-id={previewPainPointId}
                 example-record-ids={previewExampleRecordIds}
                 fixed-record-ids={previewFixedRecordIds}
                 fixed-at-timestamp={previewFixedAtTimestamp}
                 read-only={previewReadOnly}
                 onclose={handlePreviewClose}
-                onfixcomplete={handlePreviewFixComplete}>
+                onfixcomplete={handlePreviewFixComplete}
+                onoccurrencesynced={handleOccurrenceSynced}>
             </c-remediation-preview>
         </template>
 

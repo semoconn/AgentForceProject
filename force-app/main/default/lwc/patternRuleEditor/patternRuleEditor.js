@@ -135,6 +135,10 @@ export default class PatternRuleEditor extends LightningElement {
     }
 
     get isSaveDisabled() {
+        // For Apex Plugin, fixType is not required (plugin handles remediation)
+        if (this.isApexPlugin) {
+            return !this.label || !this.objectApiName || !this.apexHandlerClass || this.isSaving;
+        }
         return !this.label || !this.objectApiName || !this.fixType || this.isSaving;
     }
 
@@ -182,7 +186,8 @@ export default class PatternRuleEditor extends LightningElement {
             return true; // Query condition is optional
         }
         if (this.currentStep === 3) {
-            return this.fixType;
+            // For Apex Plugin, fixType is optional (plugin handles remediation)
+            return this.isApexPlugin || this.fixType;
         }
         return false;
     }
@@ -338,8 +343,9 @@ export default class PatternRuleEditor extends LightningElement {
             }
         }
 
+        // Skip fix config validation for Apex Plugin (plugin handles remediation)
         const fixConfigEditor = this.template.querySelector('c-fix-config-editor');
-        if (fixConfigEditor) {
+        if (fixConfigEditor && !this.isApexPlugin) {
             const configValidation = fixConfigEditor.validate();
             if (!configValidation.isValid) {
                 this.showToast('Validation Error', configValidation.errorMessage, 'error');
@@ -395,7 +401,8 @@ export default class PatternRuleEditor extends LightningElement {
             return false;
         }
 
-        if (!this.fixType) {
+        // For Apex Plugin, fixType is optional since the plugin handles remediation
+        if (!this.isApexPlugin && !this.fixType) {
             this.showToast('Validation Error', 'Fix type is required', 'error');
             return false;
         }

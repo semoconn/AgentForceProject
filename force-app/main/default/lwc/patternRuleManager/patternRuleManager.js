@@ -245,13 +245,55 @@ export default class PatternRuleManager extends LightningElement {
         this.refreshData();
     }
 
-    handleRuleUpdated() {
-        // Called when a rule is deactivated/reactivated
-        this.showToast('Deploying', 'Changes are being deployed...', 'info');
+    handleRuleUpdated(event) {
+        const { developerName, isActive, optimistic, rollback } = event.detail || {};
 
+        if (optimistic) {
+            // Immediately update local state for instant feedback
+            this.updateRuleActiveState(developerName, isActive);
+            return;
+        }
+
+        if (rollback) {
+            // Revert the optimistic update on error
+            this.updateRuleActiveState(developerName, isActive);
+            this.showToast('Error', 'Failed to update rule. Changes have been reverted.', 'error');
+            return;
+        }
+
+        // Deployment started successfully - show confirmation and schedule background refresh
+        this.showToast('Success', `Rule ${isActive ? 'activated' : 'deactivated'} successfully`, 'success');
+
+        // Refresh in background after deployment likely completes (for data consistency)
         setTimeout(() => {
-            this.refreshData();
-        }, 3000);
+            this.refreshDataSilently();
+        }, 5000);
+    }
+
+    /**
+     * Updates a rule's active state in local data (optimistic update)
+     */
+    updateRuleActiveState(developerName, isActive) {
+        if (!developerName) return;
+
+        this.rules = this.rules.map(rule => {
+            if (rule.developerName === developerName) {
+                return { ...rule, isActive };
+            }
+            return rule;
+        });
+        this.applyFilter();
+    }
+
+    /**
+     * Silently refresh data without showing toast (for background sync)
+     */
+    async refreshDataSilently() {
+        try {
+            await refreshApex(this.wiredRulesResult);
+        } catch (error) {
+            console.error('Background refresh error:', error);
+        }
     }
 
     async refreshData() {

@@ -34,4 +34,8 @@
         <field>Is_Active__c</field>
         <value xsi:type="xsd:boolean">true</value>
     </values>
+    <values>
+        <field>Description__c</field>
+        <value xsi:type="xsd:string">Support cases dormant for 30+ days that likely need closure or escalation to prevent backlog buildup.</value>
+    </values>
 </CustomMetadata>

@@ -1,19 +1,26 @@
 import { LightningElement, wire, track } from 'lwc';
+import { ShowToastEvent } from 'lightning/platformShowToastEvent';
+import { refreshApex } from '@salesforce/apex';
 import getEnhancedSystemHealth from '@salesforce/apex/WorkflowAnalyticsController.getEnhancedSystemHealth';
+import runAnalysisNow from '@salesforce/apex/WorkflowAnalyticsController.runAnalysisNow';
 
 export default class BehaviorIQSystemHealth extends LightningElement {
     @track health;
     @track error;
     @track isLoading = true;
+    @track isRunning = false;
+
+    _wiredHealthResult;
 
     @wire(getEnhancedSystemHealth)
-    wiredHealth({ error, data }) {
+    wiredHealth(result) {
+        this._wiredHealthResult = result;
         this.isLoading = false;
-        if (data) {
-            this.health = data;
+        if (result.data) {
+            this.health = result.data;
             this.error = undefined;
-        } else if (error) {
-            this.error = error;
+        } else if (result.error) {
+            this.error = result.error;
             this.health = undefined;
         }
     }
@@ -56,5 +63,51 @@ export default class BehaviorIQSystemHealth extends LightningElement {
 
     get noError() {
         return !this.error;
+    }
+
+    get runButtonLabel() {
+        return this.isRunning ? 'Running...' : 'Run Analysis Now';
+    }
+
+    async handleRunAnalysis() {
+        this.isRunning = true;
+
+        try {
+            const result = await runAnalysisNow();
+
+            this.dispatchEvent(
+                new ShowToastEvent({
+                    title: 'Success',
+                    message: result,
+                    variant: 'success'
+                })
+            );
+
+            // Refresh the health status after a short delay to allow batch to update
+            // eslint-disable-next-line @lwc/lwc/no-async-operation
+            setTimeout(() => {
+                this.refreshHealthStatus();
+            }, 3000);
+
+        } catch (error) {
+            const errorMessage = error.body?.message || error.message || 'An error occurred';
+            this.dispatchEvent(
+                new ShowToastEvent({
+                    title: 'Error',
+                    message: errorMessage,
+                    variant: 'error'
+                })
+            );
+        } finally {
+            this.isRunning = false;
+        }
+    }
+
+    async refreshHealthStatus() {
+        try {
+            await refreshApex(this._wiredHealthResult);
+        } catch (e) {
+            // Silent refresh failure
+        }
     }
 }
