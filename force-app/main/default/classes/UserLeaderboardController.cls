@@ -58,55 +58,72 @@ public with sharing class UserLeaderboardController {
     public static LeaderboardResult getLeaderboardData() {
         Boolean isPremium = false;
         List<LeaderboardEntry> entries = new List<LeaderboardEntry>();
-        
+
         // 1. Safe License Check
         try {
             isPremium = isPremiumUser();
         } catch (Exception e) {
             System.debug(LoggingLevel.ERROR, 'BehaviorIQ License Check Failed: ' + e.getMessage());
-            isPremium = false; 
+            isPremium = false;
         }
 
-        // 2. Safe Data Query
+        // 2. Safe Data Query with sharing-aware approach
+        // Query records first with USER_MODE to respect sharing rules, then aggregate in Apex
+        // This prevents information disclosure where aggregate counts include inaccessible records
         try {
-            // STEP A: Aggregate Data (Group ONLY by User__c)
-            List<AggregateResult> aggregates = [
-                SELECT User__c, 
-                       COUNT(Id) totalEvents
-                FROM Behavior_Log__c 
+            // STEP A: Query accessible logs with USER_MODE to respect sharing rules
+            List<Behavior_Log__c> accessibleLogs = [
+                SELECT Id, User__c
+                FROM Behavior_Log__c
                 WHERE User__c != null
-                WITH SECURITY_ENFORCED
-                GROUP BY User__c
-                ORDER BY COUNT(Id) DESC
-                LIMIT 10
+                WITH USER_MODE
+                LIMIT 50000
             ];
 
-            // STEP B: Collect User Ids
-            Set<Id> userIds = new Set<Id>();
-            for (AggregateResult ar : aggregates) {
-                userIds.add((Id)ar.get('User__c'));
+            // STEP B: Aggregate counts by User__c in Apex (sharing-aware)
+            Map<Id, Integer> userEventCounts = new Map<Id, Integer>();
+            for (Behavior_Log__c log : accessibleLogs) {
+                if (!userEventCounts.containsKey(log.User__c)) {
+                    userEventCounts.put(log.User__c, 0);
+                }
+                userEventCounts.put(log.User__c, userEventCounts.get(log.User__c) + 1);
             }
 
-            // STEP C: Enrich with User Details (Name, Photo)
+            // STEP C: Sort by count descending and take top 10
+            List<UserEventCount> sortedUsers = new List<UserEventCount>();
+            for (Id userId : userEventCounts.keySet()) {
+                sortedUsers.add(new UserEventCount(userId, userEventCounts.get(userId)));
+            }
+            sortedUsers.sort();
+
+            // STEP D: Collect top 10 User Ids
+            Set<Id> userIds = new Set<Id>();
+            List<UserEventCount> topUsers = new List<UserEventCount>();
+            for (Integer i = 0; i < Math.min(10, sortedUsers.size()); i++) {
+                userIds.add(sortedUsers[i].userId);
+                topUsers.add(sortedUsers[i]);
+            }
+
+            // STEP E: Enrich with User Details (Name, Photo)
             Map<Id, User> userMap = new Map<Id, User>();
             if (!userIds.isEmpty()) {
                 userMap = new Map<Id, User>([
-                    SELECT Id, Name, SmallPhotoUrl 
-                    FROM User 
+                    SELECT Id, Name, SmallPhotoUrl
+                    FROM User
                     WHERE Id IN :userIds
-                    WITH SECURITY_ENFORCED
+                    WITH USER_MODE
                 ]);
             }
 
-            // STEP D: Get Behavior Breakdowns
+            // STEP F: Get Behavior Breakdowns
             Map<Id, List<String>> behaviorMap = getBehaviorBreakdowns(userIds);
 
-            // STEP E: Build Wrappers
+            // STEP G: Build Wrappers
             Integer rankCounter = 1;
-            for (AggregateResult ar : aggregates) {
-                Id userId = (Id)ar.get('User__c');
-                Integer score = (Integer)ar.get('totalEvents');
-                
+            for (UserEventCount uec : topUsers) {
+                Id userId = uec.userId;
+                Integer score = uec.eventCount;
+
                 // Get User details from our map
                 User u = userMap.get(userId);
                 String realName = (u != null) ? u.Name : 'Unknown User';
@@ -124,12 +141,12 @@ public with sharing class UserLeaderboardController {
                     // FREE: Anonymize data
                     String anonName = 'User ' + rankCounter;
                     entry = new LeaderboardEntry(null, anonName, DEFAULT_ANONYMOUS_AVATAR, score, true);
-                    
+
                     if (behaviorMap.containsKey(userId)) {
                         entry.topBehaviors = behaviorMap.get(userId);
                     }
                 }
-                
+
                 entries.add(entry);
                 rankCounter++;
             }
@@ -143,6 +160,25 @@ public with sharing class UserLeaderboardController {
         }
 
         return new LeaderboardResult(isPremium, entries);
+    }
+
+    /**
+     * @description Helper class for sorting users by event count descending.
+     */
+    private class UserEventCount implements Comparable {
+        public Id userId;
+        public Integer eventCount;
+
+        public UserEventCount(Id userId, Integer eventCount) {
+            this.userId = userId;
+            this.eventCount = eventCount;
+        }
+
+        public Integer compareTo(Object other) {
+            UserEventCount otherUec = (UserEventCount) other;
+            // Sort descending by event count
+            return otherUec.eventCount - this.eventCount;
+        }
     }
 
     private static Map<Id, List<String>> getBehaviorBreakdowns(Set<Id> userIds) {

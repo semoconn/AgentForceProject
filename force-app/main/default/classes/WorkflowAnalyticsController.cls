@@ -433,6 +433,44 @@ public with sharing class WorkflowAnalyticsController {
     }
 
     /**
+     * @description Calculates the total Amount for Opportunities with proper sharing enforcement.
+     * Uses a two-step approach: first queries with USER_MODE to filter by sharing rules,
+     * then aggregates only the accessible records. This prevents information disclosure
+     * where users could see aggregate totals that include records they can't access.
+     * @param opportunityIds List of Opportunity IDs to sum
+     * @return Total amount from accessible Opportunities, or 0 if none accessible
+     */
+    private static Decimal getOpportunityAmountWithSharing(List<Id> opportunityIds) {
+        if (opportunityIds == null || opportunityIds.isEmpty()) {
+            return 0;
+        }
+
+        try {
+            // Step 1: Query with USER_MODE to get only accessible Opportunity IDs
+            // This respects both OWD settings and sharing rules
+            List<Opportunity> accessibleOpps = [
+                SELECT Id, Amount
+                FROM Opportunity
+                WHERE Id IN :opportunityIds
+                WITH USER_MODE
+            ];
+
+            // Step 2: Sum the amounts from only the accessible records
+            Decimal totalAmount = 0;
+            for (Opportunity opp : accessibleOpps) {
+                if (opp.Amount != null) {
+                    totalAmount += opp.Amount;
+                }
+            }
+
+            return totalAmount;
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'getOpportunityAmountWithSharing error: ' + e.getMessage());
+            return 0;
+        }
+    }
+
+    /**
      * @description Result wrapper for Auto-Fix operations to support "Inbox Zero" UX
      */
     public class AutoFixResult {
@@ -655,15 +693,8 @@ public with sharing class WorkflowAnalyticsController {
                         }
 
                         if (!remainingIds.isEmpty()) {
-                            AggregateResult[] results = [
-                                SELECT SUM(Amount) total
-                                FROM Opportunity
-                                WHERE Id IN :remainingIds
-                                WITH SECURITY_ENFORCED
-                            ];
-                            if (!results.isEmpty() && results[0].get('total') != null) {
-                                remainingImpactScore = (Decimal)results[0].get('total');
-                            }
+                            // Use sharing-aware helper to ensure we only aggregate accessible records
+                            remainingImpactScore = getOpportunityAmountWithSharing(remainingIds);
                         }
                     } catch (Exception oppEx) {
                         System.debug(LoggingLevel.WARN, 'Failed to query Opportunity amounts for remaining impact: ' + oppEx.getMessage());
@@ -682,15 +713,8 @@ public with sharing class WorkflowAnalyticsController {
                         }
 
                         if (!fixedIds.isEmpty()) {
-                            AggregateResult[] fixedResults = [
-                                SELECT SUM(Amount) total
-                                FROM Opportunity
-                                WHERE Id IN :fixedIds
-                                WITH SECURITY_ENFORCED
-                            ];
-                            if (!fixedResults.isEmpty() && fixedResults[0].get('total') != null) {
-                                fixedImpactScore = (Decimal)fixedResults[0].get('total');
-                            }
+                            // Use sharing-aware helper to ensure we only aggregate accessible records
+                            fixedImpactScore = getOpportunityAmountWithSharing(fixedIds);
                         }
                     } catch (Exception fixedEx) {
                         System.debug(LoggingLevel.WARN, 'Failed to query fixed Opportunity amounts: ' + fixedEx.getMessage());
@@ -751,14 +775,10 @@ public with sharing class WorkflowAnalyticsController {
                     }
 
                     if (!resolvedIds.isEmpty()) {
-                        AggregateResult[] resolvedResults = [
-                            SELECT SUM(Amount) total
-                            FROM Opportunity
-                            WHERE Id IN :resolvedIds
-                            WITH SECURITY_ENFORCED
-                        ];
-                        if (!resolvedResults.isEmpty() && resolvedResults[0].get('total') != null) {
-                            original.Impact_Score__c = (Decimal)resolvedResults[0].get('total');
+                        // Use sharing-aware helper to ensure we only aggregate accessible records
+                        Decimal resolvedAmount = getOpportunityAmountWithSharing(resolvedIds);
+                        if (resolvedAmount > 0) {
+                            original.Impact_Score__c = resolvedAmount;
                         }
                     }
                 } catch (Exception resolvedEx) {
@@ -1021,37 +1041,56 @@ public with sharing class WorkflowAnalyticsController {
 
     private static List<MetricWrapper> getMetrics() {
         List<MetricWrapper> metrics = new List<MetricWrapper>();
-        
-        // Aggregate from Identified_Pain_Point__c
+
+        // Aggregate from Identified_Pain_Point__c with sharing-aware approach
+        // Query records first with USER_MODE to respect sharing rules, then aggregate in Apex
         try {
-            for (AggregateResult ar : [
-                SELECT Status__c, Count(Id) cnt 
-                FROM Identified_Pain_Point__c 
-                WITH SECURITY_ENFORCED 
-                GROUP BY Status__c
-            ]) {
-                String status = (String)ar.get('Status__c');
-                Integer count = (Integer)ar.get('cnt');
-                
-                if (status == 'New' || status == 'Active') {
-                    metrics.add(new MetricWrapper('Active Anomalies', count, '+2%', 'alert', 'active_anomalies'));
-                } else if (status == 'Dismissed') {
-                    metrics.add(new MetricWrapper('Dismissed', count, '0%', 'success', 'dismissed_anomalies'));
+            // Step 1: Query accessible pain points with USER_MODE
+            List<Identified_Pain_Point__c> accessiblePainPoints = [
+                SELECT Id, Status__c
+                FROM Identified_Pain_Point__c
+                WITH USER_MODE
+                LIMIT 10000
+            ];
+
+            // Step 2: Aggregate counts by status in Apex
+            Integer activeCount = 0;
+            Integer dismissedCount = 0;
+            for (Identified_Pain_Point__c pp : accessiblePainPoints) {
+                if (pp.Status__c == 'New' || pp.Status__c == 'Active') {
+                    activeCount++;
+                } else if (pp.Status__c == 'Dismissed') {
+                    dismissedCount++;
                 }
+            }
+
+            if (activeCount > 0) {
+                metrics.add(new MetricWrapper('Active Anomalies', activeCount, '+2%', 'alert', 'active_anomalies'));
+            }
+            if (dismissedCount > 0) {
+                metrics.add(new MetricWrapper('Dismissed', dismissedCount, '0%', 'success', 'dismissed_anomalies'));
             }
         } catch (Exception e) {
             System.debug(LoggingLevel.ERROR, 'Metric Aggregation Error: ' + e.getMessage());
         }
-        
+
         // If no data, add a placeholder or default metric
         if (metrics.isEmpty()) {
              Integer staleOppCount = 0;
              try {
                 if (Schema.sObjectType.Opportunity.isAccessible()) {
-                    staleOppCount = [SELECT Count() FROM Opportunity WHERE LastStageChangeDate < LAST_N_DAYS:30 AND IsClosed = false WITH SECURITY_ENFORCED];
+                    // Query with USER_MODE to respect sharing rules, then count accessible records
+                    List<Opportunity> staleOpps = [
+                        SELECT Id
+                        FROM Opportunity
+                        WHERE LastStageChangeDate < LAST_N_DAYS:30 AND IsClosed = false
+                        WITH USER_MODE
+                        LIMIT 10000
+                    ];
+                    staleOppCount = staleOpps.size();
                 }
              } catch (Exception e) { /* Handle lack of Opp access gracefully */ }
-             
+
              metrics.add(new MetricWrapper('Stale Opportunities', staleOppCount, 'Live', 'warning', 'stale_opps'));
         }
 
@@ -1063,49 +1102,94 @@ public with sharing class WorkflowAnalyticsController {
     @AuraEnabled(cacheable=true)
     public static Map<String, Integer> getWorkflowStats() {
         Map<String, Integer> stats = new Map<String, Integer>();
-        
+
         try {
-            stats.put('totalLogs', [SELECT Count() FROM Behavior_Log__c WITH SECURITY_ENFORCED]);
-            
-            AggregateResult[] userResults = [SELECT User__c FROM Behavior_Log__c WITH SECURITY_ENFORCED GROUP BY User__c];
-            stats.put('uniqueUsers', userResults.size());
-            
-            AggregateResult[] objectResults = [SELECT Object_API_Name__c FROM Behavior_Log__c WITH SECURITY_ENFORCED GROUP BY Object_API_Name__c];
-            stats.put('objectsTracked', objectResults.size());
+            // Query with USER_MODE to respect sharing rules, then aggregate in Apex
+            // This prevents information disclosure where aggregate counts include inaccessible records
+            List<Behavior_Log__c> accessibleLogs = [
+                SELECT Id, User__c, Object_API_Name__c
+                FROM Behavior_Log__c
+                WITH USER_MODE
+                LIMIT 50000
+            ];
+
+            // Count total accessible logs
+            stats.put('totalLogs', accessibleLogs.size());
+
+            // Count unique users from accessible logs
+            Set<Id> uniqueUsers = new Set<Id>();
+            Set<String> uniqueObjects = new Set<String>();
+            for (Behavior_Log__c log : accessibleLogs) {
+                if (log.User__c != null) {
+                    uniqueUsers.add(log.User__c);
+                }
+                if (String.isNotBlank(log.Object_API_Name__c)) {
+                    uniqueObjects.add(log.Object_API_Name__c);
+                }
+            }
+
+            stats.put('uniqueUsers', uniqueUsers.size());
+            stats.put('objectsTracked', uniqueObjects.size());
         } catch (Exception e) {
             throw new AuraHandledException('Unable to calculate stats.');
         }
-        
+
         return stats;
     }
 
     @AuraEnabled(cacheable=true)
     public static List<TopAction> getTopActions() {
         List<TopAction> actions = new List<TopAction>();
-        
+
         try {
-            List<AggregateResult> results = [
-                SELECT Action_Name__c actionName, Object_API_Name__c objectName, COUNT(Id) actionCount
+            // Query with USER_MODE to respect sharing rules, then aggregate in Apex
+            // This prevents information disclosure where aggregate counts include inaccessible records
+            List<Behavior_Log__c> accessibleLogs = [
+                SELECT Id, Action_Name__c, Object_API_Name__c
                 FROM Behavior_Log__c
                 WHERE CreatedDate = LAST_N_DAYS:30
-                WITH SECURITY_ENFORCED
-                GROUP BY Action_Name__c, Object_API_Name__c
-                ORDER BY COUNT(Id) DESC
-                LIMIT 10
+                WITH USER_MODE
+                LIMIT 50000
             ];
-            
-            for (AggregateResult ar : results) {
-                TopAction action = new TopAction();
-                action.actionName = (String)ar.get('actionName');
-                action.objectName = (String)ar.get('objectName');
-                action.count = (Integer)ar.get('actionCount');
-                action.id = action.actionName + action.objectName;
-                actions.add(action);
+
+            // Aggregate counts by action+object combination in Apex
+            Map<String, TopAction> actionMap = new Map<String, TopAction>();
+            for (Behavior_Log__c log : accessibleLogs) {
+                String key = (log.Action_Name__c != null ? log.Action_Name__c : '') +
+                             (log.Object_API_Name__c != null ? log.Object_API_Name__c : '');
+
+                if (!actionMap.containsKey(key)) {
+                    TopAction ta = new TopAction();
+                    ta.actionName = log.Action_Name__c;
+                    ta.objectName = log.Object_API_Name__c;
+                    ta.count = 0;
+                    ta.id = key;
+                    actionMap.put(key, ta);
+                }
+                actionMap.get(key).count++;
+            }
+
+            // Sort by count descending and take top 10
+            List<TopAction> allActions = actionMap.values();
+            allActions.sort(new TopActionComparator());
+
+            for (Integer i = 0; i < Math.min(10, allActions.size()); i++) {
+                actions.add(allActions[i]);
             }
         } catch (Exception e) {
             throw new AuraHandledException('Error fetching top actions.');
         }
         return actions;
+    }
+
+    /**
+     * @description Comparator for sorting TopAction by count descending.
+     */
+    private class TopActionComparator implements Comparator<TopAction> {
+        public Integer compare(TopAction a, TopAction b) {
+            // Sort descending by count
+            return b.count - a.count;
+        }
     }
 
     @AuraEnabled(cacheable=true)

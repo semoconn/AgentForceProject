@@ -123,7 +123,6 @@ export default class RemediationPreview extends LightningElement {
         getFixConfig({ ruleDeveloperName: this.ruleDeveloperName })
             .then(result => {
                 this.fixConfigInfo = result;
-                console.log('Fix config loaded:', result);
             })
             .catch(err => {
                 console.warn('Could not load fix config:', err);
@@ -343,12 +342,7 @@ export default class RemediationPreview extends LightningElement {
         if (this.fixedRecordIds) {
             // fixedRecordIds may be a comma-separated string or JSON array
             excludeIds = this.fixedRecordIds;
-            console.log('Excluding already-fixed record IDs:', excludeIds);
         }
-
-        console.log('=== remediationPreview.loadRecords ===');
-        console.log('ruleDeveloperName:', this.ruleDeveloperName);
-        console.log('excludeRecordIds:', excludeIds || '(none)');
 
         getPatternMatches({
             ruleDeveloperName: this.ruleDeveloperName,
@@ -374,14 +368,12 @@ export default class RemediationPreview extends LightningElement {
                 this.fixedRecords = records;
                 this.pendingRecords = [];
                 this._selectedRowIds = [];
-                console.log('Read-only mode: Loaded', this.fixedRecords.length, 'fixed records');
             } else {
                 // Normal mode: load into pendingRecords for fixing
                 this.pendingRecords = records;
                 this.fixedRecords = [];
                 // Pre-select all pending rows by default
                 this._selectedRowIds = this.pendingRecords.map(r => r.Id);
-                console.log('Records loaded:', this.pendingRecords.length, 'Selected:', this._selectedRowIds.length);
 
                 // CRITICAL: Sync the pain point's occurrence count with server-calculated live count
                 // This solves the "dual source of truth" problem where dashboard shows stale counts
@@ -415,12 +407,8 @@ export default class RemediationPreview extends LightningElement {
         if (!recordIdsToLoad || !this.objectApiName) {
             this.isLoading = false;
             this.fixedRecords = [];
-            console.log('No fixed record IDs to load');
             return;
         }
-
-        console.log('Loading fixed records directly:', recordIdsToLoad);
-        console.log('Fixed at timestamp:', this.fixedAtTimestamp);
 
         getRecordsByIds({
             objectApiName: this.objectApiName,
@@ -441,7 +429,6 @@ export default class RemediationPreview extends LightningElement {
                     record.fixedAt = displayTimestamp;
                     return record;
                 });
-                console.log('Fixed records loaded:', this.fixedRecords.length);
             } else {
                 this.fixedRecords = [];
             }
@@ -490,7 +477,6 @@ export default class RemediationPreview extends LightningElement {
     handleRowSelection(event) {
         const newSelection = event.detail.selectedRows.map(row => row.Id);
         this._selectedRowIds = [...newSelection];
-        console.log('Row selection changed:', this._selectedRowIds.length, 'rows selected');
     }
 
     handleSort(event) {
@@ -574,8 +560,6 @@ export default class RemediationPreview extends LightningElement {
         const effectiveFixType = this.ruleDeveloperName || this.fixType || this.mapObjectToFixType(this.objectApiName);
         const selectedIds = [...this._selectedRowIds];
 
-        console.log('handleConfirmFix - using fix type:', effectiveFixType);
-
         runAutoFix({
             recordIds: selectedIds,
             fixType: effectiveFixType
@@ -630,12 +614,10 @@ export default class RemediationPreview extends LightningElement {
 
     handleSelectAll() {
         this._selectedRowIds = this.pendingRecords.map(r => r.Id);
-        console.log('Select All:', this._selectedRowIds.length);
     }
 
     handleDeselectAll() {
         this._selectedRowIds = [];
-        console.log('Deselect All');
     }
 
     mapObjectToFixType(apiName) {
@@ -659,11 +641,8 @@ export default class RemediationPreview extends LightningElement {
     syncOccurrenceCount() {
         // Only sync if we have a pain point ID
         if (!this.painPointId) {
-            console.log('No painPointId provided - skipping occurrence sync');
             return;
         }
-
-        console.log('Syncing occurrence count: painPointId=' + this.painPointId);
 
         // Server calculates the count - we don't pass it to avoid trust boundary issues
         syncPainPointOccurrences({
@@ -671,11 +650,8 @@ export default class RemediationPreview extends LightningElement {
         })
         .then(result => {
             if (result.success) {
-                console.log('Occurrence sync result:', result.message);
-
                 // If count changed, dispatch event to notify parent to refresh
                 if (result.previousCount !== result.newCount) {
-                    console.log('Count changed: ' + result.previousCount + ' → ' + result.newCount);
                     this.dispatchEvent(new CustomEvent('occurrencesynced', {
                         bubbles: true,
                         composed: true,
