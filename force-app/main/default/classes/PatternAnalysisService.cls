@@ -7,6 +7,10 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
     private static final String JOB_NAME = 'Pattern Analysis Service';
     public static final Integer DEFAULT_RETENTION_DAYS = 90;
 
+    // Governor limit protection: flush pending snapshots when exceeding this threshold
+    // Prevents heap accumulation during batch execution with many rules
+    private static final Integer SNAPSHOT_FLUSH_THRESHOLD = 500;
+
     // @TestVisible variables for metadata-agnostic testing
     @TestVisible private static Behavior_Pattern_Rule__mdt mockRule;
     @TestVisible private static BehaviorIQ_Configuration__c mockConfig;
@@ -822,6 +826,8 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
     /**
      * @description Creates a snapshot record to track historical trend data.
      * Only called when running in batch context to avoid overhead during real-time operations.
+     * Implements automatic flushing when list exceeds SNAPSHOT_FLUSH_THRESHOLD to prevent
+     * heap accumulation in large orgs with many pattern rules.
      */
     private void createSnapshot(String metricName, Integer recordCount, Decimal impactScore, Id painPointId) {
         Behavior_Snapshot__c snapshot = new Behavior_Snapshot__c(
@@ -832,6 +838,14 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
             Related_Pain_Point__c = painPointId
         );
         pendingSnapshots.add(snapshot);
+
+        // Governor limit protection: flush to database if exceeding threshold
+        // This prevents heap accumulation when processing many rules
+        if (pendingSnapshots.size() >= SNAPSHOT_FLUSH_THRESHOLD) {
+            System.debug(LoggingLevel.INFO, 'PatternAnalysisService: Flushing ' + pendingSnapshots.size() +
+                        ' snapshots to prevent heap accumulation');
+            insertPendingSnapshots();
+        }
     }
 
     /**

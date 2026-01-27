@@ -15,12 +15,18 @@
  */
 public with sharing class PluginInvoker {
 
+    // CPU time monitoring threshold (in milliseconds)
+    // Plugins exceeding this threshold trigger a warning log
+    // 5000ms (5 seconds) allows reasonable processing while catching runaway plugins
+    private static final Integer CPU_TIME_WARNING_THRESHOLD_MS = 5000;
+
     // Test visibility flags for exception coverage
     @TestVisible private static Boolean forceTypeNotFound = false;
     @TestVisible private static Boolean forceInterfaceValidationFailure = false;
     @TestVisible private static Boolean forceInstantiationException = false;
     @TestVisible private static Boolean forceAnalyzeException = false;
     @TestVisible private static Boolean forceFixException = false;
+    @TestVisible private static Boolean forceCpuTimeWarning = false;
 
     /**
      * @description Resets all test flags. Call in test cleanup.
@@ -32,6 +38,7 @@ public with sharing class PluginInvoker {
         forceInstantiationException = false;
         forceAnalyzeException = false;
         forceFixException = false;
+        forceCpuTimeWarning = false;
     }
 
     /**
@@ -96,6 +103,7 @@ public with sharing class PluginInvoker {
     /**
      * @description Invokes the analyze() method on the specified plugin.
      * Catches and wraps any exceptions from plugin code.
+     * Monitors CPU time consumption and logs warnings for expensive plugins.
      *
      * @param className The plugin class name
      * @param context PatternPluginContext with analysis parameters
@@ -105,12 +113,24 @@ public with sharing class PluginInvoker {
     public static List<Id> invokeAnalyze(String className, PatternPluginContext context) {
         PatternPlugin plugin = instantiate(className);
 
+        // Capture CPU time before plugin execution for monitoring
+        Integer cpuTimeBefore = Limits.getCpuTime();
+
         try {
             if (Test.isRunningTest() && forceAnalyzeException) {
                 throw new QueryException('Forced analyze exception for testing');
             }
 
             List<Id> results = plugin.analyze(context);
+
+            // Check CPU time consumption and log warning if excessive
+            Integer cpuTimeConsumed = Limits.getCpuTime() - cpuTimeBefore;
+            if (cpuTimeConsumed > CPU_TIME_WARNING_THRESHOLD_MS || (Test.isRunningTest() && forceCpuTimeWarning)) {
+                System.debug(LoggingLevel.WARN, 'PluginInvoker: Plugin "' + className + '" analyze() consumed ' +
+                            cpuTimeConsumed + 'ms CPU time (threshold: ' + CPU_TIME_WARNING_THRESHOLD_MS + 'ms). ' +
+                            'Consider optimizing this plugin to prevent governor limit issues.');
+            }
+
             return results != null ? results : new List<Id>();
         } catch (PluginException pe) {
             throw pe; // Re-throw our own exceptions
@@ -123,6 +143,7 @@ public with sharing class PluginInvoker {
     /**
      * @description Invokes the fix() method on the specified plugin.
      * Catches and wraps any exceptions from plugin code.
+     * Monitors CPU time consumption and logs warnings for expensive plugins.
      *
      * @param className The plugin class name
      * @param recordIds List of record IDs to fix
@@ -133,12 +154,24 @@ public with sharing class PluginInvoker {
     public static PatternPluginResult invokeFix(String className, List<Id> recordIds, Map<String, Object> config) {
         PatternPlugin plugin = instantiate(className);
 
+        // Capture CPU time before plugin execution for monitoring
+        Integer cpuTimeBefore = Limits.getCpuTime();
+
         try {
             if (Test.isRunningTest() && forceFixException) {
                 throw new DmlException('Forced fix exception for testing');
             }
 
             PatternPluginResult result = plugin.fix(recordIds, config);
+
+            // Check CPU time consumption and log warning if excessive
+            Integer cpuTimeConsumed = Limits.getCpuTime() - cpuTimeBefore;
+            if (cpuTimeConsumed > CPU_TIME_WARNING_THRESHOLD_MS || (Test.isRunningTest() && forceCpuTimeWarning)) {
+                System.debug(LoggingLevel.WARN, 'PluginInvoker: Plugin "' + className + '" fix() consumed ' +
+                            cpuTimeConsumed + 'ms CPU time (threshold: ' + CPU_TIME_WARNING_THRESHOLD_MS + 'ms). ' +
+                            'Consider optimizing this plugin to prevent governor limit issues.');
+            }
+
             return result != null ? result : new PatternPluginResult();
         } catch (PluginException pe) {
             throw pe; // Re-throw our own exceptions

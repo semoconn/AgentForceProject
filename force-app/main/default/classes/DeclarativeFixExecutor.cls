@@ -37,6 +37,7 @@ public with sharing class DeclarativeFixExecutor {
     @TestVisible private static Boolean forceParseException = false;
     @TestVisible private static Boolean forceUpdateException = false;
     @TestVisible private static Boolean forceTaskException = false;
+    @TestVisible private static Boolean forceRollbackException = false;
 
     /**
      * @description Custom exception for declarative fix errors.
@@ -55,6 +56,8 @@ public with sharing class DeclarativeFixExecutor {
 
     /**
      * @description Executes declarative actions from JSON configuration.
+     * Uses Database.setSavepoint() and rollback() to ensure all actions are atomic.
+     * If any action fails, all previous actions in the transaction are rolled back.
      * @param recordIds Records to process
      * @param fixConfigJson JSON configuration with actions array
      */
@@ -80,16 +83,38 @@ public with sharing class DeclarativeFixExecutor {
             throw new DeclarativeFixException('Fix_Config__c must contain an "actions" array.');
         }
 
-        // Execute each action
-        for (Object actionObj : actions) {
-            Map<String, Object> action = (Map<String, Object>) actionObj;
-            String actionType = (String) action.get('type');
+        // Create savepoint for atomic transaction - all actions succeed or all are rolled back
+        Savepoint sp = Database.setSavepoint();
 
-            if (String.isBlank(actionType)) {
-                throw new DeclarativeFixException('Each action must have a "type" property.');
+        try {
+            // Test hook for forcing rollback scenario
+            if (Test.isRunningTest() && forceRollbackException) {
+                throw new DeclarativeFixException('Forced rollback exception for testing');
             }
 
-            executeAction(actionType, action, recordIds);
+            // Execute each action within the transaction boundary
+            for (Object actionObj : actions) {
+                Map<String, Object> action = (Map<String, Object>) actionObj;
+                String actionType = (String) action.get('type');
+
+                if (String.isBlank(actionType)) {
+                    throw new DeclarativeFixException('Each action must have a "type" property.');
+                }
+
+                executeAction(actionType, action, recordIds);
+            }
+        } catch (DeclarativeFixException e) {
+            // Rollback all DML operations on declarative fix errors
+            Database.rollback(sp);
+            // Clear any pending logs since the transaction was rolled back
+            pendingLogs.clear();
+            throw new DeclarativeFixException('Fix rolled back due to error: ' + e.getMessage());
+        } catch (Exception e) {
+            // Rollback all DML operations on any unexpected error
+            Database.rollback(sp);
+            // Clear any pending logs since the transaction was rolled back
+            pendingLogs.clear();
+            throw new DeclarativeFixException('Fix rolled back due to unexpected error: ' + e.getMessage());
         }
     }
 
@@ -398,5 +423,6 @@ public with sharing class DeclarativeFixExecutor {
         forceParseException = false;
         forceUpdateException = false;
         forceTaskException = false;
+        forceRollbackException = false;
     }
 }

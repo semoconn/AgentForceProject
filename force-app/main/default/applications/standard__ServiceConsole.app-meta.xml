@@ -164,7 +164,6 @@
     <isNavPersonalizationDisabled>false</isNavPersonalizationDisabled>
     <isNavTabPersistenceDisabled>false</isNavTabPersistenceDisabled>
     <isServiceCloudConsole>true</isServiceCloudConsole>
-    <preferences>
         <enableCustomizeMyTabs>false</enableCustomizeMyTabs>
         <enableKeyboardShortcuts>true</enableKeyboardShortcuts>
         <enableListViewHover>true</enableListViewHover>
@@ -174,7 +173,6 @@
         <enableTabHover>false</enableTabHover>
         <enableTabLimits>false</enableTabLimits>
         <saveUserSessions>true</saveUserSessions>
-    </preferences>
     <tabs>standard-Account</tabs>
     <tabs>standard-Contact</tabs>
     <tabs>standard-Case</tabs>

@@ -336,13 +336,6 @@ export default class BehaviorIQDashboard extends LightningElement {
         // Get LastModifiedDate as the timestamp for when records were previously fixed
         let fixedAtTimestamp = event.currentTarget.dataset.timestamp || (this.selectedRow ? this.selectedRow.LastModifiedDate : null);
 
-        // Debug: log all dataset values
-        console.log('handleAutoFix - dataset:', event.currentTarget.dataset);
-        console.log('handleAutoFix - painPointId:', painPointId);
-        console.log('handleAutoFix - exampleRecords:', exampleRecords);
-        console.log('handleAutoFix - fixedRecordIds:', fixedRecordIds);
-        console.log('handleAutoFix - fixedAtTimestamp:', fixedAtTimestamp);
-
         if (!objectApiName) {
             return this.showToast('Error', 'Unable to determine object type.', 'error');
         }
@@ -356,7 +349,6 @@ export default class BehaviorIQDashboard extends LightningElement {
 
         // Store pain point ID for resolution after fix
         this._currentPainPointId = painPointId;
-        console.log('handleAutoFix - stored _currentPainPointId:', this._currentPainPointId);
 
         // Close solution modal if open, then open preview modal
         this.closeSolutionModal();
@@ -389,9 +381,6 @@ export default class BehaviorIQDashboard extends LightningElement {
         const fixedRecords = event.currentTarget.dataset.fixedIds;
         // Get the LastModifiedDate as the timestamp when records were fixed
         const fixedAtTimestamp = event.currentTarget.dataset.timestamp;
-
-        console.log('handleViewFixedRecords - fixedRecords:', fixedRecords);
-        console.log('handleViewFixedRecords - fixedAtTimestamp:', fixedAtTimestamp);
 
         if (!objectApiName) {
             return this.showToast('Error', 'Unable to load fixed records data.', 'error');
@@ -499,7 +488,6 @@ export default class BehaviorIQDashboard extends LightningElement {
      */
     handleOccurrenceSynced(event) {
         const { painPointId, previousCount, newCount, statusChanged, newStatus } = event.detail;
-        console.log('Occurrence synced event received:', event.detail);
 
         // Refresh the pain points list to show the updated count
         refreshApex(this._wiredPainPointsResult);
@@ -520,28 +508,12 @@ export default class BehaviorIQDashboard extends LightningElement {
         this.handlePreviewClose();
         this.showToast('Success', `Successfully fixed ${fixedCount} record(s).`, 'success');
 
-        // Debug logging
-        console.log('handlePreviewFixComplete called with:', {
-            fixedCount,
-            remainingCount,
-            ruleDeveloperName,
-            fixedRecordIds,
-            currentPainPointId: this._currentPainPointId
-        });
-
         // Mark pain point as resolved (handles partial fixes by creating new record for remaining)
         // IMPORTANT: Wait for the database update to complete before refreshing
         if (this._currentPainPointId) {
             const totalCount = fixedCount + (remainingCount || 0);
             const painPointIdToResolve = this._currentPainPointId;
             this.isLoading = true;
-
-            console.log('Calling markPainPointResolved with:', {
-                painPointId: painPointIdToResolve,
-                fixedCount: fixedCount,
-                totalCount: totalCount,
-                fixedRecordIds: fixedRecordIds ? fixedRecordIds.join(',') : ''
-            });
 
             markPainPointResolved({
                 painPointId: painPointIdToResolve,
@@ -550,12 +522,10 @@ export default class BehaviorIQDashboard extends LightningElement {
                 fixedRecordIds: fixedRecordIds ? fixedRecordIds.join(',') : ''
             })
             .then(() => {
-                console.log('markPainPointResolved succeeded, refreshing pain points...');
                 // Now refresh pain points AFTER the database update completes
                 return refreshApex(this._wiredPainPointsResult);
             })
             .then(() => {
-                console.log('Pain points refreshed, refreshing health gauge...');
                 // Refresh health gauge after pain points are updated
                 this.refreshHealthGauge();
             })
@@ -570,7 +540,6 @@ export default class BehaviorIQDashboard extends LightningElement {
                 this.isLoading = false;
             });
         } else {
-            console.warn('No _currentPainPointId set - cannot mark as resolved');
             // No pain point ID - just refresh
             refreshApex(this._wiredPainPointsResult);
             this.refreshHealthGauge();
