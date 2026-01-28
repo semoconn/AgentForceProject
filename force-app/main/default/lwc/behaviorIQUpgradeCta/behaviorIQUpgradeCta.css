@@ -106,37 +106,6 @@
     color: #4bca81;
 }
 
-.check-icon.premium-feature {
-    color: #ff9800;
-}
-
-/* ROI Summary */
-.roi-summary {
-    background: white;
-}
-
-.roi-values {
-    display: flex;
-    gap: 1.5rem;
-}
-
-.roi-item {
-    text-align: right;
-}
-
-.roi-label {
-    display: block;
-    font-size: 0.75rem;
-    color: #54698d;
-}
-
-.roi-value {
-    display: block;
-    font-size: 1rem;
-    font-weight: 600;
-    color: #4bca81;
-}
-
 /* Free Upgrade Container */
 .free-upgrade-container {
     background: #f4f6f9;
@@ -214,14 +183,6 @@
 
 .check-red {
     color: #c23934;
-}
-
-.savings-badge {
-    display: block;
-    font-size: 0.625rem;
-    color: #4bca81;
-    font-weight: 600;
-    margin-top: 0.125rem;
 }
 
 .partial-text {

@@ -59,19 +59,8 @@
     </customMetadataTypeAccesses>
     <customMetadataTypeAccesses>
         <enabled>true</enabled>
-        <name>AgentForce_Setting__mdt</name>
-    </customMetadataTypeAccesses>
-    <customMetadataTypeAccesses>
-        <enabled>true</enabled>
         <name>Behavior_Pattern_Rule__mdt</name>
     </customMetadataTypeAccesses>
-
-    <!-- FIELD PERMISSIONS: AgentForce_Setting__mdt -->
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>AgentForce_Setting__mdt.Suggestion_Threshold__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
 
     <!-- FIELD PERMISSIONS: Behavior_Setting__mdt -->
     <fieldPermissions>
@@ -350,50 +339,6 @@
         <readable>true</readable>
     </fieldPermissions>
 
-    <!-- FIELD PERMISSIONS: Project__c (excluding required fields) -->
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Project__c.Description__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Project__c.Account__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Project__c.Start_Date__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Project__c.End_Date__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-
-    <!-- FIELD PERMISSIONS: Quote_Request__c -->
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Quote_Request__c.Status__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Quote_Request__c.Requested_Amount__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Quote_Request__c.Expiration_Date__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>true</editable>
-        <field>Quote_Request__c.Account__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-
     <!-- OBJECT PERMISSIONS -->
     <objectPermissions>
         <allowCreate>true</allowCreate>
@@ -476,24 +421,6 @@
         <object>Workflow_Log__c</object>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
-    <objectPermissions>
-        <allowCreate>true</allowCreate>
-        <allowDelete>true</allowDelete>
-        <allowEdit>true</allowEdit>
-        <allowRead>true</allowRead>
-        <modifyAllRecords>true</modifyAllRecords>
-        <object>Project__c</object>
-        <viewAllRecords>true</viewAllRecords>
-    </objectPermissions>
-    <objectPermissions>
-        <allowCreate>true</allowCreate>
-        <allowDelete>true</allowDelete>
-        <allowEdit>true</allowEdit>
-        <allowRead>true</allowRead>
-        <modifyAllRecords>true</modifyAllRecords>
-        <object>Quote_Request__c</object>
-        <viewAllRecords>true</viewAllRecords>
-    </objectPermissions>
 
     <!-- TAB SETTINGS -->
     <tabSettings>
@@ -530,14 +457,6 @@
     </tabSettings>
     <tabSettings>
         <tab>Workflow_Log__c</tab>
-        <visibility>Visible</visibility>
-    </tabSettings>
-    <tabSettings>
-        <tab>Project__c</tab>
-        <visibility>Visible</visibility>
-    </tabSettings>
-    <tabSettings>
-        <tab>Quote_Request__c</tab>
         <visibility>Visible</visibility>
     </tabSettings>
 </PermissionSet>
