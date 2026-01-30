@@ -7,28 +7,12 @@
         <label>Information</label>
         <layoutColumns>
             <layoutItems>
+                <behavior>Required</behavior>
+                <field>Timestamp__c</field>
+            </layoutItems>
+            <layoutItems>
                 <behavior>Readonly</behavior>
                 <field>Name</field>
-            </layoutItems>
-            <layoutItems>
-                <behavior>Edit</behavior>
-                <field>Action_Name__c</field>
-            </layoutItems>
-            <layoutItems>
-                <behavior>Edit</behavior>
-                <field>Behavior_Data__c</field>
-            </layoutItems>
-            <layoutItems>
-                <behavior>Edit</behavior>
-                <field>Object_API_Name__c</field>
-            </layoutItems>
-            <layoutItems>
-                <behavior>Edit</behavior>
-                <field>Record_ID__c</field>
-            </layoutItems>
-            <layoutItems>
-                <behavior>Edit</behavior>
-                <field>User__c</field>
             </layoutItems>
         </layoutColumns>
         <layoutColumns>
@@ -67,6 +51,9 @@
         <layoutColumns/>
         <style>CustomLinks</style>
     </layoutSections>
+    <miniLayout>
+        <fields>Timestamp__c</fields>
+    </miniLayout>
     <showEmailCheckbox>false</showEmailCheckbox>
     <showHighlightsPanel>false</showHighlightsPanel>
     <showInteractionLogPanel>false</showInteractionLogPanel>

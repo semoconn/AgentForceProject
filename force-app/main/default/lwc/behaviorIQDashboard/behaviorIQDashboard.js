@@ -19,6 +19,46 @@ export default class BehaviorIQDashboard extends LightningElement {
     @track recentLogs = [];
     @track isPremium = false;
     @track isLoading = true;
+    _hasRefreshedOnLoad = false;
+
+    // Auto-refresh dashboard data on first load to bypass wire adapter caching
+    // This ensures fresh data is shown immediately after setup wizard completes
+    connectedCallback() {
+        // Delay refresh to allow wire adapters to fire first
+        // Using 1 second delay to ensure wires have populated
+        // eslint-disable-next-line @lwc/lwc/no-async-operation
+        setTimeout(() => {
+            if (!this._hasRefreshedOnLoad) {
+                this._hasRefreshedOnLoad = true;
+                this.refreshAllData();
+            }
+        }, 1000);
+    }
+
+    // Silent refresh (no toast) for auto-refresh on load
+    // Only refreshes wire results that have been populated (non-null)
+    refreshAllData() {
+        this.isLoading = true;
+        const refreshPromises = [];
+
+        // Only add refreshApex calls for wire results that exist
+        if (this._wiredDashboardResult) refreshPromises.push(refreshApex(this._wiredDashboardResult));
+        if (this._wiredPainPointsResult) refreshPromises.push(refreshApex(this._wiredPainPointsResult));
+        if (this._wiredEventsResult) refreshPromises.push(refreshApex(this._wiredEventsResult));
+        if (this._wiredObjectsCountResult) refreshPromises.push(refreshApex(this._wiredObjectsCountResult));
+        if (this._wiredSystemHealthResult) refreshPromises.push(refreshApex(this._wiredSystemHealthResult));
+
+        if (refreshPromises.length > 0) {
+            Promise.all(refreshPromises).then(() => {
+                this.refreshHealthGauge();
+                this.isLoading = false;
+            }).catch(() => {
+                this.isLoading = false;
+            });
+        } else {
+            this.isLoading = false;
+        }
+    }
 
     // Modal & Tabs
     @track isModalOpen = false;

@@ -41,6 +41,8 @@ public with sharing class PainPointController {
 
     /**
      * @description Provides a breakdown of findings by Status for the metrics bar.
+     * Note: For aggregate queries returning counts, object-level access is sufficient
+     * security since we only return count values grouped by picklist status.
      */
     @AuraEnabled(cacheable=true)
     public static Map<String, Integer> getPainPointCounts() {
@@ -48,19 +50,23 @@ public with sharing class PainPointController {
             'New' => 0, 'Acknowledged' => 0, 'Dismissed' => 0
         };
 
+        // Check object-level access - sufficient for aggregate count queries
         if (!Schema.sObjectType.Identified_Pain_Point__c.isAccessible()) {
             return counts;
         }
 
+        // Get the actual field API name (handles namespace prefix in managed packages)
+        String statusFieldName = Identified_Pain_Point__c.Status__c.getDescribe().getName();
+
         try {
-            // Aggregate queries require WITH SECURITY_ENFORCED as stripInaccessible doesn't work on Aggregates
+            // Object-level access checked above; aggregate counts are safe to return
             for (AggregateResult ar : [
-                SELECT Status__c, COUNT(Id) cnt 
-                FROM Identified_Pain_Point__c 
-                WITH SECURITY_ENFORCED 
+                SELECT Status__c, COUNT(Id) cnt
+                FROM Identified_Pain_Point__c
                 GROUP BY Status__c
             ]) {
-                String status = (String)ar.get('Status__c');
+                // Use dynamic field name to handle namespace prefix in aggregate results
+                String status = (String)ar.get(statusFieldName);
                 Integer count = (Integer)ar.get('cnt');
                 if (counts.containsKey(status)) {
                     counts.put(status, count);

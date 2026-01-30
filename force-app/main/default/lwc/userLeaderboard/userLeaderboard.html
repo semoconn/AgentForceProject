@@ -8,7 +8,7 @@
                 <h2 class="slds-card__header-title">
                     <span class="slds-text-heading_small slds-truncate">User Impact Leaderboard</span>
                 </h2>
-                <p class="slds-text-body_small slds-text-color_weak">Top contributors to workflow friction</p>
+                <p class="slds-text-body_small slds-text-color_weak">Users with highest $ value at risk from identified issues</p>
             </div>
         </div>
         
@@ -39,8 +39,17 @@
                 <div class="slds-grid slds-border_bottom slds-p-horizontal_medium slds-p-vertical_x-small header-row slds-theme_shade">
                     <div class="slds-col slds-size_1-of-12 slds-text-align_center">#</div>
                     <div class="slds-col slds-size_3-of-12">User</div>
-                    <div class="slds-col slds-size_5-of-12">Top Inefficiencies</div>
-                    <div class="slds-col slds-size_3-of-12 slds-text-align_right">Impact Score</div>
+                    <div class="slds-col slds-size_4-of-12">Top Inefficiencies</div>
+                    <div class="slds-col slds-size_2-of-12 slds-text-align_center">
+                        <span class="slds-assistive-text">Issues</span>
+                        <lightning-helptext content="Number of records this user owns that have active pain points identified by BehaviorIQ."></lightning-helptext>
+                        Issues
+                    </div>
+                    <div class="slds-col slds-size_2-of-12 slds-text-align_right">
+                        <span class="slds-assistive-text">Impact</span>
+                        <lightning-helptext content="Estimated dollar value at risk from pain points on records this user owns. Higher impact = more attention needed."></lightning-helptext>
+                        Impact
+                    </div>
                 </div>
 
                 <!-- Scrollable List -->
@@ -64,7 +73,7 @@
                             </div>
 
                             <!-- Behaviors -->
-                            <div class="slds-col slds-size_5-of-12 slds-align-middle">
+                            <div class="slds-col slds-size_4-of-12 slds-align-middle">
                                 <div class="slds-list_horizontal slds-wrap">
                                     <template for:each={entry.topBehaviors} for:item="behavior">
                                         <span key={behavior} class="slds-badge slds-theme_warning slds-m-right_xx-small slds-m-bottom_xx-small">
@@ -74,23 +83,34 @@
                                 </div>
                             </div>
 
-                            <!-- Score & Action -->
-                            <div class="slds-col slds-size_3-of-12 slds-align-middle slds-text-align_right slds-p-right_medium">
+                            <!-- Issue Count -->
+                            <div class="slds-col slds-size_2-of-12 slds-align-middle slds-text-align_center">
+                                <template lwc:if={entry.hasIssues}>
+                                    <span class="issue-count slds-badge slds-theme_error">{entry.issueCount}</span>
+                                </template>
+                                <template lwc:else>
+                                    <span class="slds-text-color_weak">-</span>
+                                </template>
+                            </div>
+
+                            <!-- Impact Score & Action -->
+                            <div class="slds-col slds-size_2-of-12 slds-align-middle slds-text-align_right slds-p-right_medium">
                                 <div class="slds-grid slds-grid_align-end slds-grid_vertical-align-center">
-                                    <span class="score-text slds-m-right_small">{entry.totalImpactScore}</span>
-                                    
+                                    <span class={entry.impactClass} title={entry.impactTooltip}>{entry.formattedImpact}</span>
+
                                     <template lwc:if={isPremium}>
-                                        <lightning-button-icon 
-                                            icon-name="utility:chat" 
-                                            variant="border-filled" 
-                                            alternative-text="Nudge User" 
+                                        <lightning-button-icon
+                                            icon-name="utility:chat"
+                                            variant="border-filled"
+                                            alternative-text="Nudge User"
                                             title="Nudge User via Chatter"
                                             data-user-id={entry.userId}
-                                            onclick={handleNudge}>
+                                            onclick={handleNudge}
+                                            class="slds-m-left_x-small">
                                         </lightning-button-icon>
                                     </template>
                                     <template lwc:else>
-                                        <lightning-icon icon-name="utility:lock" size="x-small" class="slds-icon-text-light"></lightning-icon>
+                                        <lightning-icon icon-name="utility:lock" size="x-small" class="slds-icon-text-light slds-m-left_x-small"></lightning-icon>
                                     </template>
                                 </div>
                             </div>

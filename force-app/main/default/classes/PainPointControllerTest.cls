@@ -18,7 +18,8 @@ private with sharing class PainPointControllerTest {
         insert adminUser;
 
         // Assign BehaviorIQ_Admin permission set to admin user for FLS access
-        PermissionSet ps = [SELECT Id FROM PermissionSet WHERE Name = 'BehaviorIQ_Admin' LIMIT 1];
+        // In managed package, query using Label which doesn't have namespace prefix
+        PermissionSet ps = [SELECT Id FROM PermissionSet WHERE Label = 'BehaviorIQ Admin' LIMIT 1];
         insert new PermissionSetAssignment(AssigneeId = adminUser.Id, PermissionSetId = ps.Id);
 
         // Create a user with minimal permissions (Standard User) for negative FLS tests

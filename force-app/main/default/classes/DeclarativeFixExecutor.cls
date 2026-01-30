@@ -106,14 +106,14 @@ public with sharing class DeclarativeFixExecutor {
         } catch (DeclarativeFixException e) {
             // Rollback all DML operations on declarative fix errors
             Database.rollback(sp);
-            // Clear any pending logs since the transaction was rolled back
-            pendingLogs.clear();
+            // Clear success logs since those operations were rolled back, but keep failure logs
+            clearSuccessLogs();
             throw new DeclarativeFixException('Fix rolled back due to error: ' + e.getMessage());
         } catch (Exception e) {
             // Rollback all DML operations on any unexpected error
             Database.rollback(sp);
-            // Clear any pending logs since the transaction was rolled back
-            pendingLogs.clear();
+            // Clear success logs since those operations were rolled back, but keep failure logs
+            clearSuccessLogs();
             throw new DeclarativeFixException('Fix rolled back due to unexpected error: ' + e.getMessage());
         }
     }
@@ -413,6 +413,22 @@ public with sharing class DeclarativeFixExecutor {
     private String truncate(String value, Integer maxLength) {
         if (value == null) return null;
         return value.length() > maxLength ? value.substring(0, maxLength) : value;
+    }
+
+    /**
+     * @description Clears success logs while preserving failure logs.
+     * Used during rollback to remove records of operations that were reverted,
+     * while keeping failure logs that document what went wrong.
+     */
+    private void clearSuccessLogs() {
+        List<Remediation_Log__c> failureLogs = new List<Remediation_Log__c>();
+        for (Remediation_Log__c log : pendingLogs) {
+            if (log.Status__c == 'Failed') {
+                failureLogs.add(log);
+            }
+        }
+        pendingLogs.clear();
+        pendingLogs.addAll(failureLogs);
     }
 
     /**

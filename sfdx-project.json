@@ -6,7 +6,7 @@
     }
   ],
   "name": "AgentForce SMB",
-  "namespace": "",
+  "namespace": "biq",
   "sfdcLoginUrl": "https://login.salesforce.com",
   "sourceApiVersion": "63.0"
 }

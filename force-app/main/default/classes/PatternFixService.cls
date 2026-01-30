@@ -765,9 +765,7 @@ public with sharing class PatternFixService {
         // Test hook for no valid recipients coverage
         if (emails.isEmpty() || (Test.isRunningTest() && forceNoValidRecipients)) {
             for (Id recId : recordIds) {
-                if (!recordToRecipient.containsKey(recId)) {
-                    addLog(recId, ACTION_EMAIL_NOTIFICATION, null, null, STATUS_FAILED, 'No valid recipients found');
-                }
+                addLog(recId, ACTION_EMAIL_NOTIFICATION, null, null, STATUS_FAILED, 'No valid recipients found');
             }
             return;
         }

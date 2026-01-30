@@ -8,39 +8,11 @@
         <layoutColumns>
             <layoutItems>
                 <behavior>Required</behavior>
-                <field>Name</field>
-            </layoutItems>
-            <layoutItems>
-                <behavior>Edit</behavior>
-                <field>Description__c</field>
-            </layoutItems>
-            <layoutItems>
-                <behavior>Edit</behavior>
-                <field>Object_API_Name__c</field>
-            </layoutItems>
-            <layoutItems>
-                <behavior>Edit</behavior>
-                <field>Status__c</field>
-            </layoutItems>
-            <layoutItems>
-                <behavior>Edit</behavior>
-                <field>Occurrences__c</field>
-            </layoutItems>
-            <layoutItems>
-                <behavior>Edit</behavior>
-                <field>Impact_Score__c</field>
-            </layoutItems>
-            <layoutItems>
-                <behavior>Edit</behavior>
-                <field>Example_Records__c</field>
-            </layoutItems>
-            <layoutItems>
-                <behavior>Edit</behavior>
-                <field>Last_Detected__c</field>
+                <field>Unique_Key__c</field>
             </layoutItems>
             <layoutItems>
                 <behavior>Required</behavior>
-                <field>Unique_Key__c</field>
+                <field>Name</field>
             </layoutItems>
         </layoutColumns>
         <layoutColumns>
@@ -79,6 +51,9 @@
         <layoutColumns/>
         <style>CustomLinks</style>
     </layoutSections>
+    <miniLayout>
+        <fields>Unique_Key__c</fields>
+    </miniLayout>
     <showEmailCheckbox>false</showEmailCheckbox>
     <showHighlightsPanel>false</showHighlightsPanel>
     <showInteractionLogPanel>false</showInteractionLogPanel>

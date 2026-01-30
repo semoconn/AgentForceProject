@@ -88,3 +88,20 @@
 .rank-1 { background-color: #FFB03B; box-shadow: 0 2px 4px rgba(255, 176, 59, 0.4); } /* Gold */
 .rank-2 { background-color: #9AA5B1; } /* Silver */
 .rank-3 { background-color: #B58D76; } /* Bronze */
+
+/* --- Issue Count Badge --- */
+.issue-count {
+    font-size: 0.75rem;
+    font-weight: 700;
+    min-width: 24px;
+    text-align: center;
+}
+
+/* --- Impact Score Colors --- */
+.slds-text-color_warning {
+    color: #fe9339 !important; /* Orange for medium severity ($5K-$50K) */
+}
+
+.slds-text-color_error {
+    color: #c23934 !important; /* Red for high severity ($50K+) */
+}

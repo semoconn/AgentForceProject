@@ -23,11 +23,36 @@ export default class UserLeaderboard extends LightningElement {
                     // Ensure topBehaviors is always an array
                     const behaviors = Array.isArray(entry.topBehaviors) ? entry.topBehaviors : [];
 
+                    // Format impact score as currency
+                    const impactValue = entry.totalImpactScore || 0;
+                    const formattedImpact = impactValue > 0
+                        ? '$' + impactValue.toLocaleString()
+                        : '-';
+
+                    // Determine impact severity class
+                    let impactClass = 'score-text slds-m-right_small';
+                    if (impactValue >= 50000) {
+                        impactClass += ' slds-text-color_error'; // High severity: red
+                    } else if (impactValue >= 5000) {
+                        impactClass += ' slds-text-color_warning'; // Medium severity: orange
+                    }
+
+                    // Build detailed tooltip
+                    const issueCount = entry.issueCount || 0;
+                    const activityCount = entry.activityCount || 0;
+                    const impactTooltip = `Impact: $${impactValue.toLocaleString()} at risk from ${issueCount} issue(s). Activity: ${activityCount} tracked events.`;
+
                     return {
                         userId: entry.userId,
                         userName: entry.userName,
                         photoUrl: entry.photoUrl,
-                        totalImpactScore: entry.totalImpactScore,
+                        totalImpactScore: impactValue,
+                        formattedImpact: formattedImpact,
+                        impactClass: impactClass,
+                        impactTooltip: impactTooltip,
+                        issueCount: issueCount,
+                        hasIssues: issueCount > 0,
+                        activityCount: activityCount,
                         isAnonymized: entry.isAnonymized,
                         topBehaviors: behaviors,
                         rank: rank,
