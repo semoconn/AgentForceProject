@@ -12,6 +12,8 @@ import getDashboardData from '@salesforce/apex/WorkflowAnalyticsController.getDa
 import getTotalEventsAnalyzed from '@salesforce/apex/WorkflowAnalyticsController.getTotalEventsAnalyzed';
 import getMonitoredObjectsCount from '@salesforce/apex/WorkflowAnalyticsController.getMonitoredObjectsCount';
 import getEnhancedSystemHealth from '@salesforce/apex/WorkflowAnalyticsController.getEnhancedSystemHealth';
+import getSolutionGuide from '@salesforce/apex/SolutionGuideController.getSolutionGuide';
+import getPatternMatches from '@salesforce/apex/PatternAnalysisService.getPatternMatches';
 
 export default class BehaviorIQDashboard extends LightningElement {
     @track allPainPoints = [];
@@ -68,6 +70,61 @@ export default class BehaviorIQDashboard extends LightningElement {
     @track isSolutionModalOpen = false;
     @track selectedRow = {};
     @track solutionSteps = [];
+    @track solutionRecords = [];
+    @track solutionRecordColumns = [];
+    @track isSolutionRecordsLoading = false;
+
+    // Column definitions per object type for Solution Guide records table
+    static COLUMN_CONFIG = {
+        Case: [
+            { label: 'Case Number', fieldName: 'CaseNumber', type: 'text', sortable: true },
+            { label: 'Subject', fieldName: 'Subject', type: 'text', sortable: true },
+            { label: 'Status', fieldName: 'Status', type: 'text', sortable: true },
+            { label: 'Priority', fieldName: 'Priority', type: 'text', sortable: true },
+            { label: 'Created Date', fieldName: 'CreatedDate', type: 'date', sortable: true,
+                typeAttributes: { year: 'numeric', month: 'short', day: '2-digit' }
+            }
+        ],
+        Opportunity: [
+            { label: 'Name', fieldName: 'Name', type: 'text', sortable: true },
+            { label: 'Stage', fieldName: 'StageName', type: 'text', sortable: true },
+            { label: 'Amount', fieldName: 'Amount', type: 'currency', sortable: true },
+            { label: 'Close Date', fieldName: 'CloseDate', type: 'date', sortable: true },
+            { label: 'Probability', fieldName: 'ProbabilityDisplay', type: 'text', sortable: true }
+        ],
+        Lead: [
+            { label: 'Name', fieldName: 'Name', type: 'text', sortable: true },
+            { label: 'Company', fieldName: 'Company', type: 'text', sortable: true },
+            { label: 'Status', fieldName: 'Status', type: 'text', sortable: true },
+            { label: 'Email', fieldName: 'Email', type: 'email', sortable: true },
+            { label: 'Phone', fieldName: 'Phone', type: 'phone', sortable: true }
+        ],
+        Account: [
+            { label: 'Name', fieldName: 'Name', type: 'text', sortable: true },
+            { label: 'Industry', fieldName: 'Industry', type: 'text', sortable: true },
+            { label: 'Type', fieldName: 'Type', type: 'text', sortable: true },
+            { label: 'Phone', fieldName: 'Phone', type: 'phone', sortable: true },
+            { label: 'Created Date', fieldName: 'CreatedDate', type: 'date', sortable: true }
+        ],
+        Contact: [
+            { label: 'Name', fieldName: 'Name', type: 'text', sortable: true },
+            { label: 'Email', fieldName: 'Email', type: 'email', sortable: true },
+            { label: 'Phone', fieldName: 'Phone', type: 'phone', sortable: true },
+            { label: 'Title', fieldName: 'Title', type: 'text', sortable: true },
+            { label: 'Created Date', fieldName: 'CreatedDate', type: 'date', sortable: true }
+        ],
+        Contract: [
+            { label: 'Contract Number', fieldName: 'ContractNumber', type: 'text', sortable: true },
+            { label: 'Account', fieldName: 'AccountName', type: 'text', sortable: true },
+            { label: 'Status', fieldName: 'Status', type: 'text', sortable: true },
+            { label: 'Start Date', fieldName: 'StartDate', type: 'date', sortable: true },
+            { label: 'Contract Term', fieldName: 'ContractTerm', type: 'number', sortable: true }
+        ],
+        Default: [
+            { label: 'Name', fieldName: 'Name', type: 'text', sortable: true },
+            { label: 'Created Date', fieldName: 'CreatedDate', type: 'date', sortable: true }
+        ]
+    };
 
     // Remediation Preview Modal (Sprint 4)
     @track previewRuleDeveloperName = '';
@@ -338,6 +395,8 @@ export default class BehaviorIQDashboard extends LightningElement {
     get dismissedVariant() { return this.currentFilter === 'Dismissed' ? 'brand' : 'neutral'; }
     get isFixDisabled() { return !this.isPremium; }
     get autoFixButtonTitle() { return this.isPremium ? 'Apply Auto-Fix' : 'Apply Auto-Fix (Premium)'; }
+    get hasSolutionRecords() { return this.solutionRecords && this.solutionRecords.length > 0; }
+    get solutionRecordCount() { return this.solutionRecords ? this.solutionRecords.length : 0; }
 
     // --- Actions ---
     filterAll() { this.currentFilter = 'All'; }
@@ -408,6 +467,48 @@ export default class BehaviorIQDashboard extends LightningElement {
         // Pass the timestamp for when records were previously fixed
         this.previewFixedAtTimestamp = fixedAtTimestamp || '';
         this.previewReadOnly = false; // Editable mode for fixing
+        this._isPreviewModalOpen = true;
+    }
+
+    /**
+     * @description Handler for viewing affected records in read-only mode.
+     * Available to both FREE and Premium users - allows viewing sample records
+     * without the ability to fix them.
+     */
+    handleViewAffectedRecords(event) {
+        const objectApiName = event.currentTarget.dataset.type;
+        const uniqueKey = event.currentTarget.dataset.key;
+        const ruleLabel = event.currentTarget.dataset.label;
+        const exampleRecords = event.currentTarget.dataset.id;
+        const painPointId = event.currentTarget.dataset.painpointId;
+
+        if (!objectApiName) {
+            return this.showToast('Error', 'Unable to load records data.', 'error');
+        }
+
+        if (!exampleRecords || exampleRecords === '[]') {
+            return this.showToast('Info', 'No sample records available for this pain point.', 'info');
+        }
+
+        const ruleDeveloperName = this.mapObjectToRuleDeveloperName(objectApiName, uniqueKey);
+
+        if (!ruleDeveloperName) {
+            return this.showToast('Error', 'No pattern rule found for this object.', 'warning');
+        }
+
+        this.closeSolutionModal();
+
+        // Set preview modal properties in READ-ONLY mode
+        this.previewRuleDeveloperName = ruleDeveloperName;
+        this.previewObjectApiName = objectApiName;
+        this.previewRuleLabel = ruleLabel || objectApiName + ' Affected Records';
+        this.previewFixType = this.mapObjectToFixType(objectApiName);
+        this.previewPainPointId = painPointId || '';
+        // Use Example_Records__c to show sample affected records
+        this.previewExampleRecordIds = exampleRecords || '';
+        this.previewFixedRecordIds = '';
+        this.previewFixedAtTimestamp = '';
+        this.previewReadOnly = true; // READ-ONLY mode - no fixing allowed
         this._isPreviewModalOpen = true;
     }
 
@@ -615,14 +716,93 @@ export default class BehaviorIQDashboard extends LightningElement {
 
     // Modal Helpers
     handleViewDetails(event) {
-        const rowId = event.currentTarget.dataset.id; 
+        const rowId = event.currentTarget.dataset.id;
         this.selectedRow = this.allPainPoints.find(row => row.Id === rowId);
         if (this.selectedRow) {
-            this.solutionSteps = this.getStepsForType(this.selectedRow.ObjectApiName);
-            this.isSolutionModalOpen = true;
+            // Reset records state
+            this.solutionRecords = [];
+            this.isSolutionRecordsLoading = true;
+
+            // Set columns for the object type
+            const objectType = this.selectedRow.ObjectApiName;
+            this.solutionRecordColumns = BehaviorIQDashboard.COLUMN_CONFIG[objectType] || BehaviorIQDashboard.COLUMN_CONFIG.Default;
+
+            // Call Apex to get metadata-driven solution guide
+            getSolutionGuide({ painPointKey: this.selectedRow.UniqueKey })
+                .then(result => {
+                    if (result && result.steps) {
+                        this.solutionSteps = result.steps;
+                    } else {
+                        // Fallback to local method if Apex returns no steps
+                        this.solutionSteps = this.getStepsForType(this.selectedRow.ObjectApiName);
+                    }
+                    this.isSolutionModalOpen = true;
+                })
+                .catch(() => {
+                    // On error, fall back to local method
+                    this.solutionSteps = this.getStepsForType(this.selectedRow.ObjectApiName);
+                    this.isSolutionModalOpen = true;
+                });
+
+            // Fetch affected records in parallel (don't block modal from showing)
+            this.loadSolutionRecords();
         }
     }
-    closeSolutionModal() { this.isSolutionModalOpen = false; }
+
+    /**
+     * @description Loads affected records for the Solution Guide modal.
+     * Fetches all matching records (up to 200) using the pattern rule query.
+     */
+    loadSolutionRecords() {
+        if (!this.selectedRow || !this.selectedRow.UniqueKey) {
+            this.isSolutionRecordsLoading = false;
+            return;
+        }
+
+        // Get the rule developer name (use UniqueKey which is the rule DeveloperName)
+        const ruleDeveloperName = this.selectedRow.UniqueKey;
+
+        // Fetch all matching records (up to 200 limit enforced by Apex)
+        getPatternMatches({
+            ruleDeveloperName: ruleDeveloperName,
+            limitCount: 200,
+            includeOnlyRecordIds: '',
+            excludeRecordIds: this.selectedRow.FixedRecordIds || ''
+        })
+        .then(records => {
+            let processedRecords = records || [];
+
+            // Transform Opportunity records to add ProbabilityDisplay
+            if (this.selectedRow.ObjectApiName === 'Opportunity') {
+                processedRecords = processedRecords.map(r => ({
+                    ...r,
+                    ProbabilityDisplay: r.Probability != null ? `${r.Probability}%` : ''
+                }));
+            }
+
+            // Transform Contract records to add AccountName
+            if (this.selectedRow.ObjectApiName === 'Contract') {
+                processedRecords = processedRecords.map(r => ({
+                    ...r,
+                    AccountName: r.Account ? r.Account.Name : ''
+                }));
+            }
+
+            this.solutionRecords = processedRecords;
+        })
+        .catch(err => {
+            console.error('Error loading solution records:', err);
+            this.solutionRecords = [];
+        })
+        .finally(() => {
+            this.isSolutionRecordsLoading = false;
+        });
+    }
+    closeSolutionModal() {
+        this.isSolutionModalOpen = false;
+        this.solutionRecords = [];
+        this.isSolutionRecordsLoading = false;
+    }
     
     openAdminModal(event) {
         this.activeTab = event.currentTarget.dataset.tab || 'settings';

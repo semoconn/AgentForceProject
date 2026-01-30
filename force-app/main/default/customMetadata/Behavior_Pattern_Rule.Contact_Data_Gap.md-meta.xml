@@ -20,7 +20,7 @@
     </values>
     <values>
         <field>Fix_Config__c</field>
-        <value xsi:type="xsd:string">{"subject": "Urgent: Update Contact Details", "priority": "High", "status": "Not Started", "description": "This contact is missing email or phone information. Please update to ensure complete customer records."}</value>
+        <value xsi:type="xsd:string">{"subject": "Urgent: Update Contact Details", "priority": "High", "status": "Not Started", "description": "This contact is missing email or phone information. Please update to ensure complete customer records.", "manualFixSteps": ["Open each contact record from the Affected Records table below", "For contacts missing Email: Add a valid email address in the Email field", "For contacts missing Phone: Add a phone number in the Phone field", "If contact info is unavailable, add a note in the Description field explaining why", "Consider using Data.com or third-party enrichment tools to fill gaps at scale"]}</value>
     </values>
     <values>
         <field>Is_Premium__c</field>

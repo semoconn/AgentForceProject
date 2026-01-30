@@ -20,7 +20,7 @@
     </values>
     <values>
         <field>Fix_Config__c</field>
-        <value xsi:type="xsd:string">{"subject": "URGENT: Follow up on stale case - no activity in 14+ days", "priority": "High", "status": "Not Started", "description": "This case has had no updates in over 14 days. Please review and take action or close if resolved."}</value>
+        <value xsi:type="xsd:string">{"subject": "URGENT: Follow up on stale case - no activity in 14+ days", "priority": "High", "status": "Not Started", "description": "This case has had no updates in over 14 days. Please review and take action or close if resolved.", "manualFixSteps": ["Open each stale case from the Affected Records table below", "Review the case history and current status", "If case is resolved: Change Status to Closed and add a resolution note", "If case needs work: Add a case comment explaining next steps and update the status", "If waiting on customer: Send a follow-up email and log the activity", "Consider setting up Case Escalation Rules in Setup to auto-escalate stale cases"]}</value>
     </values>
     <values>
         <field>Is_Premium__c</field>

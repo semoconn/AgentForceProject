@@ -1,11 +1,18 @@
 /**
  * @description       : Provides the content for the Solution Guide modal in the BehaviorIQ dashboard.
- * @version           : 3.0 - FEATURE: Added solution guide for Stale Cases pattern.
+ * @version           : 4.0 - FEATURE: Added metadata-driven solution guides with manualFixSteps.
 **/
 public with sharing class SolutionGuideController {
 
     @AuraEnabled(cacheable=true)
     public static Map<String, Object> getSolutionGuide(String painPointKey) {
+        // First, try to get solution from metadata (manualFixSteps in Fix_Config__c)
+        Map<String, Object> metadataSolution = getMetadataSolutionGuide(painPointKey);
+        if (metadataSolution != null && !metadataSolution.isEmpty()) {
+            return metadataSolution;
+        }
+
+        // Fallback to hardcoded solutions for specific pain points
         Map<String, Object> solution = new Map<String, Object>();
 
         if (painPointKey == 'Sequential_Action_Contact_Task') {
@@ -62,5 +69,82 @@ public with sharing class SolutionGuideController {
         }
 
         return solution;
+    }
+
+    /**
+     * @description Attempts to load solution guide from metadata Fix_Config__c JSON.
+     * Looks for manualFixSteps array in the Fix_Config__c field.
+     * @param painPointKey The unique key (DeveloperName) of the pain point/rule
+     * @return Map with title and steps, or null if no manual fix steps found
+     */
+    private static Map<String, Object> getMetadataSolutionGuide(String painPointKey) {
+        if (String.isBlank(painPointKey)) {
+            return null;
+        }
+
+        try {
+            // Extract base rule name for timestamped keys (e.g., Lead_Hoarding_1767994173771 -> Lead_Hoarding)
+            String baseRuleName = extractBaseRuleName(painPointKey);
+
+            // Query the pattern rule metadata
+            List<Behavior_Pattern_Rule__mdt> rules = [
+                SELECT DeveloperName, MasterLabel, Fix_Config__c
+                FROM Behavior_Pattern_Rule__mdt
+                WHERE DeveloperName = :baseRuleName
+                LIMIT 1
+            ];
+
+            if (rules.isEmpty() || String.isBlank(rules[0].Fix_Config__c)) {
+                return null;
+            }
+
+            // Parse the Fix_Config__c JSON
+            Map<String, Object> config = (Map<String, Object>)JSON.deserializeUntyped(rules[0].Fix_Config__c);
+
+            // Check for manualFixSteps array
+            if (!config.containsKey('manualFixSteps')) {
+                return null;
+            }
+
+            // Extract and convert the steps
+            List<Object> stepsObj = (List<Object>)config.get('manualFixSteps');
+            List<String> steps = new List<String>();
+            for (Object step : stepsObj) {
+                steps.add(String.valueOf(step));
+            }
+
+            // Build the solution response
+            Map<String, Object> solution = new Map<String, Object>();
+            solution.put('title', 'How to Fix: ' + rules[0].MasterLabel);
+            solution.put('steps', steps);
+            solution.put('source', 'metadata'); // Flag to indicate this came from metadata
+
+            return solution;
+
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'Error loading metadata solution guide: ' + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * @description Extracts base rule name from potentially timestamped unique key.
+     * Example: "Lead_Hoarding_1767994173771" -> "Lead_Hoarding"
+     * @param uniqueKey The unique key which may have a timestamp suffix
+     * @return The base rule developer name
+     */
+    private static String extractBaseRuleName(String uniqueKey) {
+        if (String.isBlank(uniqueKey)) {
+            return uniqueKey;
+        }
+        Integer lastUnderscore = uniqueKey.lastIndexOf('_');
+        if (lastUnderscore > 0 && lastUnderscore < uniqueKey.length() - 1) {
+            String possibleTimestamp = uniqueKey.substring(lastUnderscore + 1);
+            // Check if suffix looks like a timestamp (all digits, at least 10 chars)
+            if (possibleTimestamp.isNumeric() && possibleTimestamp.length() >= 10) {
+                return uniqueKey.substring(0, lastUnderscore);
+            }
+        }
+        return uniqueKey;
     }
 }
