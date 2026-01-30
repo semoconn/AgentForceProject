@@ -105,12 +105,15 @@ public with sharing class SetupWizardController {
      */
     private static void runInitialAnalysis() {
         try {
-            // Check if there's already a batch running to avoid conflicts
-            // Note: AsyncApexJob is a setup object and requires specific permissions
+            // Check if there's already a BATCH job running to avoid conflicts
+            // IMPORTANT: Filter by JobType = 'BatchApex' to exclude ScheduledApex jobs
+            // The scheduled job (cron) shows as 'Queued' until it fires, which would
+            // incorrectly block immediate batch execution if we didn't filter by JobType
             List<AsyncApexJob> runningJobs = [
                 SELECT Id
                 FROM AsyncApexJob
                 WHERE ApexClass.Name = 'PatternAnalysisService'
+                AND JobType = 'BatchApex'
                 AND Status IN ('Holding', 'Queued', 'Preparing', 'Processing')
                 WITH USER_MODE
                 LIMIT 1
@@ -164,7 +167,7 @@ public with sharing class SetupWizardController {
         }
     }
     
-    @AuraEnabled(cacheable=true)
+    @AuraEnabled
     public static Boolean isSetupComplete() {
         try {
             List<BehaviorIQ_Configuration__c> configs = [

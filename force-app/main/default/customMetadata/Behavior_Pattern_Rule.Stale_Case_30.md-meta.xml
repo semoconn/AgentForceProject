@@ -20,7 +20,7 @@
     </values>
     <values>
         <field>Fix_Config__c</field>
-        <value xsi:type="xsd:string">{"subject": "Review Stale Case", "priority": "Normal", "description": "This case has been inactive for over 30 days."}</value>
+        <value xsi:type="xsd:string">{"subject": "Review Stale Case", "priority": "Normal", "description": "This case has been inactive for over 30 days.", "manualFixSteps": ["Open each stale case from the Affected Records table below", "Cases inactive for 30+ days likely need closure - review case history", "If issue was resolved: Close the case with a resolution summary", "If still pending: Escalate to a manager or reassign to an active agent", "If customer unresponsive: Send a final follow-up and consider auto-closing", "Set up Case Escalation Rules in Setup > Support Processes to automate this"]}</value>
     </values>
     <values>
         <field>Is_Premium__c</field>

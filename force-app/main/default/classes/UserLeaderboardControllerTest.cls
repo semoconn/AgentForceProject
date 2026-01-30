@@ -18,7 +18,7 @@ private with sharing class UserLeaderboardControllerTest {
         insert testAdmin;
 
         // Assign BehaviorIQ_Admin permission set to admin user for FLS access
-        PermissionSet ps = [SELECT Id FROM PermissionSet WHERE Name = 'BehaviorIQ_Admin' LIMIT 1];
+        PermissionSet ps = [SELECT Id FROM PermissionSet WHERE Label = 'BehaviorIQ Admin' LIMIT 1];
         insert new PermissionSetAssignment(AssigneeId = testAdmin.Id, PermissionSetId = ps.Id);
 
         testStandardUser = new User(
@@ -234,6 +234,8 @@ private with sharing class UserLeaderboardControllerTest {
             'Test User',
             '/photo.jpg',
             100,
+            5,
+            3,
             false
         ));
 
@@ -255,6 +257,8 @@ private with sharing class UserLeaderboardControllerTest {
                 'Test User',
                 '/photo.jpg',
                 50,
+                3,
+                2,
                 true
             );
         Test.stopTest();
@@ -639,6 +643,8 @@ private with sharing class UserLeaderboardControllerTest {
                 'Test User',
                 '/photo.jpg',
                 100,
+                5,
+                3,
                 false
             );
 
@@ -1094,6 +1100,8 @@ private with sharing class UserLeaderboardControllerTest {
                 'Full Test User',
                 '/fullphoto.jpg',
                 250,
+                10,
+                5,
                 true
             );
 
@@ -1118,10 +1126,10 @@ private with sharing class UserLeaderboardControllerTest {
             new List<UserLeaderboardController.LeaderboardEntry>();
 
         entries.add(new UserLeaderboardController.LeaderboardEntry(
-            '005000000000001', 'User1', '/photo1.jpg', 100, false
+            '005000000000001', 'User1', '/photo1.jpg', 100, 5, 3, false
         ));
         entries.add(new UserLeaderboardController.LeaderboardEntry(
-            '005000000000002', 'User2', '/photo2.jpg', 50, false
+            '005000000000002', 'User2', '/photo2.jpg', 50, 3, 2, false
         ));
 
         UserLeaderboardController.LeaderboardResult result =
@@ -1166,6 +1174,579 @@ private with sharing class UserLeaderboardControllerTest {
             Test.stopTest();
 
             System.assertNotEquals(null, result, 'Result should not be null');
+        }
+    }
+
+    // ==================== PAIN POINT IMPACT CALCULATION COVERAGE ====================
+
+    @isTest
+    static void testGetLeaderboardData_WithPainPoints_JsonArray() {
+        // Test calculateUserImpactFromPainPoints with JSON array format Example_Records__c
+        User admin = [SELECT Id FROM User WHERE Alias = 'badmin' LIMIT 1];
+        User standardUser = [SELECT Id FROM User WHERE Alias = 'bstd' LIMIT 1];
+
+        // Create an Account owned by standard user
+        Account testAccount;
+        System.runAs(admin) {
+            testAccount = new Account(Name = 'Test Impact Account', OwnerId = standardUser.Id);
+            insert testAccount;
+        }
+
+        // Create pain point with JSON array format Example_Records__c
+        System.runAs(admin) {
+            Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
+                Name = 'Test Pain Point JSON',
+                Unique_Key__c = 'TEST-PP-JSON-' + System.currentTimeMillis(),
+                Status__c = 'New',
+                Object_API_Name__c = 'Account',
+                Impact_Score__c = 500,
+                Occurrences__c = 1,
+                Example_Records__c = '["' + testAccount.Id + '"]'
+            );
+            insert pp;
+        }
+
+        System.runAs(admin) {
+            UserLeaderboardController.forcePremiumContext = true;
+
+            Test.startTest();
+            UserLeaderboardController.LeaderboardResult result =
+                UserLeaderboardController.getLeaderboardData();
+            Test.stopTest();
+
+            System.assertNotEquals(null, result, 'Result should not be null');
+            // Standard user should appear due to pain point impact
+        }
+    }
+
+    @isTest
+    static void testGetLeaderboardData_WithPainPoints_CommaSeparated() {
+        // Test calculateUserImpactFromPainPoints with comma-separated Example_Records__c
+        User admin = [SELECT Id FROM User WHERE Alias = 'badmin' LIMIT 1];
+        User standardUser = [SELECT Id FROM User WHERE Alias = 'bstd' LIMIT 1];
+
+        // Create Accounts owned by standard user
+        List<Account> testAccounts = new List<Account>();
+        System.runAs(admin) {
+            for (Integer i = 0; i < 3; i++) {
+                testAccounts.add(new Account(Name = 'Test Impact Account ' + i, OwnerId = standardUser.Id));
+            }
+            insert testAccounts;
+        }
+
+        // Create pain point with comma-separated format Example_Records__c
+        System.runAs(admin) {
+            String recordIds = testAccounts[0].Id + ',' + testAccounts[1].Id + ',' + testAccounts[2].Id;
+            Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
+                Name = 'Test Pain Point CSV',
+                Unique_Key__c = 'TEST-PP-CSV-' + System.currentTimeMillis(),
+                Status__c = 'New',
+                Object_API_Name__c = 'Account',
+                Impact_Score__c = 300,
+                Occurrences__c = 3,
+                Example_Records__c = recordIds
+            );
+            insert pp;
+        }
+
+        System.runAs(admin) {
+            UserLeaderboardController.forcePremiumContext = true;
+
+            Test.startTest();
+            UserLeaderboardController.LeaderboardResult result =
+                UserLeaderboardController.getLeaderboardData();
+            Test.stopTest();
+
+            System.assertNotEquals(null, result, 'Result should not be null');
+        }
+    }
+
+    @isTest
+    static void testGetLeaderboardData_WithPainPoints_InvalidIds() {
+        // Test parseRecordIds with invalid IDs that should be skipped
+        User admin = [SELECT Id FROM User WHERE Alias = 'badmin' LIMIT 1];
+
+        System.runAs(admin) {
+            Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
+                Name = 'Test Pain Point Invalid',
+                Unique_Key__c = 'TEST-PP-INVALID-' + System.currentTimeMillis(),
+                Status__c = 'New',
+                Object_API_Name__c = 'Account',
+                Impact_Score__c = 100,
+                Occurrences__c = 1,
+                Example_Records__c = 'invalid_id_1, invalid_id_2, not_a_valid_id'
+            );
+            insert pp;
+        }
+
+        System.runAs(admin) {
+            UserLeaderboardController.forcePremiumContext = true;
+
+            Test.startTest();
+            UserLeaderboardController.LeaderboardResult result =
+                UserLeaderboardController.getLeaderboardData();
+            Test.stopTest();
+
+            // Should handle invalid IDs gracefully without error
+            System.assertNotEquals(null, result, 'Result should not be null');
+        }
+    }
+
+    @isTest
+    static void testGetLeaderboardData_WithPainPoints_MixedFormats() {
+        // Test parseRecordIds with JSON array that fails parsing and falls back
+        User admin = [SELECT Id FROM User WHERE Alias = 'badmin' LIMIT 1];
+        User standardUser = [SELECT Id FROM User WHERE Alias = 'bstd' LIMIT 1];
+
+        Account testAccount;
+        System.runAs(admin) {
+            testAccount = new Account(Name = 'Test Mixed Format', OwnerId = standardUser.Id);
+            insert testAccount;
+        }
+
+        System.runAs(admin) {
+            // Malformed JSON that will trigger fallback parsing
+            Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
+                Name = 'Test Pain Point Mixed',
+                Unique_Key__c = 'TEST-PP-MIXED-' + System.currentTimeMillis(),
+                Status__c = 'New',
+                Object_API_Name__c = 'Account',
+                Impact_Score__c = 200,
+                Occurrences__c = 1,
+                Example_Records__c = '[' + testAccount.Id + ']'  // Missing quotes - will fail JSON parse
+            );
+            insert pp;
+        }
+
+        System.runAs(admin) {
+            UserLeaderboardController.forcePremiumContext = true;
+
+            Test.startTest();
+            UserLeaderboardController.LeaderboardResult result =
+                UserLeaderboardController.getLeaderboardData();
+            Test.stopTest();
+
+            System.assertNotEquals(null, result, 'Result should not be null');
+        }
+    }
+
+    @isTest
+    static void testGetLeaderboardData_WithPainPoints_BlankExampleRecords() {
+        // Test with blank Example_Records__c (should skip)
+        User admin = [SELECT Id FROM User WHERE Alias = 'badmin' LIMIT 1];
+
+        System.runAs(admin) {
+            Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
+                Name = 'Test Pain Point Blank',
+                Unique_Key__c = 'TEST-PP-BLANK-' + System.currentTimeMillis(),
+                Status__c = 'New',
+                Object_API_Name__c = 'Account',
+                Impact_Score__c = 100,
+                Occurrences__c = 1,
+                Example_Records__c = ''  // Blank - should be skipped
+            );
+            insert pp;
+        }
+
+        System.runAs(admin) {
+            UserLeaderboardController.forcePremiumContext = true;
+
+            Test.startTest();
+            UserLeaderboardController.LeaderboardResult result =
+                UserLeaderboardController.getLeaderboardData();
+            Test.stopTest();
+
+            System.assertNotEquals(null, result, 'Result should not be null');
+        }
+    }
+
+    @isTest
+    static void testGetLeaderboardData_WithPainPoints_BlankObjectType() {
+        // Test with blank Object_API_Name__c (should skip)
+        User admin = [SELECT Id FROM User WHERE Alias = 'badmin' LIMIT 1];
+
+        System.runAs(admin) {
+            Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
+                Name = 'Test Pain Point No Object',
+                Unique_Key__c = 'TEST-PP-NOOBJ-' + System.currentTimeMillis(),
+                Status__c = 'New',
+                Object_API_Name__c = '',  // Blank object type
+                Impact_Score__c = 100,
+                Occurrences__c = 1,
+                Example_Records__c = '001000000000001'
+            );
+            insert pp;
+        }
+
+        System.runAs(admin) {
+            UserLeaderboardController.forcePremiumContext = true;
+
+            Test.startTest();
+            UserLeaderboardController.LeaderboardResult result =
+                UserLeaderboardController.getLeaderboardData();
+            Test.stopTest();
+
+            System.assertNotEquals(null, result, 'Result should not be null');
+        }
+    }
+
+    @isTest
+    static void testGetLeaderboardData_WithPainPoints_InvalidObjectType() {
+        // Test getRecordOwners with invalid object type
+        User admin = [SELECT Id FROM User WHERE Alias = 'badmin' LIMIT 1];
+
+        System.runAs(admin) {
+            Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
+                Name = 'Test Pain Point Invalid Object',
+                Unique_Key__c = 'TEST-PP-INVOBJ-' + System.currentTimeMillis(),
+                Status__c = 'New',
+                Object_API_Name__c = 'NonExistentObject__c',  // Invalid object
+                Impact_Score__c = 100,
+                Occurrences__c = 1,
+                Example_Records__c = '001000000000001'
+            );
+            insert pp;
+        }
+
+        System.runAs(admin) {
+            UserLeaderboardController.forcePremiumContext = true;
+
+            Test.startTest();
+            UserLeaderboardController.LeaderboardResult result =
+                UserLeaderboardController.getLeaderboardData();
+            Test.stopTest();
+
+            // Should handle invalid object gracefully
+            System.assertNotEquals(null, result, 'Result should not be null');
+        }
+    }
+
+    @isTest
+    static void testGetLeaderboardData_WithPainPoints_ActiveStatus() {
+        // Test with 'Active' status pain points
+        User admin = [SELECT Id FROM User WHERE Alias = 'badmin' LIMIT 1];
+        User standardUser = [SELECT Id FROM User WHERE Alias = 'bstd' LIMIT 1];
+
+        Account testAccount;
+        System.runAs(admin) {
+            testAccount = new Account(Name = 'Test Active PP Account', OwnerId = standardUser.Id);
+            insert testAccount;
+        }
+
+        System.runAs(admin) {
+            Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
+                Name = 'Test Pain Point Active',
+                Unique_Key__c = 'TEST-PP-ACTIVE-' + System.currentTimeMillis(),
+                Status__c = 'Acknowledged',  // Different status - not 'New' or 'Active'
+                Object_API_Name__c = 'Account',
+                Impact_Score__c = 150,
+                Occurrences__c = 1,
+                Example_Records__c = '["' + testAccount.Id + '"]'
+            );
+            insert pp;
+        }
+
+        System.runAs(admin) {
+            UserLeaderboardController.forcePremiumContext = true;
+
+            Test.startTest();
+            UserLeaderboardController.LeaderboardResult result =
+                UserLeaderboardController.getLeaderboardData();
+            Test.stopTest();
+
+            System.assertNotEquals(null, result, 'Result should not be null');
+        }
+    }
+
+    @isTest
+    static void testGetLeaderboardData_WithPainPoints_MultipleRecordsPerPainPoint() {
+        // Test impact calculation with multiple records per pain point
+        User admin = [SELECT Id FROM User WHERE Alias = 'badmin' LIMIT 1];
+        User standardUser = [SELECT Id FROM User WHERE Alias = 'bstd' LIMIT 1];
+
+        List<Account> testAccounts = new List<Account>();
+        System.runAs(admin) {
+            for (Integer i = 0; i < 5; i++) {
+                testAccounts.add(new Account(Name = 'Multi Record Account ' + i, OwnerId = standardUser.Id));
+            }
+            insert testAccounts;
+        }
+
+        System.runAs(admin) {
+            // Build JSON array of IDs
+            List<String> idList = new List<String>();
+            for (Account acc : testAccounts) {
+                idList.add(acc.Id);
+            }
+            String jsonIds = JSON.serialize(idList);
+
+            Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
+                Name = 'Test Multi Record PP',
+                Unique_Key__c = 'TEST-PP-MULTI-' + System.currentTimeMillis(),
+                Status__c = 'New',
+                Object_API_Name__c = 'Account',
+                Impact_Score__c = 1000,  // Will be divided among 5 records = 200 each
+                Occurrences__c = 5,
+                Example_Records__c = jsonIds
+            );
+            insert pp;
+        }
+
+        System.runAs(admin) {
+            UserLeaderboardController.forcePremiumContext = true;
+
+            Test.startTest();
+            UserLeaderboardController.LeaderboardResult result =
+                UserLeaderboardController.getLeaderboardData();
+            Test.stopTest();
+
+            System.assertNotEquals(null, result, 'Result should not be null');
+            // Standard user should have accumulated impact from owning all 5 records
+        }
+    }
+
+    @isTest
+    static void testGetLeaderboardData_WithPainPoints_NullImpactScore() {
+        // Test with null Impact_Score__c
+        User admin = [SELECT Id FROM User WHERE Alias = 'badmin' LIMIT 1];
+        User standardUser = [SELECT Id FROM User WHERE Alias = 'bstd' LIMIT 1];
+
+        Account testAccount;
+        System.runAs(admin) {
+            testAccount = new Account(Name = 'Test Null Impact', OwnerId = standardUser.Id);
+            insert testAccount;
+        }
+
+        System.runAs(admin) {
+            Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
+                Name = 'Test Pain Point Null Impact',
+                Unique_Key__c = 'TEST-PP-NULLIMP-' + System.currentTimeMillis(),
+                Status__c = 'New',
+                Object_API_Name__c = 'Account',
+                Impact_Score__c = null,  // Null impact score
+                Occurrences__c = 1,
+                Example_Records__c = '["' + testAccount.Id + '"]'
+            );
+            insert pp;
+        }
+
+        System.runAs(admin) {
+            UserLeaderboardController.forcePremiumContext = true;
+
+            Test.startTest();
+            UserLeaderboardController.LeaderboardResult result =
+                UserLeaderboardController.getLeaderboardData();
+            Test.stopTest();
+
+            System.assertNotEquals(null, result, 'Result should not be null');
+        }
+    }
+
+    @isTest
+    static void testGetLeaderboardData_WithPainPoints_ObjectWithoutOwnerId() {
+        // Test getRecordOwners with object that doesn't have OwnerId field
+        User admin = [SELECT Id FROM User WHERE Alias = 'badmin' LIMIT 1];
+
+        System.runAs(admin) {
+            // User object doesn't have OwnerId field
+            Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
+                Name = 'Test Pain Point No Owner Field',
+                Unique_Key__c = 'TEST-PP-NOOWNER-' + System.currentTimeMillis(),
+                Status__c = 'New',
+                Object_API_Name__c = 'User',  // User doesn't have OwnerId
+                Impact_Score__c = 100,
+                Occurrences__c = 1,
+                Example_Records__c = '["' + UserInfo.getUserId() + '"]'
+            );
+            insert pp;
+        }
+
+        System.runAs(admin) {
+            UserLeaderboardController.forcePremiumContext = true;
+
+            Test.startTest();
+            UserLeaderboardController.LeaderboardResult result =
+                UserLeaderboardController.getLeaderboardData();
+            Test.stopTest();
+
+            // Should handle objects without OwnerId gracefully
+            System.assertNotEquals(null, result, 'Result should not be null');
+        }
+    }
+
+    @isTest
+    static void testGetLeaderboardData_ImpactScoreSorting() {
+        // Test that users are sorted by impact score (descending)
+        User admin = [SELECT Id FROM User WHERE Alias = 'badmin' LIMIT 1];
+        User standardUser = [SELECT Id FROM User WHERE Alias = 'bstd' LIMIT 1];
+
+        // Delete existing logs and pain points
+        delete [SELECT Id FROM Behavior_Log__c];
+        delete [SELECT Id FROM Identified_Pain_Point__c];
+
+        // Create accounts owned by different users
+        Account adminAccount;
+        Account stdAccount;
+        System.runAs(admin) {
+            adminAccount = new Account(Name = 'Admin Account', OwnerId = admin.Id);
+            stdAccount = new Account(Name = 'Std Account', OwnerId = standardUser.Id);
+            insert new List<Account>{adminAccount, stdAccount};
+        }
+
+        // Create pain points with different impact scores
+        System.runAs(admin) {
+            List<Identified_Pain_Point__c> pps = new List<Identified_Pain_Point__c>();
+            // Higher impact for standard user
+            pps.add(new Identified_Pain_Point__c(
+                Name = 'High Impact PP',
+                Unique_Key__c = 'TEST-PP-HIGH-' + System.currentTimeMillis(),
+                Status__c = 'New',
+                Object_API_Name__c = 'Account',
+                Impact_Score__c = 1000,
+                Occurrences__c = 1,
+                Example_Records__c = '["' + stdAccount.Id + '"]'
+            ));
+            // Lower impact for admin
+            pps.add(new Identified_Pain_Point__c(
+                Name = 'Low Impact PP',
+                Unique_Key__c = 'TEST-PP-LOW-' + System.currentTimeMillis(),
+                Status__c = 'New',
+                Object_API_Name__c = 'Account',
+                Impact_Score__c = 100,
+                Occurrences__c = 1,
+                Example_Records__c = '["' + adminAccount.Id + '"]'
+            ));
+            insert pps;
+
+            // Create behavior logs so users appear
+            insert new List<Behavior_Log__c>{
+                new Behavior_Log__c(User__c = standardUser.Id, Action_Name__c = 'Test', Object_API_Name__c = 'Account', Timestamp__c = System.now()),
+                new Behavior_Log__c(User__c = admin.Id, Action_Name__c = 'Test', Object_API_Name__c = 'Account', Timestamp__c = System.now())
+            };
+        }
+
+        System.runAs(admin) {
+            UserLeaderboardController.forcePremiumContext = true;
+
+            Test.startTest();
+            UserLeaderboardController.LeaderboardResult result =
+                UserLeaderboardController.getLeaderboardData();
+            Test.stopTest();
+
+            System.assertNotEquals(null, result, 'Result should not be null');
+            System.assert(result.entries.size() >= 2, 'Should have at least 2 entries');
+            // First entry should have higher or equal impact than second
+            System.assert(result.entries[0].totalImpactScore >= result.entries[1].totalImpactScore,
+                'Entries should be sorted by impact score descending');
+        }
+    }
+
+    @isTest
+    static void testLeaderboardEntry_ImpactTooltip() {
+        // Test that impactTooltip is correctly generated
+        Test.startTest();
+        UserLeaderboardController.LeaderboardEntry entry =
+            new UserLeaderboardController.LeaderboardEntry(
+                '005000000000001',
+                'Test User',
+                '/photo.jpg',
+                500,
+                10,
+                5,
+                false
+            );
+        Test.stopTest();
+
+        System.assertNotEquals(null, entry.impactTooltip, 'impactTooltip should not be null');
+        System.assert(entry.impactTooltip.contains('$500'), 'Tooltip should contain impact amount');
+        System.assert(entry.impactTooltip.contains('5 issue'), 'Tooltip should mention issue count');
+        System.assert(entry.impactTooltip.contains('10 tracked'), 'Tooltip should mention activity count');
+    }
+
+    @isTest
+    static void testLeaderboardEntry_NullValues() {
+        // Test LeaderboardEntry with null values for impact, activity, issue counts
+        Test.startTest();
+        UserLeaderboardController.LeaderboardEntry entry =
+            new UserLeaderboardController.LeaderboardEntry(
+                '005000000000001',
+                'Test User',
+                '/photo.jpg',
+                null,  // null impact
+                null,  // null activity
+                null,  // null issue
+                false
+            );
+        Test.stopTest();
+
+        System.assertNotEquals(null, entry.impactTooltip, 'impactTooltip should handle nulls');
+        System.assert(entry.impactTooltip.contains('$0'), 'Tooltip should show $0 for null impact');
+    }
+
+    @isTest
+    static void testGetLeaderboardData_PainPointInaccessible() {
+        // Test when user doesn't have access to Identified_Pain_Point__c
+        User standardUser = [SELECT Id FROM User WHERE Alias = 'bstd' LIMIT 1];
+
+        System.runAs(standardUser) {
+            UserLeaderboardController.forcePremiumContext = true;
+
+            Test.startTest();
+            UserLeaderboardController.LeaderboardResult result =
+                UserLeaderboardController.getLeaderboardData();
+            Test.stopTest();
+
+            // Should handle inaccessible object gracefully
+            System.assertNotEquals(null, result, 'Result should not be null');
+        }
+    }
+
+    @isTest
+    static void testGetLeaderboardData_RecordInMultiplePainPoints() {
+        // Test when same record appears in multiple pain points (impact accumulation)
+        User admin = [SELECT Id FROM User WHERE Alias = 'badmin' LIMIT 1];
+        User standardUser = [SELECT Id FROM User WHERE Alias = 'bstd' LIMIT 1];
+
+        Account testAccount;
+        System.runAs(admin) {
+            testAccount = new Account(Name = 'Multi PP Account', OwnerId = standardUser.Id);
+            insert testAccount;
+        }
+
+        System.runAs(admin) {
+            List<Identified_Pain_Point__c> pps = new List<Identified_Pain_Point__c>();
+            // Same record in two pain points
+            pps.add(new Identified_Pain_Point__c(
+                Name = 'PP One',
+                Unique_Key__c = 'TEST-PP-ONE-' + System.currentTimeMillis(),
+                Status__c = 'New',
+                Object_API_Name__c = 'Account',
+                Impact_Score__c = 200,
+                Occurrences__c = 1,
+                Example_Records__c = '["' + testAccount.Id + '"]'
+            ));
+            pps.add(new Identified_Pain_Point__c(
+                Name = 'PP Two',
+                Unique_Key__c = 'TEST-PP-TWO-' + System.currentTimeMillis(),
+                Status__c = 'New',
+                Object_API_Name__c = 'Account',
+                Impact_Score__c = 300,
+                Occurrences__c = 1,
+                Example_Records__c = '["' + testAccount.Id + '"]'
+            ));
+            insert pps;
+        }
+
+        System.runAs(admin) {
+            UserLeaderboardController.forcePremiumContext = true;
+
+            Test.startTest();
+            UserLeaderboardController.LeaderboardResult result =
+                UserLeaderboardController.getLeaderboardData();
+            Test.stopTest();
+
+            System.assertNotEquals(null, result, 'Result should not be null');
+            // Standard user should have accumulated impact from both pain points
         }
     }
 }

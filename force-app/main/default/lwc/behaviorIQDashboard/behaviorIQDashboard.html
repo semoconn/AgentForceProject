@@ -151,6 +151,7 @@
                                             <template if:false={point.isCompleted}>
                                                 <!-- Active items: Show Auto-Fix, Solution Guide, and Dismiss -->
                                                 <template if:false={point.isDismissed}>
+                                                    <!-- Auto-Fix - Premium feature -->
                                                     <lightning-button-icon
                                                         icon-name="utility:magicwand"
                                                         variant="border-filled"
@@ -167,11 +168,12 @@
                                                         data-timestamp={point.LastModifiedDate}>
                                                     </lightning-button-icon>
 
+                                                    <!-- Solution Guide -->
                                                     <lightning-button-icon
-                                                        icon-name="utility:preview"
+                                                        icon-name="utility:info"
                                                         variant="border-filled"
                                                         class="slds-m-right_x-small"
-                                                        alternative-text="View Details"
+                                                        alternative-text="View Solution Guide"
                                                         title="View Solution Guide"
                                                         onclick={handleViewDetails}
                                                         data-id={point.Id}>
@@ -307,7 +309,7 @@
 
         <!-- SOLUTION GUIDE MODAL -->
         <template if:true={isSolutionModalOpen}>
-            <section role="dialog" tabindex="-1" aria-modal="true" class="slds-modal slds-fade-in-open">
+            <section role="dialog" tabindex="-1" aria-modal="true" class="slds-modal slds-fade-in-open slds-modal_large">
                 <div class="slds-modal__container">
                     <header class="slds-modal__header slds-theme_alert-texture slds-theme_info">
                         <button class="slds-button slds-button_icon slds-modal__close slds-button_icon-inverse" title="Close" onclick={closeSolutionModal}>
@@ -315,21 +317,56 @@
                         </button>
                         <h2 class="slds-text-heading_medium slds-hyphenate">Solution Guide</h2>
                     </header>
-                    
-                    <div class="slds-modal__content slds-p-around_medium">
+
+                    <div class="slds-modal__content slds-p-around_medium" style="max-height: 70vh; overflow-y: auto;">
                         <div class="slds-text-align_center slds-m-bottom_medium">
                             <div class="slds-text-heading_small slds-m-bottom_x-small">Issue Detected:</div>
                             <div class="slds-text-heading_medium"><strong>{selectedRow.ObjectApiName} Anomaly</strong></div>
                             <p class="slds-text-color_weak slds-m-top_x-small">{selectedRow.Description}</p>
                         </div>
 
-                        <div class="slds-box slds-theme_shade slds-theme_alert-texture">
+                        <div class="slds-box slds-theme_shade slds-theme_alert-texture slds-m-bottom_medium">
                             <h3 class="slds-text-heading_small slds-m-bottom_small">Recommended Fix Steps:</h3>
                             <ol class="slds-list_ordered">
                                 <template for:each={solutionSteps} for:item="step">
                                     <li key={step} class="slds-m-bottom_x-small">{step}</li>
                                 </template>
                             </ol>
+                        </div>
+
+                        <!-- Affected Records Section -->
+                        <div class="slds-box slds-m-top_medium">
+                            <div class="slds-grid slds-grid_align-spread slds-grid_vertical-align-center slds-m-bottom_small">
+                                <h3 class="slds-text-heading_small">
+                                    <lightning-icon icon-name="utility:record" size="x-small" class="slds-m-right_x-small"></lightning-icon>
+                                    Affected Records ({solutionRecordCount})
+                                </h3>
+                            </div>
+
+                            <template if:true={isSolutionRecordsLoading}>
+                                <div class="slds-is-relative" style="height:100px">
+                                    <lightning-spinner alternative-text="Loading records"></lightning-spinner>
+                                </div>
+                            </template>
+
+                            <template if:false={isSolutionRecordsLoading}>
+                                <template if:true={hasSolutionRecords}>
+                                    <div style="max-height: 300px; overflow-y: auto;">
+                                        <lightning-datatable
+                                            key-field="Id"
+                                            data={solutionRecords}
+                                            columns={solutionRecordColumns}
+                                            hide-checkbox-column
+                                            show-row-number-column>
+                                        </lightning-datatable>
+                                    </div>
+                                </template>
+                                <template if:false={hasSolutionRecords}>
+                                    <div class="slds-text-align_center slds-text-color_weak slds-p-around_medium">
+                                        No affected records found.
+                                    </div>
+                                </template>
+                            </template>
                         </div>
                     </div>
 

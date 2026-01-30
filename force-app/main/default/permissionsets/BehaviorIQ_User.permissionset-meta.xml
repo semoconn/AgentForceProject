@@ -3,5 +3,4 @@
     <description>Assign to users whose activity should be monitored by BehaviorIQ. Grants no special permissions.</description>
     <hasActivationRequired>false</hasActivationRequired>
     <label>BehaviorIQ User</label>
-    <!-- Intentionally empty. Used by Triggers/Apex to check if a user should be tracked. -->
 </PermissionSet>

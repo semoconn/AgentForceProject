@@ -4,16 +4,31 @@ private with sharing class PatternFixServiceTest {
     // ==================== HELPER METHODS ====================
 
     /**
+     * @description Gets the namespace prefix for field names in JSON deserialization.
+     * In a managed package org, custom fields need the namespace prefix in JSON.
+     */
+    private static String getFieldPrefix() {
+        // Check if we're in a namespaced org by examining the class name
+        String className = PatternFixServiceTest.class.getName();
+        if (className.contains('.')) {
+            return className.substringBefore('.') + '__';
+        }
+        return '';
+    }
+
+    /**
      * @description Creates a mock Behavior_Pattern_Rule__mdt record for testing.
      * Uses JSON deserialization to create an in-memory metadata record.
+     * Handles namespace prefix for managed package orgs.
      */
     private static Behavior_Pattern_Rule__mdt createMockRule(String fixType, Boolean isPremium, String fixConfig) {
+        String prefix = getFieldPrefix();
         String jsonRule = '{' +
             '"DeveloperName": "Test_Rule",' +
             '"MasterLabel": "Test Rule",' +
-            '"Fix_Type__c": "' + fixType + '",' +
-            '"Is_Premium__c": ' + isPremium + ',' +
-            '"Fix_Config__c": ' + (fixConfig != null ? '"' + fixConfig.replace('"', '\\"') + '"' : 'null') +
+            '"' + prefix + 'Fix_Type__c": "' + fixType + '",' +
+            '"' + prefix + 'Is_Premium__c": ' + isPremium + ',' +
+            '"' + prefix + 'Fix_Config__c": ' + (fixConfig != null ? '"' + fixConfig.replace('"', '\\"') + '"' : 'null') +
         '}';
         return (Behavior_Pattern_Rule__mdt) JSON.deserialize(jsonRule, Behavior_Pattern_Rule__mdt.class);
     }
@@ -2274,12 +2289,13 @@ private with sharing class PatternFixServiceTest {
         Case c = new Case(Subject = 'Test Null Type', Status = 'New');
         insert c;
 
+        String prefix = getFieldPrefix();
         String jsonRule = '{' +
             '"DeveloperName": "Test_Rule",' +
             '"MasterLabel": "Test Rule",' +
-            '"Fix_Type__c": null,' +
-            '"Is_Premium__c": false,' +
-            '"Fix_Config__c": "{}"' +
+            '"' + prefix + 'Fix_Type__c": null,' +
+            '"' + prefix + 'Is_Premium__c": false,' +
+            '"' + prefix + 'Fix_Config__c": "{}"' +
         '}';
         PatternFixService.mockRule = (Behavior_Pattern_Rule__mdt) JSON.deserialize(jsonRule, Behavior_Pattern_Rule__mdt.class);
 
@@ -2451,13 +2467,14 @@ private with sharing class PatternFixServiceTest {
         Case c = new Case(Subject = 'Test Apex Plugin', Status = 'New');
         insert c;
 
+        String prefix = getFieldPrefix();
         String jsonRule = '{' +
             '"DeveloperName": "Test_Rule",' +
             '"MasterLabel": "Test Rule",' +
-            '"Fix_Type__c": "Apex_Plugin",' +
-            '"Is_Premium__c": false,' +
-            '"Fix_Config__c": "{}",' +
-            '"Apex_Handler_Class__c": "MockPatternPlugin"' +
+            '"' + prefix + 'Fix_Type__c": "Apex_Plugin",' +
+            '"' + prefix + 'Is_Premium__c": false,' +
+            '"' + prefix + 'Fix_Config__c": "{}",' +
+            '"' + prefix + 'Apex_Handler_Class__c": "MockPatternPlugin"' +
         '}';
         PatternFixService.mockRule = (Behavior_Pattern_Rule__mdt) JSON.deserialize(jsonRule, Behavior_Pattern_Rule__mdt.class);
 
@@ -2482,13 +2499,14 @@ private with sharing class PatternFixServiceTest {
         Case c = new Case(Subject = 'Test No Class', Status = 'New');
         insert c;
 
+        String prefix = getFieldPrefix();
         String jsonRule = '{' +
             '"DeveloperName": "Test_Rule",' +
             '"MasterLabel": "Test Rule",' +
-            '"Fix_Type__c": "Apex_Plugin",' +
-            '"Is_Premium__c": false,' +
-            '"Fix_Config__c": "{}",' +
-            '"Apex_Handler_Class__c": null' +
+            '"' + prefix + 'Fix_Type__c": "Apex_Plugin",' +
+            '"' + prefix + 'Is_Premium__c": false,' +
+            '"' + prefix + 'Fix_Config__c": "{}",' +
+            '"' + prefix + 'Apex_Handler_Class__c": null' +
         '}';
         PatternFixService.mockRule = (Behavior_Pattern_Rule__mdt) JSON.deserialize(jsonRule, Behavior_Pattern_Rule__mdt.class);
 
@@ -2976,15 +2994,16 @@ private with sharing class PatternFixServiceTest {
         insert c;
 
         // Create rule with Apex_Plugin but no handler class
+        String prefix = getFieldPrefix();
         String jsonRule = '{' +
             '"DeveloperName": "Plugin_No_Handler",' +
             '"MasterLabel": "Plugin Without Handler",' +
-            '"Object_API_Name__c": "Case",' +
-            '"Query_Condition__c": "Status = \'New\'",' +
-            '"Is_Premium__c": false,' +
-            '"Logic_Type__c": "Apex_Plugin",' +
-            '"Apex_Handler_Class__c": "",' +
-            '"Fix_Config__c": "{}"' +
+            '"' + prefix + 'Object_API_Name__c": "Case",' +
+            '"' + prefix + 'Query_Condition__c": "Status = \'New\'",' +
+            '"' + prefix + 'Is_Premium__c": false,' +
+            '"' + prefix + 'Logic_Type__c": "Apex_Plugin",' +
+            '"' + prefix + 'Apex_Handler_Class__c": "",' +
+            '"' + prefix + 'Fix_Config__c": "{}"' +
         '}';
         PatternFixService.mockRule = (Behavior_Pattern_Rule__mdt) JSON.deserialize(jsonRule, Behavior_Pattern_Rule__mdt.class);
 
@@ -3020,15 +3039,16 @@ private with sharing class PatternFixServiceTest {
         insert c;
 
         // Create rule with non-existent plugin class
+        String prefix = getFieldPrefix();
         String jsonRule = '{' +
             '"DeveloperName": "Plugin_Invalid",' +
             '"MasterLabel": "Invalid Plugin",' +
-            '"Object_API_Name__c": "Case",' +
-            '"Query_Condition__c": "Status = \'New\'",' +
-            '"Is_Premium__c": false,' +
-            '"Logic_Type__c": "Apex_Plugin",' +
-            '"Apex_Handler_Class__c": "NonExistentPluginClass",' +
-            '"Fix_Config__c": "{}"' +
+            '"' + prefix + 'Object_API_Name__c": "Case",' +
+            '"' + prefix + 'Query_Condition__c": "Status = \'New\'",' +
+            '"' + prefix + 'Is_Premium__c": false,' +
+            '"' + prefix + 'Logic_Type__c": "Apex_Plugin",' +
+            '"' + prefix + 'Apex_Handler_Class__c": "NonExistentPluginClass",' +
+            '"' + prefix + 'Fix_Config__c": "{}"' +
         '}';
         PatternFixService.mockRule = (Behavior_Pattern_Rule__mdt) JSON.deserialize(jsonRule, Behavior_Pattern_Rule__mdt.class);
 

@@ -30,7 +30,7 @@ private with sharing class MissingAttachmentPluginTest {
         insert testUser;
 
         // Assign BehaviorIQ_Admin permission set
-        PermissionSet ps = [SELECT Id FROM PermissionSet WHERE Name = 'BehaviorIQ_Admin' LIMIT 1];
+        PermissionSet ps = [SELECT Id FROM PermissionSet WHERE Label = 'BehaviorIQ Admin' LIMIT 1];
         insert new PermissionSetAssignment(AssigneeId = testUser.Id, PermissionSetId = ps.Id);
     }
 

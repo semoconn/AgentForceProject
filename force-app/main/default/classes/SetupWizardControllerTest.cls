@@ -5,6 +5,17 @@
 @IsTest
 public with sharing class SetupWizardControllerTest {
 
+    /**
+     * @description Gets the namespace prefix for object names in a managed package org.
+     */
+    private static String getNamespacePrefix() {
+        String className = SetupWizardControllerTest.class.getName();
+        if (className.contains('.')) {
+            return className.substringBefore('.') + '__';
+        }
+        return '';
+    }
+
     @TestSetup
     static void makeData() {
         // Create a standard test user
@@ -64,11 +75,13 @@ public with sharing class SetupWizardControllerTest {
         insert fieldPerms;
     }
     
-    // Helper to create Object Permissions
+    // Helper to create Object Permissions (adds namespace prefix for managed package)
     private static ObjectPermissions createObjPerm(Id psId, String objName) {
+        String prefix = getNamespacePrefix();
+        String fullObjName = prefix + objName;
         return new ObjectPermissions(
             ParentId = psId,
-            SobjectType = objName,
+            SobjectType = fullObjName,
             PermissionsCreate = true,
             PermissionsRead = true,
             PermissionsEdit = true,
@@ -76,12 +89,15 @@ public with sharing class SetupWizardControllerTest {
         );
     }
 
-    // Helper to create Field Permissions
+    // Helper to create Field Permissions (adds namespace prefix for managed package)
     private static FieldPermissions createFieldPerm(Id psId, String obj, String field) {
+        String prefix = getNamespacePrefix();
+        String fullObjName = prefix + obj;
+        String fullFieldName = prefix + field;
         return new FieldPermissions(
             ParentId = psId,
-            SobjectType = obj,
-            Field = obj + '.' + field,
+            SobjectType = fullObjName,
+            Field = fullObjName + '.' + fullFieldName,
             PermissionsRead = true,
             PermissionsEdit = true
         );
