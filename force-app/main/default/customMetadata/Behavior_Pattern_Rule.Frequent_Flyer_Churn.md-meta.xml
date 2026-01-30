@@ -20,7 +20,7 @@
     </values>
     <values>
         <field>Fix_Config__c</field>
-        <value xsi:type="xsd:string">{"subject": "CHURN ALERT: Hot Account Has Open High-Priority Case", "priority": "High", "description": "A Hot-rated account has an open high-priority case. This customer may be at risk of churning. Prioritize resolution immediately to prevent customer loss."}</value>
+        <value xsi:type="xsd:string">{"subject": "CHURN ALERT: Hot Account Has Open High-Priority Case", "priority": "High", "description": "A Hot-rated account has an open high-priority case. This customer may be at risk of churning. Prioritize resolution immediately to prevent customer loss.", "manualFixSteps": ["Open each case from the Affected Records table - these are CRITICAL churn risk situations", "Escalate to your senior support team immediately - do not let these languish in queue", "Review the case history and the account relationship to understand the customer context", "Contact the customer proactively to acknowledge the issue and provide a resolution timeline", "If the issue is product-related: Loop in Product or Engineering for faster resolution", "After resolution: Have an Account Manager or CSM reach out to rebuild the relationship", "Log all interactions and resolution steps for future reference", "Consider offering goodwill gestures (credits, extended support) to retain the customer"]}</value>
     </values>
     <values>
         <field>Is_Premium__c</field>

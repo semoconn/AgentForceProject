@@ -20,7 +20,7 @@
     </values>
     <values>
         <field>Fix_Config__c</field>
-        <value xsi:type="xsd:string">{"strategy": "RoundRobin", "group": "Sales_Team_A", "useAssignmentRules": true}</value>
+        <value xsi:type="xsd:string">{"strategy": "RoundRobin", "group": "Sales_Team_A", "useAssignmentRules": true, "manualFixSteps": ["Open each unassigned lead from the Affected Records table - time is critical for lead response", "Review the lead source, company, and lead score to determine the best assignee", "Assign the lead to an active sales rep using Change Owner or Lead Assignment Rules", "If using round-robin: Use the queue list view to claim leads fairly across the team", "Notify the new owner immediately so they can begin outreach - leads go cold quickly", "If the lead is high priority: Ensure outreach happens within the same business day", "Review why leads are sitting unassigned: are reps checking the queue regularly?", "To prevent this: Implement auto-assignment rules or Salesforce Flow for immediate routing"]}</value>
     </values>
     <values>
         <field>Is_Premium__c</field>

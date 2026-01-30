@@ -24,7 +24,7 @@
     </values>
     <values>
         <field>Fix_Config__c</field>
-        <value xsi:type="xsd:string">{"duplicateField": "Email", "excludeNulls": true, "subject": "Review &amp; Merge Duplicate Contact", "priority": "Normal", "description": "This contact has a duplicate email address. Review both records and merge or delete to maintain data quality."}</value>
+        <value xsi:type="xsd:string">{"duplicateField": "Email", "excludeNulls": true, "subject": "Review &amp; Merge Duplicate Contact", "priority": "Normal", "description": "This contact has a duplicate email address. Review both records and merge or delete to maintain data quality.", "manualFixSteps": ["Open each duplicate contact from the Affected Records table below", "Compare both contact records side-by-side: check Account association, job title, and activity history", "Identify the master record (typically the one with more complete data or recent activity)", "Navigate to Setup &gt; Data Management &gt; Duplicate Management to use the built-in merge tool", "If no merge tool access: Manually copy important data from the duplicate to the master record", "Delete the duplicate record after confirming all data has been preserved", "Consider enabling Duplicate Rules in Setup &gt; Duplicate Management to prevent future duplicates"]}</value>
     </values>
     <values>
         <field>Is_Premium__c</field>

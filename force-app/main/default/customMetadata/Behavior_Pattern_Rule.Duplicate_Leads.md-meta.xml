@@ -24,7 +24,7 @@
     </values>
     <values>
         <field>Fix_Config__c</field>
-        <value xsi:type="xsd:string">{"duplicateField": "Email", "excludeNulls": true, "subject": "Review &amp; Merge Duplicate Lead", "priority": "Normal", "description": "This lead has a duplicate email address. Review both records and merge or delete to maintain data quality."}</value>
+        <value xsi:type="xsd:string">{"duplicateField": "Email", "excludeNulls": true, "subject": "Review &amp; Merge Duplicate Lead", "priority": "Normal", "description": "This lead has a duplicate email address. Review both records and merge or delete to maintain data quality.", "manualFixSteps": ["Open each duplicate lead from the Affected Records table below", "Compare both lead records: check lead source, status, campaign membership, and activity history", "Identify the master record (typically the one with more engagement or recent activity)", "Navigate to the Lead record and click Find Duplicates or use Merge Leads from the dropdown menu", "In the merge wizard, select which field values to retain from each record", "If one lead is already converted: Delete the unconverted duplicate to avoid confusion", "If neither is converted: Merge into the lead with better data quality, then continue nurturing", "Enable Duplicate Rules in Setup &gt; Duplicate Management to catch duplicates at creation time"]}</value>
     </values>
     <values>
         <field>Is_Premium__c</field>

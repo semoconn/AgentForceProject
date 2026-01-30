@@ -56,10 +56,14 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
     // Track rule-level errors for health reporting (Database.Stateful preserves across batches)
     private List<String> ruleErrors = new List<String>();
 
+    // Track processed rule keys during batch execution for stale pain point detection
+    private Set<String> processedRuleKeys = new Set<String>();
+
     public PatternAnalysisService() {
         dismissedPainPointKeys = new Set<String>();
         pendingSnapshots = new List<Behavior_Snapshot__c>();
         ruleErrors = new List<String>();
+        processedRuleKeys = new Set<String>();
         loadDismissals();
     }
 
@@ -137,6 +141,9 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
         }
 
         if (detectedRecords == null || detectedRecords.isEmpty()) {
+            // Track rule as processed and mark any existing pain point as resolved
+            processedRuleKeys.add(rule.DeveloperName);
+            markPainPointResolved(rule.DeveloperName);
             return;
         }
 
@@ -589,7 +596,7 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
             return false;
         }
 
-        // Get the related object type
+        // Get the related object type(s) - polymorphic fields like OwnerId can reference multiple objects
         Schema.DescribeFieldResult fieldDescribe = lookupField.getDescribe();
         List<Schema.SObjectType> referenceTo = fieldDescribe.getReferenceTo();
 
@@ -597,30 +604,41 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
             return false;
         }
 
-        // Check if the target field on the related object is accessible
-        Schema.SObjectType relatedType = referenceTo[0];
-        Map<String, Schema.SObjectField> relatedFields = relatedType.getDescribe().fields.getMap();
+        // Check if the target field is accessible on ANY of the referenced objects
+        // This handles polymorphic fields like OwnerId which references both Group and User
+        for (Schema.SObjectType relatedType : referenceTo) {
+            Map<String, Schema.SObjectField> relatedFields = relatedType.getDescribe().fields.getMap();
+            Schema.SObjectField targetFieldRef = relatedFields.get(targetField.toLowerCase());
 
-        Schema.SObjectField targetFieldRef = relatedFields.get(targetField.toLowerCase());
-        if (targetFieldRef == null) {
-            System.debug(LoggingLevel.DEBUG, 'Target field not found: ' + targetField + ' on ' + relatedType.getDescribe().getName());
-            return false;
+            if (targetFieldRef != null && targetFieldRef.getDescribe().isAccessible()) {
+                return true; // Found the field and it's accessible on this related object
+            }
         }
 
-        return targetFieldRef.getDescribe().isAccessible();
+        // Field not found or not accessible on any referenced object
+        System.debug(LoggingLevel.DEBUG, 'Target field not found or not accessible: ' + targetField + ' on any of ' + referenceTo);
+        return false;
     }
 
     /**
-     * @description Checks if a token is a known SOQL literal or keyword that isn't a field.
+     * @description Checks if a token is a known SOQL literal, keyword, or function that isn't a field.
      * @param token The token to check
-     * @return True if this is a known SOQL literal
+     * @return True if this is a known SOQL literal or function
      */
     private static Boolean isKnownSoqlLiteral(String token) {
         Set<String> literals = new Set<String>{
-            'TRUE', 'FALSE', 'NULL', 'TODAY', 'YESTERDAY', 'TOMORROW',
+            // Boolean and null literals
+            'TRUE', 'FALSE', 'NULL',
+            // Date literals
+            'TODAY', 'YESTERDAY', 'TOMORROW',
             'LAST_WEEK', 'THIS_WEEK', 'NEXT_WEEK', 'LAST_MONTH', 'THIS_MONTH',
             'NEXT_MONTH', 'LAST_QUARTER', 'THIS_QUARTER', 'NEXT_QUARTER',
-            'LAST_YEAR', 'THIS_YEAR', 'NEXT_YEAR'
+            'LAST_YEAR', 'THIS_YEAR', 'NEXT_YEAR',
+            // SOQL Date Functions (used in WHERE clauses)
+            'DAY_IN_WEEK', 'DAY_IN_MONTH', 'DAY_IN_YEAR', 'DAY_ONLY',
+            'CALENDAR_MONTH', 'CALENDAR_QUARTER', 'CALENDAR_YEAR',
+            'FISCAL_MONTH', 'FISCAL_QUARTER', 'FISCAL_YEAR',
+            'HOUR_IN_DAY', 'WEEK_IN_MONTH', 'WEEK_IN_YEAR'
         };
         return literals.contains(token.toUpperCase());
     }
@@ -784,6 +802,8 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
     }
 
     public void finish(Database.BatchableContext bc) {
+        // Refresh existing pain points to resolve orphaned/stale entries
+        refreshExistingPainPoints();
         insertPendingSnapshots();
         logJobStatus(bc);
         deleteOldLogs();
@@ -792,6 +812,32 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
     // --- HELPER METHODS ---
 
     private void upsertPainPoint(String key, String label, String description, String obj, Integer count, String examples, Decimal totalImpact) {
+        // Query existing pain point to preserve user-set statuses
+        String effectiveStatus = 'New';
+        List<Identified_Pain_Point__c> existing = [
+            SELECT Id, Status__c FROM Identified_Pain_Point__c
+            WHERE Unique_Key__c = :key
+            WITH USER_MODE
+            LIMIT 1
+        ];
+
+        if (!existing.isEmpty()) {
+            String currentStatus = existing[0].Status__c;
+            if (currentStatus == 'Dismissed') {
+                // Always preserve Dismissed - user explicitly ignored this pain point
+                effectiveStatus = 'Dismissed';
+            } else if (currentStatus == 'Resolved' && count > 0) {
+                // Re-activate resolved pain point if records reappear
+                effectiveStatus = 'New';
+            } else if (currentStatus == 'Acknowledged') {
+                // Preserve Acknowledged - user acknowledged but hasn't fixed
+                effectiveStatus = 'Acknowledged';
+            } else if (currentStatus == 'New') {
+                // Keep as New
+                effectiveStatus = 'New';
+            }
+        }
+
         Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
             Unique_Key__c = key,
             Name = label,
@@ -801,7 +847,7 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
             Impact_Score__c = totalImpact,
             Example_Records__c = examples,
             Last_Detected__c = System.now(),
-            Status__c = 'New'
+            Status__c = effectiveStatus
         );
 
         try {
@@ -818,8 +864,122 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
                 Id painPointId = results[0].getId();
                 createSnapshot(key, count, totalImpact, painPointId);
             }
+
+            // Track this rule as processed for stale detection
+            processedRuleKeys.add(key);
         } catch (Exception e) {
             System.debug(LoggingLevel.ERROR, 'Upsert failed: ' + e.getMessage());
+        }
+    }
+
+    /**
+     * @description Marks an existing pain point as resolved when detection returns 0 results.
+     * Preserves 'Dismissed' status (user intentionally ignored this pain point).
+     * @param ruleKey The unique key (DeveloperName) of the rule
+     */
+    private void markPainPointResolved(String ruleKey) {
+        try {
+            List<Identified_Pain_Point__c> existing = [
+                SELECT Id, Status__c, Occurrences__c
+                FROM Identified_Pain_Point__c
+                WHERE Unique_Key__c = :ruleKey
+                WITH USER_MODE
+                LIMIT 1
+            ];
+
+            if (existing.isEmpty()) {
+                return; // No existing pain point to resolve
+            }
+
+            Identified_Pain_Point__c pp = existing[0];
+
+            // Preserve Dismissed status - user explicitly ignored this pain point
+            if (pp.Status__c == 'Dismissed') {
+                return;
+            }
+
+            // Only update if not already resolved
+            if (pp.Status__c != 'Resolved') {
+                pp.Status__c = 'Resolved';
+                pp.Occurrences__c = 0;
+                pp.Example_Records__c = null;
+                pp.Last_Detected__c = System.now();
+
+                SObjectAccessDecision securityDecision = Security.stripInaccessible(AccessType.UPDATABLE, new List<Identified_Pain_Point__c>{pp});
+                Database.update(securityDecision.getRecords(), false);
+            }
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'Failed to mark pain point resolved [' + ruleKey + ']: ' + e.getMessage());
+        }
+    }
+
+    /**
+     * @description Refreshes existing pain points that weren't processed in this batch run.
+     * This handles orphaned pain points (rules deleted/deactivated) by marking them as resolved.
+     * Called at the end of batch execution to ensure data consistency.
+     */
+    private void refreshExistingPainPoints() {
+        try {
+            // Query all active pain points that weren't processed in this run
+            List<Identified_Pain_Point__c> activePainPoints = [
+                SELECT Id, Unique_Key__c, Status__c, Occurrences__c
+                FROM Identified_Pain_Point__c
+                WHERE Status__c NOT IN ('Resolved', 'Dismissed')
+                WITH USER_MODE
+                LIMIT 1000
+            ];
+
+            if (activePainPoints.isEmpty()) {
+                return;
+            }
+
+            // Build set of active rule keys for lookup
+            Set<String> activeRuleKeys = new Set<String>();
+            for (Behavior_Pattern_Rule__mdt rule : [
+                SELECT DeveloperName FROM Behavior_Pattern_Rule__mdt WHERE Is_Active__c != false
+            ]) {
+                activeRuleKeys.add(rule.DeveloperName);
+            }
+
+            List<Identified_Pain_Point__c> toUpdate = new List<Identified_Pain_Point__c>();
+
+            for (Identified_Pain_Point__c pp : activePainPoints) {
+                String key = pp.Unique_Key__c;
+
+                // Skip if already processed in this batch run
+                if (processedRuleKeys.contains(key)) {
+                    continue;
+                }
+
+                // Check if this is an orphaned pain point (rule deleted or deactivated)
+                // Also handle timestamped keys from partial fixes (e.g., "Rule_Name_20240130")
+                String baseKey = key;
+                if (key != null && key.contains('_') && key.length() > 14) {
+                    // Try to extract base rule name (remove timestamp suffix if present)
+                    Integer lastUnderscore = key.lastIndexOf('_');
+                    String possibleTimestamp = key.substring(lastUnderscore + 1);
+                    if (possibleTimestamp.length() == 13 && possibleTimestamp.isNumeric()) {
+                        baseKey = key.substring(0, lastUnderscore);
+                    }
+                }
+
+                // If the rule no longer exists or is inactive, mark the pain point as resolved
+                if (!activeRuleKeys.contains(key) && !activeRuleKeys.contains(baseKey)) {
+                    pp.Status__c = 'Resolved';
+                    pp.Occurrences__c = 0;
+                    pp.Example_Records__c = null;
+                    pp.Last_Detected__c = System.now();
+                    toUpdate.add(pp);
+                }
+            }
+
+            if (!toUpdate.isEmpty()) {
+                SObjectAccessDecision securityDecision = Security.stripInaccessible(AccessType.UPDATABLE, toUpdate);
+                Database.update(securityDecision.getRecords(), false);
+                System.debug(LoggingLevel.INFO, 'PatternAnalysisService: Resolved ' + toUpdate.size() + ' orphaned pain points');
+            }
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'Failed to refresh existing pain points: ' + e.getMessage());
         }
     }
 
@@ -1336,7 +1496,7 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
         } else if (objLower == 'task') {
             fields = new List<String>{ 'Id', 'Subject', 'Status', 'Priority', 'ActivityDate', 'CreatedDate', 'OwnerId' };
         } else if (objLower == 'contract') {
-            fields = new List<String>{ 'Id', 'ContractNumber', 'Status', 'StartDate', 'EndDate', 'AccountId', 'CreatedDate', 'OwnerId' };
+            fields = new List<String>{ 'Id', 'ContractNumber', 'Status', 'StartDate', 'EndDate', 'AccountId', 'Account.Name', 'CreatedDate', 'OwnerId' };
         } else {
             // Default fields for any other object (including custom objects like Project__c)
             // Uses dynamic field detection for custom objects

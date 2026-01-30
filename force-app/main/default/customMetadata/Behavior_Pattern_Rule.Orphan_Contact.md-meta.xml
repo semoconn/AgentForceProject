@@ -16,7 +16,7 @@
     </values>
     <values>
         <field>Fix_Config__c</field>
-        <value xsi:type="xsd:string">{"subject": "Link Contact to Account", "priority": "Normal", "description": "This contact has no associated account. Please review and link to the appropriate account for proper relationship tracking."}</value>
+        <value xsi:type="xsd:string">{"subject": "Link Contact to Account", "priority": "Normal", "description": "This contact has no associated account. Please review and link to the appropriate account for proper relationship tracking.", "manualFixSteps": ["Open each orphan contact from the Affected Records table below", "Review the contact details: check the email domain, company field, or mailing address", "Search for an existing Account that matches the contact company or email domain", "If a matching Account exists: Edit the contact and set the Account lookup field", "If no Account exists: Create a new Account for their company, then link the contact", "Check if this contact should be a Person Account instead (if your org uses Person Accounts)", "Review the contact source: if from web forms or imports, update the integration to require Account", "To prevent orphans: Make Account a required field on Contact or use validation rules"]}</value>
     </values>
     <values>
         <field>Is_Premium__c</field>

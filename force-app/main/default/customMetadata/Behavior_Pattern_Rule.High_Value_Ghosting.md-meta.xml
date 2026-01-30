@@ -20,7 +20,7 @@
     </values>
     <values>
         <field>Fix_Config__c</field>
-        <value xsi:type="xsd:string">{"subject": "URGENT: High-Value Opportunity Needs Attention", "priority": "High", "description": "This high-value opportunity (>$50K) has had no activity in 14+ days. Immediate action required to prevent deal loss."}</value>
+        <value xsi:type="xsd:string">{"subject": "URGENT: High-Value Opportunity Needs Attention", "priority": "High", "description": "This high-value opportunity (>$50K) has had no activity in 14+ days. Immediate action required to prevent deal loss.", "manualFixSteps": ["Open each high-value opportunity from the Affected Records table - these require IMMEDIATE attention", "Review the opportunity stage, close date, and last activity to understand current status", "Check if the deal is stalled: contact the prospect via phone or email within 24 hours", "Update the opportunity with notes on current status and realistic next steps", "If the deal is dead: Update stage to Closed Lost with a reason to clean up the pipeline", "If still viable: Schedule a follow-up activity and update the close date if needed", "Notify sales management about any deals at risk that need executive intervention", "Set up Activity Alerts in Salesforce to get notified before deals go inactive"]}</value>
     </values>
     <values>
         <field>Is_Premium__c</field>

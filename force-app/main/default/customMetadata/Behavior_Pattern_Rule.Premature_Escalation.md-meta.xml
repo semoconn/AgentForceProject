@@ -20,7 +20,7 @@
     </values>
     <values>
         <field>Fix_Config__c</field>
-        <value xsi:type="xsd:string">{"field": "IsEscalated", "value": "false", "postChatter": true, "chatterMessage": "Auto-remediated by BehaviorIQ: Please complete Tier-1 troubleshooting checklist before re-escalating."}</value>
+        <value xsi:type="xsd:string">{"field": "IsEscalated", "value": "false", "postChatter": true, "chatterMessage": "Auto-remediated by BehaviorIQ: Please complete Tier-1 troubleshooting checklist before re-escalating.", "manualFixSteps": ["Open each prematurely escalated case from the Affected Records table", "Review the case details to confirm it was escalated without completing Tier-1 troubleshooting", "Check if basic troubleshooting steps were documented (restart, clear cache, verify settings)", "If troubleshooting was skipped: Un-escalate the case and return to the original agent", "If troubleshooting was done but not documented: Add notes and keep escalated if warranted", "Coach the agent on proper escalation procedures and when escalation is appropriate", "Update your Escalation Checklist to ensure all required steps are completed before escalation", "Consider implementing Validation Rules to require certain fields before the IsEscalated flag can be set"]}</value>
     </values>
     <values>
         <field>Is_Premium__c</field>

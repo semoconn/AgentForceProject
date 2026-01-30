@@ -8,7 +8,7 @@
     </values>
     <values>
         <field>Query_Condition__c</field>
-        <value xsi:type="xsd:string">Owner.IsActive = false AND IsConverted = false</value>
+        <value xsi:type="xsd:string">Owner.IsActive = false AND Status != 'Converted'</value>
     </values>
     <values>
         <field>Fix_Type__c</field>
@@ -16,7 +16,7 @@
     </values>
     <values>
         <field>Fix_Config__c</field>
-        <value xsi:type="xsd:string">{"taskSubject": "Reassign lead from inactive owner", "taskPriority": "High"}</value>
+        <value xsi:type="xsd:string">{"subject": "Reassign lead from inactive owner", "priority": "High", "description": "This unconverted lead is owned by a deactivated user. Reassignment is needed to prevent lost sales opportunities.", "manualFixSteps": ["Open each lead from the Affected Records table below - URGENT as sales opportunities may be lost", "Click the Change Owner button to reassign the lead", "Use Lead Assignment Rules if available, or manually assign to an appropriate sales rep", "Review the lead status and activity history to understand where they are in the sales process", "If the lead is cold: Consider re-engaging with a fresh outreach campaign", "If the lead is hot: Prioritize immediate follow-up by the new owner", "To prevent this issue: Create a Flow to auto-route leads to a queue when the owner is deactivated"]}</value>
     </values>
     <values>
         <field>Is_Premium__c</field>

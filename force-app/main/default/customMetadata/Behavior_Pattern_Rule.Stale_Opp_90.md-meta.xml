@@ -20,7 +20,7 @@
     </values>
     <values>
         <field>Fix_Config__c</field>
-        <value xsi:type="xsd:string">{"subject": "Review Stale Opportunity - 90+ Days in Stage", "priority": "High", "description": "This opportunity has been stagnant for 90+ days and requires manager review to determine next steps or close as lost."}</value>
+        <value xsi:type="xsd:string">{"subject": "Review Stale Opportunity - 90+ Days in Stage", "priority": "High", "description": "This opportunity has been stagnant for 90+ days and requires manager review to determine next steps or close as lost.", "manualFixSteps": ["Open each stale opportunity from the Affected Records table", "Review the opportunity history: when was the last customer interaction?", "Check if the deal is truly stalled or if activities were just not logged", "Contact the prospect to re-engage and understand their current situation", "If the deal is still viable: Update the stage, close date, and add next steps", "If the deal is dead: Change to Closed Lost with a specific loss reason for reporting", "Discuss with your manager if the deal needs executive intervention or escalation", "Update your pipeline hygiene practices to review opportunities weekly to catch stalls earlier"]}</value>
     </values>
     <values>
         <field>Is_Premium__c</field>

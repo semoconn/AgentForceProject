@@ -16,7 +16,7 @@
     </values>
     <values>
         <field>Fix_Config__c</field>
-        <value xsi:type="xsd:string">{"subject": "Link Case to Account/Contact", "priority": "Normal", "description": "This case has no account or contact association. Review and link to the appropriate customer for proper support context."}</value>
+        <value xsi:type="xsd:string">{"subject": "Link Case to Account/Contact", "priority": "Normal", "description": "This case has no account or contact association. Review and link to the appropriate customer for proper support context.", "manualFixSteps": ["Open each orphan case from the Affected Records table below", "Review the case details: check the Web Email, Supplied Email, or Description for customer identification", "Search for a matching Account or Contact using the email address or company name from the case", "If a match is found: Edit the case and populate the Account and/or Contact lookup fields", "If no match exists: Create a new Account/Contact first, then link to the case", "Check if this case came from Web-to-Case or Email-to-Case and update routing rules to auto-match", "To prevent orphans: Configure Case Assignment Rules to require Account/Contact or implement auto-matching logic"]}</value>
     </values>
     <values>
         <field>Is_Premium__c</field>

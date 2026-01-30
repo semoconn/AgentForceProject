@@ -20,7 +20,7 @@
     </values>
     <values>
         <field>Fix_Config__c</field>
-        <value xsi:type="xsd:string">{"message": "Expected seasonal pattern - no remediation needed. Weekend case volumes are informational only."}</value>
+        <value xsi:type="xsd:string">{"message": "Expected seasonal pattern - no remediation needed. Weekend case volumes are informational only.", "manualFixSteps": ["This is an informational pattern - no immediate action required", "Review weekend cases to identify common issues or product problems", "If volume is high: Consider adding weekend support coverage", "Look for self-service opportunities to reduce weekend case creation", "Check if certain case types spike on weekends (e.g., billing, access issues)", "Use this data to justify staffing or automation investments"]}</value>
     </values>
     <values>
         <field>Is_Premium__c</field>

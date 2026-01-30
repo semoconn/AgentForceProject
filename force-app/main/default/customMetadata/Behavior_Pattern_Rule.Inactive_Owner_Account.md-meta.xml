@@ -16,7 +16,7 @@
     </values>
     <values>
         <field>Fix_Config__c</field>
-        <value xsi:type="xsd:string">{"taskSubject": "Reassign account from inactive owner", "taskPriority": "Normal"}</value>
+        <value xsi:type="xsd:string">{"subject": "Reassign account from inactive owner", "priority": "Normal", "description": "This account is owned by a deactivated user and needs reassignment to maintain proper customer relationship management.", "manualFixSteps": ["Open each account from the Affected Records table below", "Click the Change Owner button (or Edit &gt; Owner field)", "Search for and select an active user who should own this account", "Consider the account territory, industry, or existing relationships when choosing the new owner", "Check if the account has related Contacts, Opportunities, or Cases that also need reassignment", "Notify the new owner about the account transfer so they can review and follow up", "To prevent this issue: Set up a Flow or Process Builder to auto-reassign records when users are deactivated"]}</value>
     </values>
     <values>
         <field>Is_Premium__c</field>

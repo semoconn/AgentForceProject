@@ -20,7 +20,7 @@
     </values>
     <values>
         <field>Fix_Config__c</field>
-        <value xsi:type="xsd:string">{"opportunityName": "Renewal - {ContractNumber}", "stageName": "Prospecting", "closeDate": "+30", "type": "Existing Customer - Renewal"}</value>
+        <value xsi:type="xsd:string">{"opportunityName": "Renewal - {ContractNumber}", "stageName": "Prospecting", "closeDate": "+30", "type": "Existing Customer - Renewal", "manualFixSteps": ["Open each expiring contract from the Affected Records table - URGENT revenue at risk", "Review the contract terms, value, and related Account to understand renewal potential", "Check if a Renewal Opportunity already exists - if not, create one immediately", "Contact the Account owner or CSM to initiate the renewal conversation", "Reach out to the customer to discuss renewal terms and any changes needed", "If customer wants to renew: Create the renewal opportunity and begin the quote process", "If customer is considering churning: Escalate to management and consider retention offers", "Update the contract status and add notes on the renewal outcome", "To prevent this: Set up automated renewal reminders 90, 60, and 30 days before expiry"]}</value>
     </values>
     <values>
         <field>Is_Premium__c</field>

@@ -95,6 +95,7 @@
 
                         <!-- List View of Recommendations -->
                         <template if:true={hasPainPoints}>
+                            <div class="pain-points-scroll-container">
                             <template for:each={filteredPainPoints} for:item="point">
                                 <div key={point.Id} class="recommendation-row slds-box slds-box_x-small slds-m-bottom_small">
                                     <div class="slds-grid slds-grid_align-spread slds-grid_vertical-align-center">
@@ -207,6 +208,7 @@
                                     </div>
                                 </div>
                             </template>
+                            </div>
                         </template>
 
                         <!-- Empty State -->

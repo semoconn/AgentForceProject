@@ -28,7 +28,7 @@
     </values>
     <values>
         <field>Fix_Config__c</field>
-        <value xsi:type="xsd:string">{"filterCondition": "Status = 'Closed' AND ClosedDate >= LAST_N_DAYS:30", "taskSubject": "Add resolution documentation to closed case"}</value>
+        <value xsi:type="xsd:string">{"filterCondition": "Status = 'Closed' AND ClosedDate >= LAST_N_DAYS:30", "taskSubject": "Add resolution documentation to closed case", "manualFixSteps": ["Open each case from the Affected Records table that is missing documentation", "Review the case resolution and internal comments to understand what was done", "Attach relevant documentation: screenshots, config files, email threads, or knowledge articles used", "If the resolution involved a workaround: Document the steps so other agents can reference them", "If a knowledge article was created: Link it to the case using the Knowledge sidebar", "Update the case resolution description with a clear summary of the fix", "To prevent this: Add a validation rule requiring attachments before cases can be closed", "Consider creating a Case Closure Checklist to ensure documentation is always included"]}</value>
     </values>
     <values>
         <field>Is_Premium__c</field>
