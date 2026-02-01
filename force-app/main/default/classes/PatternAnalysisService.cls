@@ -664,19 +664,52 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
         String ruleName = rule.DeveloperName;
         Decimal thresholdValue = null;
 
-        if (config != null) {
+        if (config != null && ruleName != null) {
             // Check for Stale_Case rules (days)
-            if (ruleName != null && ruleName.startsWithIgnoreCase('Stale_Case')) {
+            if (ruleName.startsWithIgnoreCase('Stale_Case')) {
                 thresholdValue = config.Stale_Case_Threshold__c;
             }
             // Check for Stale_Opp/Stale_Opportunity rules (days)
-            else if (ruleName != null && (ruleName.startsWithIgnoreCase('Stale_Opp') ||
-                                           ruleName.startsWithIgnoreCase('Stale_Opportunity'))) {
+            else if (ruleName.startsWithIgnoreCase('Stale_Opp') ||
+                     ruleName.startsWithIgnoreCase('Stale_Opportunity')) {
                 thresholdValue = config.Stale_Opportunity_Threshold__c;
+            }
+            // Check for Unassigned_Lead rules (hours converted to days)
+            else if (ruleName.startsWithIgnoreCase('Unassigned_Lead')) {
+                Decimal hours = config.Unassigned_Lead_Hours__c;
+                if (hours != null) {
+                    // Convert hours to days, rounding up (48 hours = 2 days)
+                    thresholdValue = Math.ceil(hours / 24);
+                }
+            }
+            // Check for Lead_Hoarding rules (days)
+            else if (ruleName.startsWithIgnoreCase('Lead_Hoarding')) {
+                thresholdValue = config.Lead_Hoarding_Days__c;
+            }
+            // Check for High_Value_Ghosting rules (days + amount)
+            else if (ruleName.startsWithIgnoreCase('High_Value')) {
+                thresholdValue = config.High_Value_Inactivity_Days__c;
+                // Also inject amount threshold
+                Decimal amountThreshold = config.High_Value_Amount_Threshold__c;
+                if (amountThreshold != null) {
+                    String amountPattern = 'Amount\\s*>\\s*\\d+';
+                    String amountReplacement = 'Amount > ' + amountThreshold.intValue();
+                    queryCondition = queryCondition.replaceAll(amountPattern, amountReplacement);
+                }
+            }
+            // Check for Contract_Expiry rules (uses NEXT_N_DAYS instead of LAST_N_DAYS)
+            else if (ruleName.startsWithIgnoreCase('Contract_Expiry')) {
+                Decimal expiryDays = config.Contract_Expiry_Days__c;
+                if (expiryDays != null) {
+                    String nextDaysPattern = 'NEXT_N_DAYS:\\d+';
+                    String nextDaysReplacement = 'NEXT_N_DAYS:' + expiryDays.intValue();
+                    queryCondition = queryCondition.replaceAll(nextDaysPattern, nextDaysReplacement);
+                }
+                // Don't set thresholdValue since we already handled the replacement
             }
         }
 
-        // Apply threshold substitution if we have a configured value
+        // Apply threshold substitution if we have a configured value (for LAST_N_DAYS patterns)
         if (thresholdValue != null) {
             // Use regex to replace LAST_N_DAYS:\d+ with the configured value
             // In Apex, \d needs to be escaped as \\d in the regex string
@@ -783,7 +816,10 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
                 // TC-6.1/6.2: Query config - CRUD check done above, class uses 'with sharing'
                 // Note: Configuration is admin-level data; if user lacks FLS, defaults are used (via catch block)
                 List<BehaviorIQ_Configuration__c> configs = [
-                    SELECT Id, Stale_Case_Threshold__c, Stale_Opportunity_Threshold__c, Global_Exclusion_Filter__c
+                    SELECT Id, Stale_Case_Threshold__c, Stale_Opportunity_Threshold__c,
+                           Unassigned_Lead_Hours__c, Lead_Hoarding_Days__c,
+                           High_Value_Inactivity_Days__c, High_Value_Amount_Threshold__c,
+                           Contract_Expiry_Days__c, Global_Exclusion_Filter__c
                     FROM BehaviorIQ_Configuration__c
                     LIMIT 1
                 ];

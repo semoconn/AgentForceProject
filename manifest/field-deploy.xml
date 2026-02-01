@@ -3,6 +3,11 @@
     <types>
         <members>BehaviorIQ_Configuration__c.Stale_Case_Threshold__c</members>
         <members>BehaviorIQ_Configuration__c.Stale_Opportunity_Threshold__c</members>
+        <members>BehaviorIQ_Configuration__c.Unassigned_Lead_Hours__c</members>
+        <members>BehaviorIQ_Configuration__c.Lead_Hoarding_Days__c</members>
+        <members>BehaviorIQ_Configuration__c.High_Value_Inactivity_Days__c</members>
+        <members>BehaviorIQ_Configuration__c.High_Value_Amount_Threshold__c</members>
+        <members>BehaviorIQ_Configuration__c.Contract_Expiry_Days__c</members>
         <name>CustomField</name>
     </types>
     <version>63.0</version>

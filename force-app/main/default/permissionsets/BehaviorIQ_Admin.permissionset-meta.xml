@@ -70,6 +70,31 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>BehaviorIQ_Configuration__c.Unassigned_Lead_Hours__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>BehaviorIQ_Configuration__c.Lead_Hoarding_Days__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>BehaviorIQ_Configuration__c.High_Value_Inactivity_Days__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>BehaviorIQ_Configuration__c.High_Value_Amount_Threshold__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>BehaviorIQ_Configuration__c.Contract_Expiry_Days__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Behavior_Log__c.Action_Name__c</field>
         <readable>true</readable>
     </fieldPermissions>
