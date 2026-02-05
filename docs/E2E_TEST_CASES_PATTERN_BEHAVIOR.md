@@ -42,7 +42,29 @@ sf org assign permset -n BehaviorIQ_User -o <your-scratch-org> -u <standard-user
    - Review pattern rules
 4. Verify Setup Wizard completion
 
-### Step 4: Run Test Data Script
+### Step 4: Create Lead Queue (For Unassigned_Lead_48 Testing)
+
+The `Unassigned_Lead_48` pattern detects Leads owned by a **Queue** (not null owner). You must create a Lead Queue before testing this pattern.
+
+1. **Find existing Lead Queues:**
+   ```bash
+   sf apex run --file scripts/apex/find_lead_queues.apex --target-org <your-scratch-org>
+   ```
+
+2. **If no queues exist, create one in Setup:**
+   - Go to Setup > Queues > New
+   - Name: "Unassigned Leads"
+   - Add "Lead" to Supported Objects
+   - Add yourself as Queue Member
+   - Save and note the Queue ID
+
+3. **Create test Leads assigned to the Queue:**
+   - Use Data Loader with "Set Audit Fields" enabled to backdate CreatedDate > 48 hours
+   - Leads must have Status = 'Open - Not Contacted'
+
+> **Note:** "Unassigned" means `Owner.Type = 'Queue'`, not a null Owner field. The standard test data script does NOT create queue-owned leads.
+
+### Step 5: Run Test Data Script
 ```bash
 sf apex run --file scripts/apex/e2e_security_test_data.apex --target-org <your-scratch-org>
 ```
@@ -91,8 +113,8 @@ System.debug('License set to: ' + license.Status__c);
 |---------|--------|---------------------|----------|------|
 | High_Value_Ghosting | Opportunity | **Yes** | Task_Creation | $2,500 |
 | Stale_Opp_90 | Opportunity | No (90-day aging) | Task_Creation | $1,000 |
-| Unassigned_Lead_48 | Lead | No (48-hour aging) | Owner_Assignment | $200 |
-| Lead_Hoarding | Lead | No (5-day aging) | Owner_Assignment | $150 |
+| Unassigned_Lead_48 | Lead | No (48-hour aging) | Task_Creation | $150 |
+| Lead_Hoarding | Lead | No (5-day aging) | Task_Creation | $150 |
 | Duplicate_Leads | Lead | **Yes** | Task_Creation | $100 |
 | Duplicate_Contacts | Contact | **Yes** | Task_Creation | $100 |
 | Duplicate_Accounts | Account | **Yes** | Task_Creation | $100 |
@@ -272,7 +294,7 @@ Set license to PREMIUM before running these tests.
 
 ## Premium Tier Test Suite
 
-### PT-1.1: High Value Ghosting Detection
+### PT-1.1: High Value Ghosting Detection - Verified
 
 **Objective:** Verify opportunities >$50K with no activity are detected.
 
@@ -311,7 +333,7 @@ WHERE Unique_Key__c = 'High_Value_Ghosting'
 
 ---
 
-### PT-1.2: Duplicate Leads Detection
+### PT-1.2: Duplicate Leads Detection - Verified
 
 **Objective:** Verify leads with duplicate email addresses are detected.
 
@@ -339,7 +361,7 @@ WHERE Unique_Key__c = 'High_Value_Ghosting'
 
 ---
 
-### PT-1.3: Duplicate Contacts Detection
+### PT-1.3: Duplicate Contacts Detection - Verified
 
 **Objective:** Verify contacts with duplicate email addresses are detected.
 
@@ -355,7 +377,7 @@ WHERE Unique_Key__c = 'High_Value_Ghosting'
 
 ---
 
-### PT-1.4: Duplicate Accounts Detection
+### PT-1.4: Duplicate Accounts Detection - Verified
 
 **Objective:** Verify accounts with duplicate names are detected.
 
@@ -375,7 +397,7 @@ WHERE Unique_Key__c = 'High_Value_Ghosting'
 
 ---
 
-### PT-1.5: Orphan Contact Detection
+### PT-1.5: Orphan Contact Detection - Verified
 
 **Objective:** Verify contacts without accounts are detected.
 
@@ -391,7 +413,7 @@ WHERE Unique_Key__c = 'High_Value_Ghosting'
 
 ---
 
-### PT-1.6: Orphan Opportunity Detection
+### PT-1.6: Orphan Opportunity Detection - Verified
 
 **Objective:** Verify opportunities without accounts are detected.
 
@@ -406,7 +428,7 @@ WHERE Unique_Key__c = 'High_Value_Ghosting'
 
 ---
 
-### PT-1.7: Orphan Case Detection
+### PT-1.7: Orphan Case Detection - Verified
 
 **Objective:** Verify cases without accounts are detected.
 
@@ -421,7 +443,7 @@ WHERE Unique_Key__c = 'High_Value_Ghosting'
 
 ---
 
-### PT-1.8: Frequent Flyer Churn Detection
+### PT-1.8: Frequent Flyer Churn Detection  - Verified
 
 **Objective:** Verify Hot accounts with excessive cases are detected.
 
@@ -441,7 +463,7 @@ WHERE Unique_Key__c = 'High_Value_Ghosting'
 
 ---
 
-### PT-1.9: Premature Escalation Detection
+### PT-1.9: Premature Escalation Detection - Don't see pain point
 
 **Objective:** Verify escalated cases without High priority are detected.
 
@@ -456,7 +478,7 @@ WHERE Unique_Key__c = 'High_Value_Ghosting'
 
 ---
 
-### PT-1.10: Contract Expiry Red Zone Detection
+### PT-1.10: Contract Expiry Red Zone Detection - Verified
 
 **Objective:** Verify contracts expiring within 30 days are detected.
 
@@ -471,7 +493,7 @@ WHERE Unique_Key__c = 'High_Value_Ghosting'
 
 ---
 
-### PT-1.11: Stale Opportunity 90-Day Detection
+### PT-1.11: Stale Opportunity 90-Day Detection - Don't see pain point
 
 **Objective:** Verify opportunities with no stage change in 90+ days are detected.
 
@@ -505,15 +527,31 @@ IsClosed = false AND LastStageChangeDate < LAST_N_DAYS:90
 
 ---
 
-### PT-2.2: Owner Assignment Fix
+### PT-2.2: Task Creation Fix for Unassigned Leads
 
-**Objective:** Verify Owner_Assignment fix reassigns records.
+**Objective:** Verify Task_Creation fix creates tasks for unassigned leads owned by a Queue.
 
-**Pattern:** Unassigned_Lead_48 (requires 48-hour aging)
+**Pattern:** Unassigned_Lead_48 (requires 48-hour aging + Queue-owned leads)
+
+**Prerequisites:**
+- Lead Queue must exist in the org (see Step 4 in Prerequisites)
+- Test Leads must be assigned to the Queue
+- Test Leads must have `CreatedDate` > 48 hours ago
+- Test Leads must have `Status = 'Open - Not Contacted'`
+
+**Query to verify test data:**
+```sql
+SELECT Id, Name, Status, Owner.Type, CreatedDate
+FROM Lead
+WHERE Owner.Type = 'Queue' AND CreatedDate < LAST_N_DAYS:2 AND Status = 'Open - Not Contacted'
+```
 
 **Expected Results (when testable):**
-- [ ] Leads reassigned to queue or user
-- [ ] Remediation_Log__c with Original_Value__c (old owner) and New_Value__c (new owner)
+- [ ] Tasks created for each selected lead
+- [ ] Task Subject: "URGENT: Assign unassigned lead sitting in queue 48+ hours"
+- [ ] Remediation_Log__c records created with Status__c = 'Success'
+
+> **Note:** "Unassigned" means `Owner.Type = 'Queue'`, NOT a null Owner field.
 
 ---
 
@@ -1365,7 +1403,7 @@ The `e2e_security_test_data.apex` script creates the following data:
 | PT-1.10 Contract_Expiry_Red_Zone | [ ] | 8 contracts expected |
 | PT-1.11 Stale_Opp_90 | [ ] | Requires 90-day aging |
 | PT-2.1 Task Fix (Premium) | [ ] | |
-| PT-2.2 Owner_Assignment | [ ] | Requires 48-hour aging |
+| PT-2.2 Unassigned_Lead_48 | [ ] | Requires 48-hour aging + Lead Queue |
 | PT-2.3 Escalation_Revert | [ ] | |
 | PT-3.1 Pattern Rule Manager | [ ] | |
 

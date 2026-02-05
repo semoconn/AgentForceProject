@@ -43,7 +43,7 @@ public with sharing class SetupWizardController {
         }
 
         if (supportedObjects.isEmpty()) {
-            supportedObjects.addAll(new List<String>{'Account', 'Contact', 'Lead', 'Opportunity', 'Case', 'Task'});
+            supportedObjects.addAll(new List<String>{'Account', 'Contact', 'Lead', 'Opportunity', 'Case', 'Task', 'Contract'});
         }
 
         Map<String, Schema.SObjectType> schemaMap = Schema.getGlobalDescribe();

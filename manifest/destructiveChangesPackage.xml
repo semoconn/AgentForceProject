@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>Workflow_Log__c</members>
+        <members>Workflow_Behavior_Event__e</members>
+        <name>CustomObject</name>
+    </types>
+    <types>
+        <members>Workflow_Log__c-Workflow Log Layout</members>
+        <name>Layout</name>
+    </types>
+    <types>
+        <members>Workflow_Log__c</members>
+        <name>CustomTab</name>
+    </types>
+    <types>
+        <members>Admin_View_for_Workflow_Log</members>
+        <name>FlexiPage</name>
+    </types>
+    <types>
+        <members>workflowLogViewer</members>
+        <name>LightningComponentBundle</name>
+    </types>
+    <version>63.0</version>
+</Package>

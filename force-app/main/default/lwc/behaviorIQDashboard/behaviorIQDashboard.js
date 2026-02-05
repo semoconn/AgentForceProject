@@ -5,7 +5,7 @@ import { refreshApex } from '@salesforce/apex';
 // Apex Controllers
 import getPainPoints from '@salesforce/apex/WorkflowAnalyticsController.getPainPoints';
 import runAutoFix from '@salesforce/apex/WorkflowAnalyticsController.runAutoFix';
-import dismissSuggestion from '@salesforce/apex/WorkflowAnalyticsController.dismissSuggestion';
+import dismissPainPoint from '@salesforce/apex/PainPointController.dismissPainPoint';
 import restoreSuggestion from '@salesforce/apex/WorkflowAnalyticsController.restoreSuggestion';
 import markPainPointResolved from '@salesforce/apex/WorkflowAnalyticsController.markPainPointResolved';
 import getDashboardData from '@salesforce/apex/WorkflowAnalyticsController.getDashboardData';
@@ -706,15 +706,16 @@ export default class BehaviorIQDashboard extends LightningElement {
     }
 
     handleDismiss(event) {
-        const painPointId = event.currentTarget.dataset.id;
-        if (!painPointId) return;
+        const uniqueKey = event.currentTarget.dataset.key;
+        if (!uniqueKey) return;
         this.isLoading = true;
-        dismissSuggestion({ painPointId })
+        dismissPainPoint({ uniqueKey, reason: 'Dismissed via Dashboard' })
             .then(() => {
                 this.showToast('Dismissed', 'Suggestion dismissed', 'success');
                 refreshApex(this._wiredPainPointsResult);
                 this.refreshHealthGauge();
             })
+            .catch(err => this.showToast('Error', err?.body?.message || 'Failed to dismiss', 'error'))
             .finally(() => this.isLoading = false);
     }
 

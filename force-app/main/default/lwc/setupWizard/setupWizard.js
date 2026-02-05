@@ -7,7 +7,7 @@ import saveMonitoringSettings from '@salesforce/apex/SetupWizardController.saveM
 export default class SetupWizard extends LightningElement {
     @track step = 1;
     // FIX: Added 'Contact' and 'Task' to the default selection list
-    @track selectedObjects = ['Account', 'Opportunity', 'Case', 'Lead', 'Contact', 'Task']; 
+    @track selectedObjects = ['Account', 'Opportunity', 'Case', 'Lead', 'Contact', 'Task', 'Contract'];
     @track objectOptions = [];
     @track isLoading = false;
 

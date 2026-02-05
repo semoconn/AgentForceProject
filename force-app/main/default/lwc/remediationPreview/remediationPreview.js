@@ -314,6 +314,18 @@ export default class RemediationPreview extends LightningElement {
                 message = 'Renewal opportunities will be created from the selected records.';
                 break;
 
+            case 'Escalation_Revert':
+                message = 'The IsEscalated flag will be set to FALSE on the selected cases, removing them from the escalation queue.';
+                if (config.postChatter) {
+                    message += '\n\nA Chatter post will be added to each case';
+                    if (config.chatterMessage) {
+                        message += `: "${config.chatterMessage}"`;
+                    } else {
+                        message += ' notifying the team of the de-escalation.';
+                    }
+                }
+                break;
+
             default:
                 message = `The selected records will be processed using "${fixType}" action.`;
         }

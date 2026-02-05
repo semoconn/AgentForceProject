@@ -214,11 +214,13 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
     private Boolean canExecuteRule(Behavior_Pattern_Rule__mdt rule, String objectApiName) {
         // License gate - skip premium rules for non-premium users
         if (rule.Is_Premium__c && !LicenseService.isPremium()) {
+            System.debug(LoggingLevel.INFO, 'Skipping rule [' + rule.DeveloperName + ']: Premium license required but user has Free tier.');
             return false;
         }
 
         // Dismissal check - skip rules the user has dismissed
         if (dismissedPainPointKeys.contains(rule.DeveloperName)) {
+            System.debug(LoggingLevel.INFO, 'Skipping rule [' + rule.DeveloperName + ']: Pattern was dismissed by user.');
             return false;
         }
 
@@ -230,10 +232,12 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
 
         // FLS check - skip rules where required fields aren't accessible
         if ((Test.isRunningTest() && forceFLSCheckFailure) || !validateQueryFieldsAccessible(objectApiName, rule.Query_Condition__c)) {
-            System.debug(LoggingLevel.WARN, 'Skipping rule [' + rule.DeveloperName + ']: Required fields not accessible.');
+            System.debug(LoggingLevel.WARN, 'Skipping rule [' + rule.DeveloperName + ']: Required fields not accessible. Query: ' + rule.Query_Condition__c);
             return false;
         }
 
+        // All checks passed - rule can execute
+        System.debug(LoggingLevel.DEBUG, 'Rule [' + rule.DeveloperName + '] passed all checks, proceeding with detection on ' + objectApiName);
         return true;
     }
 
@@ -1706,9 +1710,23 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
                 pp.Occurrences__c = liveCount;
 
                 // Recalculate impact score based on new count
-                // For Opportunity/Contract, keep the stored value (it's cumulative value, not count-based)
                 String objName = pp.Object_API_Name__c != null ? pp.Object_API_Name__c.toLowerCase() : '';
-                if (objName != 'opportunity' && objName != 'contract') {
+                if (objName == 'opportunity') {
+                    // For Opportunities, recalculate by summing Amount of remaining matching records
+                    Decimal liveAmount = calculateLiveOpportunityAmount(pp);
+                    if (liveAmount != null) {
+                        pp.Impact_Score__c = liveAmount;
+                        System.debug(LoggingLevel.DEBUG, 'Recalculated Opportunity impact score: ' + liveAmount);
+                    }
+                    // If calculation failed, keep existing value (defensive)
+                } else if (objName == 'contract') {
+                    // For Contracts, recalculate by summing ContractNumber/value of remaining matching records
+                    // Note: Contract impact calculation would follow same pattern as Opportunity
+                    // Currently keeping existing value - can be enhanced in future
+                    Decimal costPerIncident = pp.Cost_Per_Incident__c != null ? pp.Cost_Per_Incident__c : 0;
+                    pp.Impact_Score__c = liveCount * costPerIncident;
+                } else {
+                    // For other objects, calculate from count * cost per incident
                     Decimal costPerIncident = pp.Cost_Per_Incident__c != null ? pp.Cost_Per_Incident__c : 0;
                     pp.Impact_Score__c = liveCount * costPerIncident;
                 }
@@ -1927,6 +1945,181 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
 
         } catch (Exception pluginEx) {
             System.debug(LoggingLevel.ERROR, 'Plugin count failed: ' + pluginEx.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * @description Calculates the live impact score for Opportunity pain points by summing
+     * the Amount field of all currently matching Opportunity records.
+     *
+     * This is needed because Opportunity impact is based on actual dollar amounts,
+     * not count * cost_per_incident like other objects. When records are fixed,
+     * the remaining impact must be recalculated from the remaining records' amounts.
+     *
+     * SECURITY: Uses USER_MODE to respect sharing rules when summing amounts.
+     * Returns null on errors to preserve existing Impact_Score (defensive).
+     *
+     * @param painPoint The pain point record containing rule key and exclusion info
+     * @return The sum of Amount from matching Opportunity records, or null if calculation failed
+     */
+    private static Decimal calculateLiveOpportunityAmount(Identified_Pain_Point__c painPoint) {
+        if (painPoint == null || String.isBlank(painPoint.Unique_Key__c)) {
+            return null;
+        }
+
+        try {
+            // Extract base rule name from potentially timestamped key
+            String baseRuleName = extractBaseRuleName(painPoint.Unique_Key__c);
+
+            // Query the rule from metadata
+            List<Behavior_Pattern_Rule__mdt> rules = [
+                SELECT DeveloperName, Object_API_Name__c, Query_Condition__c,
+                       Logic_Type__c, Apex_Handler_Class__c, Fix_Config__c
+                FROM Behavior_Pattern_Rule__mdt
+                WHERE DeveloperName = :baseRuleName
+                LIMIT 1
+            ];
+
+            if (rules.isEmpty()) {
+                System.debug(LoggingLevel.WARN, 'Rule not found for key: ' + baseRuleName);
+                return null;
+            }
+
+            Behavior_Pattern_Rule__mdt rule = rules[0];
+            String objectApiName = rule.Object_API_Name__c;
+
+            // Verify this is an Opportunity rule
+            if (objectApiName == null || objectApiName.toLowerCase() != 'opportunity') {
+                System.debug(LoggingLevel.WARN, 'calculateLiveOpportunityAmount called for non-Opportunity object: ' + objectApiName);
+                return null;
+            }
+
+            // Build exclusion list from Fixed_Record_Ids__c
+            Set<Id> excludeIds = parseExcludeIds(painPoint.Fixed_Record_Ids__c, 5000);
+
+            // Handle Apex Plugin rules
+            if (rule.Logic_Type__c == 'Apex_Plugin' && String.isNotBlank(rule.Apex_Handler_Class__c)) {
+                return calculatePluginOpportunityAmount(rule, excludeIds);
+            }
+
+            // Get effective query condition with admin threshold injection
+            PatternAnalysisService service = new PatternAnalysisService();
+            String effectiveCondition = service.getEffectiveQuery(rule);
+
+            if (String.isBlank(effectiveCondition)) {
+                return null;
+            }
+
+            // Validate FLS for query fields
+            if (!validateQueryFieldsAccessible('Opportunity', effectiveCondition)) {
+                System.debug(LoggingLevel.WARN, 'FLS check failed for Opportunity query fields');
+                return null;
+            }
+
+            // Build query to get matching Opportunity IDs
+            String idQuery = 'SELECT Id FROM Opportunity WHERE (' + effectiveCondition + ')';
+            if (!excludeIds.isEmpty()) {
+                idQuery += ' AND Id NOT IN :excludeIds';
+            }
+            idQuery += ' LIMIT 5000'; // Cap for heap protection
+
+            // Execute query to get matching IDs
+            List<Opportunity> matchingOpps = Database.query(idQuery);
+
+            if (matchingOpps.isEmpty()) {
+                return 0; // True zero - no matching records
+            }
+
+            // Extract IDs
+            List<Id> matchingIds = new List<Id>();
+            for (Opportunity opp : matchingOpps) {
+                matchingIds.add(opp.Id);
+            }
+
+            // Sum amounts with USER_MODE sharing enforcement
+            return sumOpportunityAmounts(matchingIds);
+
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'Error calculating live Opportunity amount: ' + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * @description Sums Opportunity amounts with proper sharing enforcement.
+     * Uses USER_MODE to ensure only accessible records are included in the sum.
+     *
+     * @param opportunityIds List of Opportunity IDs to sum
+     * @return Total amount from accessible Opportunities, or 0 if none accessible
+     */
+    private static Decimal sumOpportunityAmounts(List<Id> opportunityIds) {
+        if (opportunityIds == null || opportunityIds.isEmpty()) {
+            return 0;
+        }
+
+        try {
+            // Query with USER_MODE to respect sharing rules
+            List<Opportunity> accessibleOpps = [
+                SELECT Id, Amount
+                FROM Opportunity
+                WHERE Id IN :opportunityIds
+                WITH USER_MODE
+            ];
+
+            // Sum the amounts
+            Decimal totalAmount = 0;
+            for (Opportunity opp : accessibleOpps) {
+                if (opp.Amount != null) {
+                    totalAmount += opp.Amount;
+                }
+            }
+
+            return totalAmount;
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'sumOpportunityAmounts error: ' + e.getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * @description Calculates Opportunity amount for Apex Plugin rules with sharing enforcement.
+     *
+     * @param rule The pattern rule metadata
+     * @param excludeIds Set of IDs to exclude
+     * @return The sum of Opportunity amounts from plugin results, or null on error
+     */
+    private static Decimal calculatePluginOpportunityAmount(Behavior_Pattern_Rule__mdt rule, Set<Id> excludeIds) {
+        try {
+            Map<String, Object> config = new Map<String, Object>();
+            if (String.isNotBlank(rule.Fix_Config__c)) {
+                config = (Map<String, Object>) JSON.deserializeUntyped(rule.Fix_Config__c);
+            }
+            PatternPluginContext context = new PatternPluginContext(
+                'Opportunity',
+                rule.Query_Condition__c,
+                config,
+                rule.DeveloperName
+            );
+            List<Id> matchedIds = PluginInvoker.invokeAnalyze(rule.Apex_Handler_Class__c, context);
+
+            if (matchedIds == null || matchedIds.isEmpty()) {
+                return 0;
+            }
+
+            // Remove excluded IDs
+            Set<Id> matchedSet = new Set<Id>(matchedIds);
+            matchedSet.removeAll(excludeIds);
+
+            if (matchedSet.isEmpty()) {
+                return 0;
+            }
+
+            // Sum with sharing enforcement
+            return sumOpportunityAmounts(new List<Id>(matchedSet));
+
+        } catch (Exception pluginEx) {
+            System.debug(LoggingLevel.ERROR, 'Plugin Opportunity amount calculation failed: ' + pluginEx.getMessage());
             return null;
         }
     }
