@@ -5,37 +5,7 @@
 @isTest
 private with sharing class BehaviorSettingsControllerTest {
 
-    // ==================== METADATA SETTINGS TESTS ====================
-
-    @isTest
-    static void testGetBehaviorSettings() {
-        Test.startTest();
-        Behavior_Setting__mdt setting = BehaviorSettingsController.getBehaviorSettings();
-        Test.stopTest();
-
-        // Verify we get a result (assuming org has default metadata, otherwise it handles null gracefully)
-        if (setting != null) {
-            System.assertNotEquals(null, setting.Stale_Opportunity_Days__c);
-        }
-    }
-
-    @isTest
-    static void testUpdateBehaviorSettings() {
-        Test.startTest();
-
-        try {
-            String jobId = BehaviorSettingsController.updateBehaviorSettings(30, 48, 5, 14);
-            System.assertNotEquals(null, jobId, 'Job ID should be returned from the deployment enqueue.');
-        } catch (Exception e) {
-            // In some test contexts (like no permission or missing metadata type), this might fail.
-            // We catch it to ensure the test coverage is still recorded for the logic flow.
-            System.debug('Metadata deployment test skipped or failed: ' + e.getMessage());
-        }
-
-        Test.stopTest();
-    }
-
-    // ==================== CONFIGURATION SETTINGS TESTS (Sprint 3.4) ====================
+    // ==================== CONFIGURATION SETTINGS TESTS ====================
 
     @isTest
     static void testGetConfigSettings_NoExistingRecord() {
@@ -103,7 +73,7 @@ private with sharing class BehaviorSettingsControllerTest {
         delete [SELECT Id FROM BehaviorIQ_Configuration__c];
 
         Test.startTest();
-        Id recordId = BehaviorSettingsController.saveConfigSettings(15, 60);
+        Id recordId = BehaviorSettingsController.saveConfigSettings(15, 60, 48, 5, 14, 50000, 30);
         Test.stopTest();
 
         // Verify record was created
@@ -130,7 +100,7 @@ private with sharing class BehaviorSettingsControllerTest {
         insert existingConfig;
 
         Test.startTest();
-        Id recordId = BehaviorSettingsController.saveConfigSettings(7, 21);
+        Id recordId = BehaviorSettingsController.saveConfigSettings(7, 21, 24, 3, 7, 25000, 15);
         Test.stopTest();
 
         // Should update the existing record, not create a new one
@@ -157,7 +127,7 @@ private with sharing class BehaviorSettingsControllerTest {
         // Test null value
         Boolean exceptionThrown = false;
         try {
-            BehaviorSettingsController.saveConfigSettings(null, 90);
+            BehaviorSettingsController.saveConfigSettings(null, 90, 48, 5, 14, 50000, 30);
         } catch (AuraHandledException e) {
             exceptionThrown = true;
             // AuraHandledException.getMessage() returns 'Script-thrown exception' in test context
@@ -168,7 +138,7 @@ private with sharing class BehaviorSettingsControllerTest {
         // Test value below minimum
         exceptionThrown = false;
         try {
-            BehaviorSettingsController.saveConfigSettings(0, 90);
+            BehaviorSettingsController.saveConfigSettings(0, 90, 48, 5, 14, 50000, 30);
         } catch (AuraHandledException e) {
             exceptionThrown = true;
         }
@@ -177,7 +147,7 @@ private with sharing class BehaviorSettingsControllerTest {
         // Test value above maximum
         exceptionThrown = false;
         try {
-            BehaviorSettingsController.saveConfigSettings(1000, 90);
+            BehaviorSettingsController.saveConfigSettings(1000, 90, 48, 5, 14, 50000, 30);
         } catch (AuraHandledException e) {
             exceptionThrown = true;
         }
@@ -193,7 +163,7 @@ private with sharing class BehaviorSettingsControllerTest {
         // Test null value
         Boolean exceptionThrown = false;
         try {
-            BehaviorSettingsController.saveConfigSettings(30, null);
+            BehaviorSettingsController.saveConfigSettings(30, null, 48, 5, 14, 50000, 30);
         } catch (AuraHandledException e) {
             exceptionThrown = true;
             // AuraHandledException.getMessage() returns 'Script-thrown exception' in test context
@@ -204,7 +174,7 @@ private with sharing class BehaviorSettingsControllerTest {
         // Test value below minimum
         exceptionThrown = false;
         try {
-            BehaviorSettingsController.saveConfigSettings(30, 0);
+            BehaviorSettingsController.saveConfigSettings(30, 0, 48, 5, 14, 50000, 30);
         } catch (AuraHandledException e) {
             exceptionThrown = true;
         }
@@ -213,7 +183,7 @@ private with sharing class BehaviorSettingsControllerTest {
         // Test value above maximum
         exceptionThrown = false;
         try {
-            BehaviorSettingsController.saveConfigSettings(30, 1000);
+            BehaviorSettingsController.saveConfigSettings(30, 1000, 48, 5, 14, 50000, 30);
         } catch (AuraHandledException e) {
             exceptionThrown = true;
         }
@@ -226,7 +196,7 @@ private with sharing class BehaviorSettingsControllerTest {
     static void testSaveConfigSettings_BoundaryValues() {
         // Test minimum valid values
         Test.startTest();
-        Id recordId = BehaviorSettingsController.saveConfigSettings(1, 1);
+        Id recordId = BehaviorSettingsController.saveConfigSettings(1, 1, 1, 1, 1, 1, 1);
         Test.stopTest();
 
         BehaviorIQ_Configuration__c savedConfig = [
@@ -242,7 +212,7 @@ private with sharing class BehaviorSettingsControllerTest {
     static void testSaveConfigSettings_MaxBoundaryValues() {
         // Test maximum valid values
         Test.startTest();
-        Id recordId = BehaviorSettingsController.saveConfigSettings(999, 999);
+        Id recordId = BehaviorSettingsController.saveConfigSettings(999, 999, 720, 999, 999, 999999999, 999);
         Test.stopTest();
 
         BehaviorIQ_Configuration__c savedConfig = [
@@ -273,7 +243,7 @@ private with sharing class BehaviorSettingsControllerTest {
         Test.startTest();
 
         // Save custom values
-        Id savedId = BehaviorSettingsController.saveConfigSettings(42, 84);
+        Id savedId = BehaviorSettingsController.saveConfigSettings(42, 84, 48, 5, 14, 50000, 30);
         System.assertNotEquals(null, savedId, 'Save should return record ID');
 
         // Retrieve and verify
@@ -295,60 +265,7 @@ private with sharing class BehaviorSettingsControllerTest {
             'Default stale opportunity threshold should be 90');
     }
 
-    // ==================== CALLBACK TESTS (Lines 79-80) ====================
-
-    @isTest
-    static void testBehaviorSettingsUpdateCallback_Success() {
-        // Test the callback directly to cover lines 79-80
-        BehaviorSettingsController.BehaviorSettingsUpdateCallback callback =
-            new BehaviorSettingsController.BehaviorSettingsUpdateCallback();
-
-        Test.startTest();
-        // Call handleResult - the method just logs success or failure
-        // Since DeployResult is read-only, we can't set status, but the code path is covered
-        try {
-            callback.handleResult(null, null);
-        } catch (NullPointerException e) {
-            // Expected - result is null, but line 80 (checking result.status) will throw
-            // This still covers the method entry and the callback instantiation
-        }
-        Test.stopTest();
-
-        // Verification: callback was instantiated
-        System.assertNotEquals(null, callback, 'Callback should be instantiated');
-    }
-
-    @isTest
-    static void testBehaviorSettingsUpdateCallback_Coverage() {
-        // Additional test to exercise the callback code path
-        BehaviorSettingsController.BehaviorSettingsUpdateCallback callback =
-            new BehaviorSettingsController.BehaviorSettingsUpdateCallback();
-
-        Test.startTest();
-        // The Metadata.DeployCallback interface requires handleResult
-        // We verify the callback implements the interface
-        System.assertNotEquals(null, callback,
-            'Callback should be instantiated');
-        Test.stopTest();
-    }
-
     // ==================== ADDITIONAL COVERAGE TESTS ====================
-
-    @isTest
-    static void testGetBehaviorSettings_ExceptionHandling() {
-        // Test the exception path in getBehaviorSettings (lines 30-31)
-        // We cannot force an exception in metadata query directly, but we verify the method completes
-        Test.startTest();
-        try {
-            Behavior_Setting__mdt result = BehaviorSettingsController.getBehaviorSettings();
-            // If metadata exists, verify it's valid
-            System.assert(result == null || result.Id != null, 'Result should be null or have valid Id');
-        } catch (AuraHandledException e) {
-            // Exception path covered - lines 30-31
-            System.assert(true, 'Exception handling path covered');
-        }
-        Test.stopTest();
-    }
 
     @isTest
     static void testValidateCustomObjectRule_StandardObject() {
@@ -472,7 +389,7 @@ private with sharing class BehaviorSettingsControllerTest {
         Boolean exceptionThrown = false;
         try {
             // Invalid values trigger AuraHandledException
-            BehaviorSettingsController.saveConfigSettings(-1, 90);
+            BehaviorSettingsController.saveConfigSettings(-1, 90, 48, 5, 14, 50000, 30);
         } catch (AuraHandledException e) {
             exceptionThrown = true;
             // Lines 215-216 re-throw path covered
@@ -498,20 +415,4 @@ private with sharing class BehaviorSettingsControllerTest {
         Test.stopTest();
     }
 
-    @isTest
-    static void testUpdateBehaviorSettings_AllParameters() {
-        // Test with all parameters to ensure full coverage of lines 43-71
-        Test.startTest();
-        try {
-            String jobId = BehaviorSettingsController.updateBehaviorSettings(45, 72, 8, 21);
-            // If successful, jobId should be returned
-            if (jobId != null) {
-                System.assertNotEquals('', jobId, 'Job ID should not be empty');
-            }
-        } catch (Exception e) {
-            // Metadata deployment may fail in test context
-            System.debug('Expected: Metadata deployment not supported in test: ' + e.getMessage());
-        }
-        Test.stopTest();
-    }
 }

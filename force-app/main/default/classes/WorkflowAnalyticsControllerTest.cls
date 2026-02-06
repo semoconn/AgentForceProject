@@ -109,7 +109,7 @@ private with sharing class WorkflowAnalyticsControllerTest {
         List<String> recordIds = new List<String>{String.valueOf(c.Id)};
 
         Test.startTest();
-        WorkflowAnalyticsController.AutoFixResult result = WorkflowAnalyticsController.runAutoFix(recordIds, 'Stale Case 14');
+        WorkflowAnalyticsController.AutoFixResult result = WorkflowAnalyticsController.runAutoFix(recordIds, 'Stale Case 30');
         Test.stopTest();
 
         System.assertNotEquals(null, result, 'Result should not be null');
@@ -898,7 +898,7 @@ private with sharing class WorkflowAnalyticsControllerTest {
         }
 
         Test.startTest();
-        WorkflowAnalyticsController.AutoFixResult result = WorkflowAnalyticsController.runAutoFix(recordIds, 'Stale Case 14');
+        WorkflowAnalyticsController.AutoFixResult result = WorkflowAnalyticsController.runAutoFix(recordIds, 'Stale Case 30');
         Test.stopTest();
 
         System.assertEquals(5, result.fixedCount, 'Should have fixed 5 records');
@@ -1215,7 +1215,7 @@ private with sharing class WorkflowAnalyticsControllerTest {
 
         Test.startTest();
         WorkflowAnalyticsController.AutoFixResult result =
-            WorkflowAnalyticsController.runAutoFix(recordIds, 'STALE CASE 14');
+            WorkflowAnalyticsController.runAutoFix(recordIds, 'STALE CASE 30');
         Test.stopTest();
 
         System.assertNotEquals(null, result, 'Result should not be null');
