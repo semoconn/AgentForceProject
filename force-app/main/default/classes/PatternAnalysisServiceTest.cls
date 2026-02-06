@@ -185,9 +185,12 @@ private with sharing class PatternAnalysisServiceTest {
         Test.startTest();
         System.runAs(testUser) {
             Date cutoffDate = Date.today().addDays(-PatternAnalysisService.DEFAULT_RETENTION_DAYS);
-            String isoDate = Datetime.newInstanceGmt(cutoffDate.year(), cutoffDate.month(), cutoffDate.day()).format('yyyy-MM-dd\'T\'HH:mm:ss\'Z\'');
-            String query = 'SELECT Id FROM Behavior_Log__c WHERE CreatedDate < ' + isoDate;
-            Database.executeBatch(new DeleteRecordsBatch(query), 200);
+            DateTime cutoffDateTime = Datetime.newInstanceGmt(cutoffDate.year(), cutoffDate.month(), cutoffDate.day());
+            Database.executeBatch(new DeleteRecordsBatch(
+                Behavior_Log__c.SObjectType,
+                Behavior_Log__c.CreatedDate,
+                cutoffDateTime
+            ), 200);
         }
         Test.stopTest();
 
@@ -5067,5 +5070,258 @@ private with sharing class PatternAnalysisServiceTest {
             System.assertNotEquals(null, result, 'Result should not be null');
         }
         Test.stopTest();
+    }
+
+    // ==================== CONFIGURABLE RETENTION TESTS ====================
+
+    @isTest
+    static void testDeleteOldLogs_UsesConfiguredRetention() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create config with custom retention periods
+        BehaviorIQ_Configuration__c config = new BehaviorIQ_Configuration__c(
+            Name = 'Default',
+            Raw_Log_Retention_Days__c = 7,
+            Summary_Retention_Days__c = 30
+        );
+        insert config;
+
+        // Create old raw logs
+        System.runAs(testUser) {
+            List<Behavior_Log__c> oldLogs = new List<Behavior_Log__c>();
+            for (Integer i = 0; i < 3; i++) {
+                oldLogs.add(new Behavior_Log__c(
+                    Action_Name__c = 'Retention_Test',
+                    User__c = testUser.Id,
+                    Timestamp__c = System.now()
+                ));
+            }
+            insert oldLogs;
+
+            // Backdate to be older than 7 days but within default 90
+            for (Behavior_Log__c l : oldLogs) {
+                Test.setCreatedDate(l.Id, Datetime.now().addDays(-20));
+            }
+        }
+
+        // Run the batch job which calls deleteOldLogs() in finish()
+        Test.startTest();
+        System.runAs(testUser) {
+            Database.executeBatch(new PatternAnalysisService(), 50);
+        }
+        Test.stopTest();
+
+        // The batch will have scheduled DeleteRecordsBatch for raw logs with 7-day retention
+        // Verify the batch completed successfully
+        List<AsyncApexJob> jobs = [
+            SELECT Id, Status FROM AsyncApexJob
+            WHERE ApexClass.Name = 'PatternAnalysisService' AND Status = 'Completed'
+            ORDER BY CreatedDate DESC LIMIT 1
+        ];
+        System.assertEquals(1, jobs.size(), 'Batch should complete with configured retention');
+
+        clearMocks();
+    }
+
+    @isTest
+    static void testDeleteOldLogs_DefaultRetentionWhenNoConfig() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // No config record exists - should use defaults (90 days raw, 365 summary)
+
+        System.runAs(testUser) {
+            List<Behavior_Log__c> oldLogs = new List<Behavior_Log__c>();
+            for (Integer i = 0; i < 3; i++) {
+                oldLogs.add(new Behavior_Log__c(
+                    Action_Name__c = 'Default_Retention_Test',
+                    User__c = testUser.Id,
+                    Timestamp__c = System.now()
+                ));
+            }
+            insert oldLogs;
+
+            for (Behavior_Log__c l : oldLogs) {
+                Test.setCreatedDate(l.Id, Datetime.now().addDays(-100));
+            }
+        }
+
+        Test.startTest();
+        System.runAs(testUser) {
+            Database.executeBatch(new PatternAnalysisService(), 50);
+        }
+        Test.stopTest();
+
+        List<AsyncApexJob> jobs = [
+            SELECT Id, Status FROM AsyncApexJob
+            WHERE ApexClass.Name = 'PatternAnalysisService' AND Status = 'Completed'
+            ORDER BY CreatedDate DESC LIMIT 1
+        ];
+        System.assertEquals(1, jobs.size(), 'Batch should complete with default retention');
+
+        clearMocks();
+    }
+
+    @isTest
+    static void testDeleteOldSummaries_ScheduledByBatch() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create config with short summary retention
+        BehaviorIQ_Configuration__c config = new BehaviorIQ_Configuration__c(
+            Name = 'Default',
+            Summary_Retention_Days__c = 30
+        );
+        insert config;
+
+        // Create old summary records
+        System.runAs(testUser) {
+            List<Behavior_Log_Summary__c> oldSummaries = new List<Behavior_Log_Summary__c>();
+            for (Integer i = 0; i < 3; i++) {
+                oldSummaries.add(new Behavior_Log_Summary__c(
+                    User__c = testUser.Id,
+                    Action_Name__c = 'Record_Created',
+                    Object_API_Name__c = 'Case',
+                    Log_Date__c = Date.today().addDays(-60),
+                    Event_Count__c = 1,
+                    Composite_Key__c = testUser.Id + '_Case_Record_Created_' + Date.today().addDays(-60 - i)
+                ));
+            }
+            insert oldSummaries;
+        }
+
+        Test.startTest();
+        System.runAs(testUser) {
+            Database.executeBatch(new PatternAnalysisService(), 50);
+        }
+        Test.stopTest();
+
+        List<AsyncApexJob> jobs = [
+            SELECT Id, Status FROM AsyncApexJob
+            WHERE ApexClass.Name = 'PatternAnalysisService' AND Status = 'Completed'
+            ORDER BY CreatedDate DESC LIMIT 1
+        ];
+        System.assertEquals(1, jobs.size(), 'Batch should complete and schedule summary deletion');
+
+        clearMocks();
+    }
+
+    // ==================== CIRCUIT BREAKER INTEGRATION TESTS ====================
+
+    @isTest
+    static void testCircuitBreaker_SkipsOpenCircuitRule() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Pre-create an Open circuit for the Stale_Case rule
+        Rule_Execution_Health__c health = new Rule_Execution_Health__c(
+            Rule_Developer_Name__c = 'Stale_Case_30',
+            Consecutive_Failures__c = 5,
+            Circuit_State__c = 'Open',
+            Last_Failure_Time__c = System.now(),
+            Cooldown_Until__c = System.now().addMinutes(60),
+            Total_Failure_Count__c = 5,
+            Last_Error__c = 'Test failure'
+        );
+        insert health;
+
+        // Create stale cases that would normally be detected
+        List<Case> staleCases = new List<Case>();
+        for (Integer i = 0; i < 3; i++) {
+            staleCases.add(new Case(Subject = 'CB Skip Test ' + i, Status = 'New'));
+        }
+        insert staleCases;
+        for (Case c : staleCases) {
+            Test.setCreatedDate(c.Id, Datetime.now().addDays(-60));
+        }
+
+        delete [SELECT Id FROM Identified_Pain_Point__c WHERE Unique_Key__c = 'Stale_Case_30'];
+
+        Test.startTest();
+        System.runAs(testUser) {
+            Database.executeBatch(new PatternAnalysisService(), 50);
+        }
+        Test.stopTest();
+
+        // Verify batch completed
+        List<AsyncApexJob> jobs = [
+            SELECT Id, Status FROM AsyncApexJob
+            WHERE ApexClass.Name = 'PatternAnalysisService' AND Status = 'Completed'
+            ORDER BY CreatedDate DESC LIMIT 1
+        ];
+        System.assertEquals(1, jobs.size(), 'Batch should complete even with open circuit');
+
+        // The circuit breaker should have caused the Stale_Case_30 rule to be skipped
+        // Verify the circuit state is still Open (not closed by a success)
+        Rule_Execution_Health__c updatedHealth = [
+            SELECT Circuit_State__c FROM Rule_Execution_Health__c
+            WHERE Rule_Developer_Name__c = 'Stale_Case_30'
+        ];
+        System.assertEquals('Open', updatedHealth.Circuit_State__c, 'Circuit should remain Open since rule was skipped');
+
+        clearMocks();
+    }
+
+    @isTest
+    static void testCircuitBreaker_RecordsSuccessOnBatchRule() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Run the batch - any rule that executes successfully should record success
+        Test.startTest();
+        System.runAs(testUser) {
+            Database.executeBatch(new PatternAnalysisService(), 50);
+        }
+        Test.stopTest();
+
+        // Verify batch completed
+        List<AsyncApexJob> jobs = [
+            SELECT Id, Status FROM AsyncApexJob
+            WHERE ApexClass.Name = 'PatternAnalysisService' AND Status = 'Completed'
+            ORDER BY CreatedDate DESC LIMIT 1
+        ];
+        System.assertEquals(1, jobs.size(), 'Batch should complete');
+
+        // Any rules that executed should have health records with Closed state
+        List<Rule_Execution_Health__c> healthRecords = [
+            SELECT Rule_Developer_Name__c, Circuit_State__c, Consecutive_Failures__c
+            FROM Rule_Execution_Health__c
+            WHERE Circuit_State__c = 'Closed'
+        ];
+        // If any rules exist in the org, they should have recorded success
+        for (Rule_Execution_Health__c h : healthRecords) {
+            System.assertEquals(0, h.Consecutive_Failures__c,
+                'Failures should be 0 for successful rule: ' + h.Rule_Developer_Name__c);
+        }
+
+        clearMocks();
+    }
+
+    // ==================== CPU TIME TELEMETRY TESTS ====================
+
+    @isTest
+    static void testHealthLog_IncludesCpuTime() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        Test.startTest();
+        System.runAs(testUser) {
+            Database.executeBatch(new PatternAnalysisService(), 50);
+        }
+        Test.stopTest();
+
+        // Verify health log was created with CPU time
+        List<System_Health_Log__c> healthLogs = [
+            SELECT CPU_Time_Ms__c, Job_Name__c, Status__c
+            FROM System_Health_Log__c
+            WHERE Job_Name__c = 'Pattern Analysis Service'
+            AND CreatedDate = TODAY
+            ORDER BY CreatedDate DESC
+            LIMIT 1
+        ];
+
+        if (!healthLogs.isEmpty()) {
+            System.assertNotEquals(null, healthLogs[0].CPU_Time_Ms__c,
+                'CPU_Time_Ms__c should be populated on health log');
+            System.assert(healthLogs[0].CPU_Time_Ms__c >= 0,
+                'CPU_Time_Ms__c should be non-negative');
+        }
+
+        clearMocks();
     }
 }

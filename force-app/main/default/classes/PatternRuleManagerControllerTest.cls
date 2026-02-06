@@ -679,4 +679,85 @@ private class PatternRuleManagerControllerTest {
         }
         Test.stopTest();
     }
+
+    // ==================== CIRCUIT BREAKER TESTS ====================
+
+    @isTest
+    static void testResetCircuitBreaker_Success() {
+        // Pre-create a circuit breaker health record in Open state
+        insert new Rule_Execution_Health__c(
+            Rule_Developer_Name__c = 'CB_Test_Rule',
+            Circuit_State__c = 'Open',
+            Consecutive_Failures__c = 5,
+            Total_Failure_Count__c = 10,
+            Last_Error__c = 'Test error'
+        );
+
+        Test.startTest();
+        String result = PatternRuleManagerController.resetCircuitBreaker('CB_Test_Rule');
+        Test.stopTest();
+
+        System.assert(result.contains('Circuit breaker reset'), 'Should return success message');
+
+        // Verify circuit was reset
+        Rule_Execution_Health__c health = [
+            SELECT Circuit_State__c, Consecutive_Failures__c
+            FROM Rule_Execution_Health__c
+            WHERE Rule_Developer_Name__c = 'CB_Test_Rule'
+        ];
+        System.assertEquals('Closed', health.Circuit_State__c, 'Circuit should be Closed after reset');
+        System.assertEquals(0, health.Consecutive_Failures__c, 'Failures should be reset to 0');
+    }
+
+    @isTest
+    static void testResetCircuitBreaker_BlankName() {
+        Test.startTest();
+        Boolean exceptionThrown = false;
+        try {
+            PatternRuleManagerController.resetCircuitBreaker('');
+        } catch (AuraHandledException e) {
+            exceptionThrown = true;
+        }
+        Test.stopTest();
+
+        System.assert(exceptionThrown, 'Should throw exception for blank rule name');
+    }
+
+    @isTest
+    static void testGetCircuitBreakerStatus_Empty() {
+        // Ensure no health records exist
+        delete [SELECT Id FROM Rule_Execution_Health__c];
+
+        Test.startTest();
+        List<Rule_Execution_Health__c> results = PatternRuleManagerController.getCircuitBreakerStatus();
+        Test.stopTest();
+
+        System.assertNotEquals(null, results, 'Results should not be null');
+        System.assertEquals(0, results.size(), 'Should return empty list');
+    }
+
+    @isTest
+    static void testGetCircuitBreakerStatus_WithRecords() {
+        // Create health records
+        insert new List<Rule_Execution_Health__c>{
+            new Rule_Execution_Health__c(
+                Rule_Developer_Name__c = 'Status_Rule_1',
+                Circuit_State__c = 'Closed',
+                Consecutive_Failures__c = 0
+            ),
+            new Rule_Execution_Health__c(
+                Rule_Developer_Name__c = 'Status_Rule_2',
+                Circuit_State__c = 'Open',
+                Consecutive_Failures__c = 3,
+                Last_Failure_Time__c = System.now(),
+                Last_Error__c = 'Test failure'
+            )
+        };
+
+        Test.startTest();
+        List<Rule_Execution_Health__c> results = PatternRuleManagerController.getCircuitBreakerStatus();
+        Test.stopTest();
+
+        System.assertEquals(2, results.size(), 'Should return 2 health records');
+    }
 }

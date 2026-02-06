@@ -44,6 +44,24 @@ private with sharing class WorkflowAnalyticsControllerTest {
         }
         insert logs;
 
+        // 3b. Setup Behavior Log Summaries (analytics now query summaries)
+        String todayStr = String.valueOf(Date.today());
+        Id currentUserId = UserInfo.getUserId();
+        insert new List<Behavior_Log_Summary__c>{
+            new Behavior_Log_Summary__c(
+                User__c = currentUserId, Action_Name__c = 'Record_Created',
+                Object_API_Name__c = 'Contact', Log_Date__c = Date.today(),
+                Event_Count__c = 5, Composite_Key__c = currentUserId + '_Contact_Record_Created_' + todayStr,
+                Last_Event_Time__c = System.now()
+            ),
+            new Behavior_Log_Summary__c(
+                User__c = currentUserId, Action_Name__c = 'Record_Updated',
+                Object_API_Name__c = 'Account', Log_Date__c = Date.today(),
+                Event_Count__c = 3, Composite_Key__c = currentUserId + '_Account_Record_Updated_' + todayStr,
+                Last_Event_Time__c = System.now()
+            )
+        };
+
         // 4. Create System_Health_Log__c
         insert new System_Health_Log__c(Job_Name__c = 'Test Job', Status__c = 'Success');
 
@@ -1073,8 +1091,9 @@ private with sharing class WorkflowAnalyticsControllerTest {
 
     @isTest
     static void testGetWorkflowStats_NoLogs() {
-        // Test workflow stats with no behavior logs
+        // Test workflow stats with no behavior logs or summaries
         delete [SELECT Id FROM Behavior_Log__c];
+        delete [SELECT Id FROM Behavior_Log_Summary__c];
 
         Test.startTest();
         Map<String, Integer> stats = WorkflowAnalyticsController.getWorkflowStats();
@@ -1087,8 +1106,9 @@ private with sharing class WorkflowAnalyticsControllerTest {
 
     @isTest
     static void testGetTopActions_NoRecentLogs() {
-        // Test top actions with no logs in last 30 days
+        // Test top actions with no logs or summaries in last 30 days
         delete [SELECT Id FROM Behavior_Log__c];
+        delete [SELECT Id FROM Behavior_Log_Summary__c];
 
         Test.startTest();
         List<WorkflowAnalyticsController.TopAction> actions = WorkflowAnalyticsController.getTopActions();

@@ -78,22 +78,23 @@ public with sharing class UserLeaderboardController {
 
         // 2. Safe Data Query with sharing-aware approach
         try {
-            // STEP A: Query accessible logs with USER_MODE to respect sharing rules
-            List<Behavior_Log__c> accessibleLogs = [
-                SELECT Id, User__c
-                FROM Behavior_Log__c
-                WHERE User__c != null
-                WITH USER_MODE
-                LIMIT 50000
-            ];
-
-            // STEP B: Aggregate activity counts by User__c in Apex (sharing-aware)
+            // STEP A+B: Query pre-aggregated daily summaries instead of scanning 50K raw logs
             Map<Id, Integer> userActivityCounts = new Map<Id, Integer>();
-            for (Behavior_Log__c log : accessibleLogs) {
-                if (!userActivityCounts.containsKey(log.User__c)) {
-                    userActivityCounts.put(log.User__c, 0);
+            if (Schema.sObjectType.Behavior_Log_Summary__c.isAccessible()) {
+                for (AggregateResult ar : [
+                    SELECT User__c, SUM(Event_Count__c) totalEvents
+                    FROM Behavior_Log_Summary__c
+                    WHERE User__c != null
+                    WITH USER_MODE
+                    GROUP BY User__c
+                    HAVING SUM(Event_Count__c) > 0
+                    LIMIT 2000
+                ]) {
+                    userActivityCounts.put(
+                        (Id) ar.get(String.valueOf(Behavior_Log_Summary__c.User__c)),
+                        ((Decimal) ar.get('totalEvents')).intValue()
+                    );
                 }
-                userActivityCounts.put(log.User__c, userActivityCounts.get(log.User__c) + 1);
             }
 
             // STEP C: Calculate REAL Impact from Pain Points
@@ -175,7 +176,7 @@ public with sharing class UserLeaderboardController {
             }
 
         } catch (System.QueryException qe) {
-            System.debug(LoggingLevel.INFO, 'BehaviorIQ: User lacks permission to Behavior_Log__c or User fields.');
+            System.debug(LoggingLevel.INFO, 'BehaviorIQ: User lacks permission to Behavior_Log_Summary__c or User fields: ' + qe.getMessage());
             return new LeaderboardResult(isPremium, new List<LeaderboardEntry>());
         } catch (Exception e) {
             System.debug(LoggingLevel.ERROR, 'BehaviorIQ Leaderboard Error: ' + e.getMessage() + ' ' + e.getStackTraceString());
@@ -404,31 +405,29 @@ public with sharing class UserLeaderboardController {
         if (userIds.isEmpty()) return resultMap;
 
         try {
-            // Query with USER_MODE for sharing/FLS enforcement, then stripInaccessible for additional protection
-            List<Behavior_Log__c> logs = [
-                SELECT User__c, Action_Name__c
-                FROM Behavior_Log__c
+            // Query pre-aggregated summaries instead of raw logs
+            List<Behavior_Log_Summary__c> summaries = [
+                SELECT User__c, Action_Name__c, Event_Count__c
+                FROM Behavior_Log_Summary__c
                 WHERE User__c IN :userIds
                 WITH USER_MODE
-                ORDER BY CreatedDate DESC
+                ORDER BY Event_Count__c DESC
                 LIMIT 500
             ];
 
-            // Apply security stripping for additional field-level protection
-            SObjectAccessDecision securityDecision = Security.stripInaccessible(AccessType.READABLE, logs);
-            
+            SObjectAccessDecision securityDecision = Security.stripInaccessible(
+                AccessType.READABLE, summaries
+            );
+
             for (SObject obj : securityDecision.getRecords()) {
-                Behavior_Log__c log = (Behavior_Log__c)obj;
-                
-                if (!resultMap.containsKey(log.User__c)) {
-                    resultMap.put(log.User__c, new List<String>());
+                Behavior_Log_Summary__c summary = (Behavior_Log_Summary__c) obj;
+                if (!resultMap.containsKey(summary.User__c)) {
+                    resultMap.put(summary.User__c, new List<String>());
                 }
-                
-                // Only add if Action Name is visible/populated
-                if (log.Action_Name__c != null) {
-                    List<String> userBehaviors = resultMap.get(log.User__c);
-                    if (!userBehaviors.contains(log.Action_Name__c) && userBehaviors.size() < 3) {
-                        userBehaviors.add(log.Action_Name__c);
+                if (summary.Action_Name__c != null) {
+                    List<String> userBehaviors = resultMap.get(summary.User__c);
+                    if (!userBehaviors.contains(summary.Action_Name__c) && userBehaviors.size() < 3) {
+                        userBehaviors.add(summary.Action_Name__c);
                     }
                 }
             }

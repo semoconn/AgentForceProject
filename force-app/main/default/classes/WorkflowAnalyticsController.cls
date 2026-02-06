@@ -1104,32 +1104,32 @@ public with sharing class WorkflowAnalyticsController {
         Map<String, Integer> stats = new Map<String, Integer>();
 
         try {
-            // Query with USER_MODE to respect sharing rules, then aggregate in Apex
-            // This prevents information disclosure where aggregate counts include inaccessible records
-            List<Behavior_Log__c> accessibleLogs = [
-                SELECT Id, User__c, Object_API_Name__c
-                FROM Behavior_Log__c
-                WITH USER_MODE
-                LIMIT 50000
-            ];
+            // Query pre-aggregated summaries instead of scanning 50K raw logs
+            if (Schema.sObjectType.Behavior_Log_Summary__c.isAccessible()) {
+                List<AggregateResult> summaryAgg = [
+                    SELECT COUNT_DISTINCT(User__c) uniqueUsers,
+                           COUNT_DISTINCT(Object_API_Name__c) uniqueObjects,
+                           SUM(Event_Count__c) totalEvents
+                    FROM Behavior_Log_Summary__c
+                    WITH USER_MODE
+                ];
 
-            // Count total accessible logs
-            stats.put('totalLogs', accessibleLogs.size());
-
-            // Count unique users from accessible logs
-            Set<Id> uniqueUsers = new Set<Id>();
-            Set<String> uniqueObjects = new Set<String>();
-            for (Behavior_Log__c log : accessibleLogs) {
-                if (log.User__c != null) {
-                    uniqueUsers.add(log.User__c);
+                if (!summaryAgg.isEmpty()) {
+                    AggregateResult ar = summaryAgg[0];
+                    Decimal totalEvents = (Decimal) ar.get('totalEvents');
+                    stats.put('totalLogs', totalEvents != null ? totalEvents.intValue() : 0);
+                    stats.put('uniqueUsers', (Integer) ar.get('uniqueUsers'));
+                    stats.put('objectsTracked', (Integer) ar.get('uniqueObjects'));
+                } else {
+                    stats.put('totalLogs', 0);
+                    stats.put('uniqueUsers', 0);
+                    stats.put('objectsTracked', 0);
                 }
-                if (String.isNotBlank(log.Object_API_Name__c)) {
-                    uniqueObjects.add(log.Object_API_Name__c);
-                }
+            } else {
+                stats.put('totalLogs', 0);
+                stats.put('uniqueUsers', 0);
+                stats.put('objectsTracked', 0);
             }
-
-            stats.put('uniqueUsers', uniqueUsers.size());
-            stats.put('objectsTracked', uniqueObjects.size());
         } catch (Exception e) {
             throw new AuraHandledException('Unable to calculate stats.');
         }
@@ -1142,39 +1142,28 @@ public with sharing class WorkflowAnalyticsController {
         List<TopAction> actions = new List<TopAction>();
 
         try {
-            // Query with USER_MODE to respect sharing rules, then aggregate in Apex
-            // This prevents information disclosure where aggregate counts include inaccessible records
-            List<Behavior_Log__c> accessibleLogs = [
-                SELECT Id, Action_Name__c, Object_API_Name__c
-                FROM Behavior_Log__c
-                WHERE CreatedDate = LAST_N_DAYS:30
-                WITH USER_MODE
-                LIMIT 50000
-            ];
+            // Query pre-aggregated summaries grouped by action and object
+            if (Schema.sObjectType.Behavior_Log_Summary__c.isAccessible()) {
+                List<AggregateResult> actionAgg = [
+                    SELECT Action_Name__c, Object_API_Name__c, SUM(Event_Count__c) total
+                    FROM Behavior_Log_Summary__c
+                    WHERE Log_Date__c = LAST_N_DAYS:30
+                    WITH USER_MODE
+                    GROUP BY Action_Name__c, Object_API_Name__c
+                    ORDER BY SUM(Event_Count__c) DESC
+                    LIMIT 10
+                ];
 
-            // Aggregate counts by action+object combination in Apex
-            Map<String, TopAction> actionMap = new Map<String, TopAction>();
-            for (Behavior_Log__c log : accessibleLogs) {
-                String key = (log.Action_Name__c != null ? log.Action_Name__c : '') +
-                             (log.Object_API_Name__c != null ? log.Object_API_Name__c : '');
-
-                if (!actionMap.containsKey(key)) {
+                for (AggregateResult ar : actionAgg) {
                     TopAction ta = new TopAction();
-                    ta.actionName = log.Action_Name__c;
-                    ta.objectName = log.Object_API_Name__c;
-                    ta.count = 0;
-                    ta.id = key;
-                    actionMap.put(key, ta);
+                    ta.actionName = (String) ar.get(String.valueOf(Behavior_Log_Summary__c.Action_Name__c));
+                    ta.objectName = (String) ar.get(String.valueOf(Behavior_Log_Summary__c.Object_API_Name__c));
+                    Decimal total = (Decimal) ar.get('total');
+                    ta.count = total != null ? total.intValue() : 0;
+                    ta.id = (ta.actionName != null ? ta.actionName : '') +
+                            (ta.objectName != null ? ta.objectName : '');
+                    actions.add(ta);
                 }
-                actionMap.get(key).count++;
-            }
-
-            // Sort by count descending and take top 10
-            List<TopAction> allActions = actionMap.values();
-            allActions.sort(new TopActionComparator());
-
-            for (Integer i = 0; i < Math.min(10, allActions.size()); i++) {
-                actions.add(allActions[i]);
             }
         } catch (Exception e) {
             throw new AuraHandledException('Error fetching top actions.');

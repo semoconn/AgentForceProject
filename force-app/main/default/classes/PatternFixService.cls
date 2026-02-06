@@ -60,6 +60,16 @@ public with sharing class PatternFixService {
     public void executeFix(List<Id> recordIds, String ruleDeveloperName) {
         if (recordIds == null || recordIds.isEmpty()) return;
 
+        // Circuit breaker check - block execution if rule is temporarily disabled
+        if (!CircuitBreakerService.canExecute(ruleDeveloperName)) {
+            String state = CircuitBreakerService.getCircuitState(ruleDeveloperName);
+            throw new AuraHandledException(
+                'Fix temporarily disabled for rule "' + ruleDeveloperName +
+                '". Circuit breaker state: ' + state +
+                '. The rule will automatically retry after the cooldown period, or an admin can reset it manually.'
+            );
+        }
+
         this.currentRuleName = ruleDeveloperName;
 
         // 1. Fetch Rule (use mock if available in test context)
@@ -95,23 +105,30 @@ public with sharing class PatternFixService {
         // 4. Route Execution based on Logic Type
         String logicType = String.isNotBlank(rule.Logic_Type__c) ? rule.Logic_Type__c : 'Standard';
 
-        switch on logicType {
-            when 'Apex_Plugin' {
-                // Invoke custom plugin for fix
-                executePluginFix(rule, recordIds, config);
+        try {
+            switch on logicType {
+                when 'Apex_Plugin' {
+                    // Invoke custom plugin for fix
+                    executePluginFix(rule, recordIds, config);
+                }
+                when 'Declarative' {
+                    // Execute declarative JSON-based actions
+                    executeDeclarativeFix(recordIds, rule.Fix_Config__c);
+                }
+                when else {
+                    // 'Standard' - use existing Fix_Type__c routing
+                    executeStandardFix(rule.Fix_Type__c, recordIds, config);
+                }
             }
-            when 'Declarative' {
-                // Execute declarative JSON-based actions
-                executeDeclarativeFix(recordIds, rule.Fix_Config__c);
-            }
-            when else {
-                // 'Standard' - use existing Fix_Type__c routing
-                executeStandardFix(rule.Fix_Type__c, recordIds, config);
-            }
-        }
 
-        // 5. Persist all audit logs
-        insertPendingLogs();
+            CircuitBreakerService.recordSuccess(ruleDeveloperName);
+        } catch (Exception e) {
+            CircuitBreakerService.recordFailure(ruleDeveloperName, e.getMessage());
+            throw e;
+        } finally {
+            // 5. Persist all audit logs - always runs even after circuit breaker recording
+            insertPendingLogs();
+        }
     }
 
     // --- LOGIC TYPE ROUTING ---
@@ -164,11 +181,17 @@ public with sharing class PatternFixService {
             throw new AuraHandledException('Rule has Logic_Type__c = Apex_Plugin but no Apex_Handler_Class__c specified.');
         }
 
+        Integer cpuBefore = Limits.getCpuTime();
+
         try {
             PatternPluginResult result = PluginInvoker.invokeFix(handlerClass, recordIds, config);
 
-            // Add plugin's audit logs to our pending logs
+            // Add plugin's audit logs to our pending logs with telemetry
             if (result.auditLogs != null && !result.auditLogs.isEmpty()) {
+                for (Remediation_Log__c auditLog : result.auditLogs) {
+                    auditLog.Plugin_Class__c = handlerClass;
+                    auditLog.Execution_Time_Ms__c = Limits.getCpuTime() - cpuBefore;
+                }
                 pendingLogs.addAll(result.auditLogs);
             }
 
@@ -182,9 +205,13 @@ public with sharing class PatternFixService {
             }
 
         } catch (PluginInvoker.PluginException pe) {
-            // Log failure for all records
+            // Log failure for all records with telemetry
             for (Id recId : recordIds) {
                 addLog(recId, 'Apex_Plugin', null, null, STATUS_FAILED, pe.getMessage());
+                // Set plugin telemetry on the last added log entry
+                Remediation_Log__c log = pendingLogs[pendingLogs.size() - 1];
+                log.Plugin_Class__c = handlerClass;
+                log.Execution_Time_Ms__c = Limits.getCpuTime() - cpuBefore;
             }
             throw new AuraHandledException('Plugin execution failed: ' + pe.getMessage());
         }
@@ -1158,8 +1185,10 @@ public with sharing class PatternFixService {
             return;
         }
 
+        // Strip inaccessible fields before insert for FLS enforcement
+        SObjectAccessDecision decision = Security.stripInaccessible(AccessType.CREATABLE, pendingLogs);
         // Use allOrNone = false to not fail the main operation if logging fails
-        Database.SaveResult[] results = Database.insert(pendingLogs, false);
+        Database.SaveResult[] results = Database.insert(decision.getRecords(), false);
 
         // Log any failures for debugging
         for (Integer i = 0; i < results.size(); i++) {

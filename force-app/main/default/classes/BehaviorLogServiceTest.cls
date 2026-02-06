@@ -1,7 +1,6 @@
 /**
  * @description Test class for BehaviorLogService.
- * @version 5.0 - Fixed permission issues by running functional tests as admin
- *                and using targeted approach for security tests.
+ * @version 6.0 - Added tests for Behavior_Log_Summary__c dual-write.
  * 
  * IMPORTANT: In Salesforce test context, Permission Set assignments made in the same
  * transaction may not be fully effective for Schema.isCreateable() checks.
@@ -383,5 +382,187 @@ private with sharing class BehaviorLogServiceTest {
         System.assertEquals('RecordB', logB.Record_ID__c);
         System.assertEquals(userId, logB.User__c);
         System.assertEquals('{"type": "B"}', logB.Behavior_Data__c);
+    }
+
+    // ==================== SUMMARY DUAL-WRITE TESTS ====================
+
+    /**
+     * @description Test: Summary records are created alongside raw logs.
+     * Covers: createSummariesFromEvents() - new summary creation path
+     */
+    @isTest
+    static void testSummaryCreation() {
+        String userId = UserInfo.getUserId();
+        List<Behavior_Event__e> events = new List<Behavior_Event__e>{
+            new Behavior_Event__e(
+                Action_Name__c = 'Summary_Test',
+                Object_API_Name__c = 'Case',
+                Record_ID__c = '500000000000001AAA',
+                User_ID__c = userId,
+                Behavior_Data__c = '{"test": true}'
+            )
+        };
+
+        Test.startTest();
+        BehaviorLogService.createLogsFromEvents(events);
+        Test.stopTest();
+
+        // Verify raw log
+        System.assertEquals(1, [SELECT COUNT() FROM Behavior_Log__c WHERE Action_Name__c = 'Summary_Test'],
+            'Raw log should be created');
+
+        // Verify summary
+        String expectedKey = userId + '_Case_Summary_Test_' + String.valueOf(Date.today());
+        List<Behavior_Log_Summary__c> summaries = [
+            SELECT Event_Count__c, User__c, Object_API_Name__c, Action_Name__c, Log_Date__c, Composite_Key__c
+            FROM Behavior_Log_Summary__c
+            WHERE Composite_Key__c = :expectedKey
+        ];
+        System.assertEquals(1, summaries.size(), 'Summary should be created');
+        System.assertEquals(1, summaries[0].Event_Count__c, 'Event count should be 1');
+        System.assertEquals(userId, summaries[0].User__c, 'User should match');
+        System.assertEquals('Case', summaries[0].Object_API_Name__c, 'Object should match');
+        System.assertEquals('Summary_Test', summaries[0].Action_Name__c, 'Action should match');
+        System.assertEquals(Date.today(), summaries[0].Log_Date__c, 'Date should be today');
+    }
+
+    /**
+     * @description Test: Multiple events with same key aggregate into one summary.
+     * Covers: createSummariesFromEvents() - in-memory aggregation within a single batch
+     */
+    @isTest
+    static void testSummaryAggregation_SameKey() {
+        String userId = UserInfo.getUserId();
+        List<Behavior_Event__e> events = new List<Behavior_Event__e>();
+        for (Integer i = 0; i < 5; i++) {
+            events.add(new Behavior_Event__e(
+                Action_Name__c = 'Aggregate_Action',
+                Object_API_Name__c = 'Account',
+                Record_ID__c = '001000000000' + String.valueOf(i).leftPad(3, '0') + 'AAA',
+                User_ID__c = userId,
+                Behavior_Data__c = null
+            ));
+        }
+
+        Test.startTest();
+        BehaviorLogService.createLogsFromEvents(events);
+        Test.stopTest();
+
+        // Verify only ONE summary with count=5
+        String expectedKey = userId + '_Account_Aggregate_Action_' + String.valueOf(Date.today());
+        List<Behavior_Log_Summary__c> summaries = [
+            SELECT Event_Count__c FROM Behavior_Log_Summary__c WHERE Composite_Key__c = :expectedKey
+        ];
+        System.assertEquals(1, summaries.size(), 'Should have exactly one summary for same key');
+        System.assertEquals(5, summaries[0].Event_Count__c, 'Event count should be 5');
+    }
+
+    /**
+     * @description Test: Existing summary counts are incremented, not replaced.
+     * Covers: createSummariesFromEvents() - query existing + merge counts path
+     */
+    @isTest
+    static void testSummaryUpsert_AddsToExisting() {
+        String userId = UserInfo.getUserId();
+        String todayStr = String.valueOf(Date.today());
+        String compositeKey = userId + '_Lead_Upsert_Test_' + todayStr;
+
+        // Pre-create a summary with count=3
+        insert new Behavior_Log_Summary__c(
+            User__c = userId,
+            Object_API_Name__c = 'Lead',
+            Action_Name__c = 'Upsert_Test',
+            Log_Date__c = Date.today(),
+            Event_Count__c = 3,
+            Composite_Key__c = compositeKey,
+            Last_Event_Time__c = System.now()
+        );
+
+        // Now process 2 more events with the same key
+        List<Behavior_Event__e> events = new List<Behavior_Event__e>();
+        for (Integer i = 0; i < 2; i++) {
+            events.add(new Behavior_Event__e(
+                Action_Name__c = 'Upsert_Test',
+                Object_API_Name__c = 'Lead',
+                Record_ID__c = '00Q000000000' + i + 'AAA',
+                User_ID__c = userId,
+                Behavior_Data__c = null
+            ));
+        }
+
+        Test.startTest();
+        BehaviorLogService.createLogsFromEvents(events);
+        Test.stopTest();
+
+        // Verify count was ADDED (3 + 2 = 5), not replaced
+        Behavior_Log_Summary__c summary = [
+            SELECT Event_Count__c FROM Behavior_Log_Summary__c WHERE Composite_Key__c = :compositeKey
+        ];
+        System.assertEquals(5, summary.Event_Count__c, 'Existing count (3) should be incremented by new events (2)');
+    }
+
+    /**
+     * @description Test: Events with null User_ID__c are skipped in summary creation.
+     * Covers: createSummariesFromEvents() - null user skip path
+     */
+    @isTest
+    static void testSummarySkipsNullUser() {
+        List<Behavior_Event__e> events = new List<Behavior_Event__e>{
+            new Behavior_Event__e(
+                Action_Name__c = 'Null_User_Action',
+                Object_API_Name__c = 'Contact',
+                Record_ID__c = '003000000000001AAA',
+                User_ID__c = null,
+                Behavior_Data__c = null
+            )
+        };
+
+        Test.startTest();
+        BehaviorLogService.createLogsFromEvents(events);
+        Test.stopTest();
+
+        // Verify no summary created for null user
+        System.assertEquals(0, [SELECT COUNT() FROM Behavior_Log_Summary__c WHERE Action_Name__c = 'Null_User_Action'],
+            'No summary should be created for null user');
+    }
+
+    /**
+     * @description Test: Multiple different keys create separate summaries.
+     * Covers: createSummariesFromEvents() - multiple composite keys path
+     */
+    @isTest
+    static void testSummaryMultipleDifferentKeys() {
+        String userId = UserInfo.getUserId();
+        List<Behavior_Event__e> events = new List<Behavior_Event__e>{
+            new Behavior_Event__e(
+                Action_Name__c = 'Action_X',
+                Object_API_Name__c = 'Case',
+                Record_ID__c = '500000000000001AAA',
+                User_ID__c = userId,
+                Behavior_Data__c = null
+            ),
+            new Behavior_Event__e(
+                Action_Name__c = 'Action_Y',
+                Object_API_Name__c = 'Opportunity',
+                Record_ID__c = '006000000000001AAA',
+                User_ID__c = userId,
+                Behavior_Data__c = null
+            )
+        };
+
+        Test.startTest();
+        BehaviorLogService.createLogsFromEvents(events);
+        Test.stopTest();
+
+        // Verify two separate summaries
+        List<Behavior_Log_Summary__c> summaries = [
+            SELECT Action_Name__c, Object_API_Name__c, Event_Count__c
+            FROM Behavior_Log_Summary__c
+            WHERE Action_Name__c IN ('Action_X', 'Action_Y')
+            ORDER BY Action_Name__c
+        ];
+        System.assertEquals(2, summaries.size(), 'Should have 2 separate summaries');
+        System.assertEquals('Action_X', summaries[0].Action_Name__c);
+        System.assertEquals('Action_Y', summaries[1].Action_Name__c);
     }
 }

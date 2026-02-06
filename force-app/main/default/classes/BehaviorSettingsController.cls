@@ -17,6 +17,10 @@ public with sharing class BehaviorSettingsController {
     public static final Decimal DEFAULT_HIGH_VALUE_AMOUNT = 50000;
     public static final Integer DEFAULT_CONTRACT_EXPIRY_DAYS = 30;
 
+    // Default retention values for Data Retention
+    public static final Integer DEFAULT_RAW_LOG_RETENTION_DAYS = 14;
+    public static final Integer DEFAULT_SUMMARY_RETENTION_DAYS = 365;
+
     /**
      * @description Retrieves all detection threshold settings from BehaviorIQ_Configuration__c.
      *              Returns a wrapper with the threshold values, using defaults if no record exists.
@@ -38,7 +42,9 @@ public with sharing class BehaviorSettingsController {
                        Lead_Hoarding_Days__c,
                        High_Value_Inactivity_Days__c,
                        High_Value_Amount_Threshold__c,
-                       Contract_Expiry_Days__c
+                       Contract_Expiry_Days__c,
+                       Raw_Log_Retention_Days__c,
+                       Summary_Retention_Days__c
                 FROM BehaviorIQ_Configuration__c
                 WITH USER_MODE
                 LIMIT 1
@@ -64,6 +70,8 @@ public with sharing class BehaviorSettingsController {
                 wrapper.highValueInactivityDays = getIntegerValue(config.High_Value_Inactivity_Days__c, removedFields, 'High_Value_Inactivity_Days__c', DEFAULT_HIGH_VALUE_INACTIVITY_DAYS);
                 wrapper.highValueAmountThreshold = getDecimalValue(config.High_Value_Amount_Threshold__c, removedFields, 'High_Value_Amount_Threshold__c', DEFAULT_HIGH_VALUE_AMOUNT);
                 wrapper.contractExpiryDays = getIntegerValue(config.Contract_Expiry_Days__c, removedFields, 'Contract_Expiry_Days__c', DEFAULT_CONTRACT_EXPIRY_DAYS);
+                wrapper.rawLogRetentionDays = getIntegerValue(config.Raw_Log_Retention_Days__c, removedFields, 'Raw_Log_Retention_Days__c', DEFAULT_RAW_LOG_RETENTION_DAYS);
+                wrapper.summaryRetentionDays = getIntegerValue(config.Summary_Retention_Days__c, removedFields, 'Summary_Retention_Days__c', DEFAULT_SUMMARY_RETENTION_DAYS);
                 wrapper.recordId = config.Id;
             } else {
                 // Return defaults if no record exists
@@ -74,6 +82,8 @@ public with sharing class BehaviorSettingsController {
                 wrapper.highValueInactivityDays = DEFAULT_HIGH_VALUE_INACTIVITY_DAYS;
                 wrapper.highValueAmountThreshold = DEFAULT_HIGH_VALUE_AMOUNT;
                 wrapper.contractExpiryDays = DEFAULT_CONTRACT_EXPIRY_DAYS;
+                wrapper.rawLogRetentionDays = DEFAULT_RAW_LOG_RETENTION_DAYS;
+                wrapper.summaryRetentionDays = DEFAULT_SUMMARY_RETENTION_DAYS;
                 wrapper.recordId = null;
             }
 
@@ -116,6 +126,8 @@ public with sharing class BehaviorSettingsController {
      * @param highValueInactivityDays Days of inactivity for high-value opportunities
      * @param highValueAmountThreshold Amount threshold for "high value" opportunities
      * @param contractExpiryDays Days before contract expiry to flag
+     * @param rawLogRetentionDays Days to retain raw behavior logs
+     * @param summaryRetentionDays Days to retain summary/snapshot data
      * @return The Id of the upserted configuration record
      */
     @AuraEnabled
@@ -126,7 +138,9 @@ public with sharing class BehaviorSettingsController {
         Integer leadHoardingDays,
         Integer highValueInactivityDays,
         Decimal highValueAmountThreshold,
-        Integer contractExpiryDays
+        Integer contractExpiryDays,
+        Integer rawLogRetentionDays,
+        Integer summaryRetentionDays
     ) {
         try {
             // Validate inputs
@@ -136,6 +150,8 @@ public with sharing class BehaviorSettingsController {
             validateThreshold(leadHoardingDays, 'Lead Hoarding Days', 1, 999);
             validateThreshold(highValueInactivityDays, 'High-Value Inactivity Days', 1, 999);
             validateThreshold(contractExpiryDays, 'Contract Expiry Days', 1, 999);
+            validateThreshold(rawLogRetentionDays, 'Raw Log Retention Days', 7, 90);
+            validateThreshold(summaryRetentionDays, 'Summary Retention Days', 30, 730);
 
             if (highValueAmountThreshold == null || highValueAmountThreshold < 1 || highValueAmountThreshold > 999999999) {
                 throw new AuraHandledException('High-Value Amount Threshold must be between 1 and 999,999,999.');
@@ -174,6 +190,8 @@ public with sharing class BehaviorSettingsController {
             configToSave.High_Value_Inactivity_Days__c = highValueInactivityDays;
             configToSave.High_Value_Amount_Threshold__c = highValueAmountThreshold;
             configToSave.Contract_Expiry_Days__c = contractExpiryDays;
+            configToSave.Raw_Log_Retention_Days__c = rawLogRetentionDays;
+            configToSave.Summary_Retention_Days__c = summaryRetentionDays;
 
             // Use Security.stripInaccessible for field-level security
             SObjectAccessDecision securityDecision = Security.stripInaccessible(
@@ -212,6 +230,8 @@ public with sharing class BehaviorSettingsController {
         @AuraEnabled public Integer highValueInactivityDays;
         @AuraEnabled public Decimal highValueAmountThreshold;
         @AuraEnabled public Integer contractExpiryDays;
+        @AuraEnabled public Integer rawLogRetentionDays;
+        @AuraEnabled public Integer summaryRetentionDays;
         @AuraEnabled public Id recordId;
     }
 

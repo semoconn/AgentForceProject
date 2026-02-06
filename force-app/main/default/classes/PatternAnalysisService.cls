@@ -124,31 +124,39 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
             return;
         }
 
-        // Route based on Logic Type (default to 'Standard' for backward compatibility)
-        String logicType = String.isNotBlank(rule.Logic_Type__c) ? rule.Logic_Type__c : 'Standard';
+        try {
+            // Route based on Logic Type (default to 'Standard' for backward compatibility)
+            String logicType = String.isNotBlank(rule.Logic_Type__c) ? rule.Logic_Type__c : 'Standard';
 
-        List<SObject> detectedRecords;
+            List<SObject> detectedRecords;
 
-        switch on logicType {
-            when 'Apex_Plugin' {
-                // Invoke custom plugin for analysis
-                detectedRecords = executePluginAnalysis(rule, objectApiName);
+            switch on logicType {
+                when 'Apex_Plugin' {
+                    // Invoke custom plugin for analysis
+                    detectedRecords = executePluginAnalysis(rule, objectApiName);
+                }
+                when else {
+                    // 'Standard' and 'Declarative' both use Query_Condition__c for detection
+                    detectedRecords = executeDetectionQuery(rule, objectApiName);
+                }
             }
-            when else {
-                // 'Standard' and 'Declarative' both use Query_Condition__c for detection
-                detectedRecords = executeDetectionQuery(rule, objectApiName);
+
+            if (detectedRecords == null || detectedRecords.isEmpty()) {
+                // Track rule as processed and mark any existing pain point as resolved
+                processedRuleKeys.add(rule.DeveloperName);
+                markPainPointResolved(rule.DeveloperName);
+                CircuitBreakerService.recordSuccess(rule.DeveloperName);
+                return;
             }
-        }
 
-        if (detectedRecords == null || detectedRecords.isEmpty()) {
-            // Track rule as processed and mark any existing pain point as resolved
-            processedRuleKeys.add(rule.DeveloperName);
-            markPainPointResolved(rule.DeveloperName);
-            return;
-        }
+            // Generate and persist the pain point
+            persistDetectionResults(rule, objectApiName, detectedRecords);
+            CircuitBreakerService.recordSuccess(rule.DeveloperName);
 
-        // Generate and persist the pain point
-        persistDetectionResults(rule, objectApiName, detectedRecords);
+        } catch (Exception e) {
+            CircuitBreakerService.recordFailure(rule.DeveloperName, e.getMessage());
+            ruleErrors.add('Rule [' + rule.DeveloperName + ']: ' + e.getMessage());
+        }
     }
 
     /**
@@ -233,6 +241,13 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
         // FLS check - skip rules where required fields aren't accessible
         if ((Test.isRunningTest() && forceFLSCheckFailure) || !validateQueryFieldsAccessible(objectApiName, rule.Query_Condition__c)) {
             System.debug(LoggingLevel.WARN, 'Skipping rule [' + rule.DeveloperName + ']: Required fields not accessible. Query: ' + rule.Query_Condition__c);
+            return false;
+        }
+
+        // Circuit breaker check - skip rules whose circuit is open due to repeated failures
+        if (!CircuitBreakerService.canExecute(rule.DeveloperName)) {
+            System.debug(LoggingLevel.INFO, 'Skipping rule [' + rule.DeveloperName +
+                ']: Circuit breaker is open (state: ' + CircuitBreakerService.getCircuitState(rule.DeveloperName) + ').');
             return false;
         }
 
@@ -823,7 +838,8 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
                     SELECT Id, Stale_Case_Threshold__c, Stale_Opportunity_Threshold__c,
                            Unassigned_Lead_Hours__c, Lead_Hoarding_Days__c,
                            High_Value_Inactivity_Days__c, High_Value_Amount_Threshold__c,
-                           Contract_Expiry_Days__c, Global_Exclusion_Filter__c
+                           Contract_Expiry_Days__c, Global_Exclusion_Filter__c,
+                           Raw_Log_Retention_Days__c, Summary_Retention_Days__c
                     FROM BehaviorIQ_Configuration__c
                     LIMIT 1
                 ];
@@ -1079,12 +1095,52 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
     }
 
     private void deleteOldLogs() {
-        if (!Schema.sObjectType.Behavior_Log__c.isDeletable()) return;
+        // Read configurable retention periods (fall back to defaults)
+        Integer rawRetentionDays = DEFAULT_RETENTION_DAYS;
+        Integer summaryRetentionDays = 365;
+
         try {
-            Date cutoffDate = Date.today().addDays(-DEFAULT_RETENTION_DAYS);
-            String isoDate = Datetime.newInstanceGmt(cutoffDate.year(), cutoffDate.month(), cutoffDate.day()).format('yyyy-MM-dd\'T\'HH:mm:ss\'Z\'');
-            Database.executeBatch(new DeleteRecordsBatch('SELECT Id FROM Behavior_Log__c WHERE CreatedDate < ' + isoDate), 2000);
-        } catch (Exception e) {}
+            BehaviorIQ_Configuration__c config = getConfiguration();
+            if (config != null) {
+                if (config.Raw_Log_Retention_Days__c != null) {
+                    rawRetentionDays = Integer.valueOf(config.Raw_Log_Retention_Days__c);
+                }
+                if (config.Summary_Retention_Days__c != null) {
+                    summaryRetentionDays = Integer.valueOf(config.Summary_Retention_Days__c);
+                }
+            }
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'Using default retention periods: ' + e.getMessage());
+        }
+
+        // Delete raw Behavior_Log__c records past retention period
+        if (Schema.sObjectType.Behavior_Log__c.isDeletable()) {
+            try {
+                Date cutoffDate = Date.today().addDays(-rawRetentionDays);
+                DateTime cutoffDateTime = Datetime.newInstanceGmt(cutoffDate.year(), cutoffDate.month(), cutoffDate.day());
+                Database.executeBatch(new DeleteRecordsBatch(
+                    Behavior_Log__c.SObjectType,
+                    Behavior_Log__c.CreatedDate,
+                    cutoffDateTime
+                ), 2000);
+            } catch (Exception e) {
+                System.debug(LoggingLevel.ERROR, 'Failed to schedule raw log deletion: ' + e.getMessage());
+            }
+        }
+
+        // Delete old Behavior_Log_Summary__c records past summary retention period
+        if (Schema.sObjectType.Behavior_Log_Summary__c.isDeletable()) {
+            try {
+                Date summaryCutoff = Date.today().addDays(-summaryRetentionDays);
+                Database.executeBatch(new DeleteRecordsBatch(
+                    Behavior_Log_Summary__c.SObjectType,
+                    Behavior_Log_Summary__c.Log_Date__c,
+                    summaryCutoff
+                ), 2000);
+            } catch (Exception e) {
+                System.debug(LoggingLevel.ERROR, 'Failed to schedule summary deletion: ' + e.getMessage());
+            }
+        }
     }
 
     private void logJobStatus(Database.BatchableContext bc) {
@@ -1129,7 +1185,8 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
                 Job_Name__c = JOB_NAME,
                 Job_ID__c = jobId,
                 Status__c = (totalErrors > 0) ? 'Failed' : 'Success',
-                Error_Count__c = totalErrors
+                Error_Count__c = totalErrors,
+                CPU_Time_Ms__c = Limits.getCpuTime()
             );
             // Add error details if field is accessible
             if (hasRuleErrors && Schema.sObjectType.System_Health_Log__c.fields.Error_Details__c.isCreateable()) {

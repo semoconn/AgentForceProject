@@ -86,6 +86,9 @@ public with sharing class DeclarativeFixExecutor {
         // Create savepoint for atomic transaction - all actions succeed or all are rolled back
         Savepoint sp = Database.setSavepoint();
 
+        // Track action index for per-action telemetry (declared outside try for catch block access)
+        Integer actionIndex = 0;
+
         try {
             // Test hook for forcing rollback scenario
             if (Test.isRunningTest() && forceRollbackException) {
@@ -101,20 +104,36 @@ public with sharing class DeclarativeFixExecutor {
                     throw new DeclarativeFixException('Each action must have a "type" property.');
                 }
 
+                // Capture pre-action state for telemetry
+                Integer logCountBefore = pendingLogs.size();
+                Integer cpuBefore = Limits.getCpuTime();
+
                 executeAction(actionType, action, recordIds);
+
+                // Calculate CPU time consumed by this action
+                Integer cpuConsumed = Limits.getCpuTime() - cpuBefore;
+
+                // Tag recently added logs with per-action metrics
+                Integer logsToTag = pendingLogs.size() - logCountBefore;
+                for (Integer i = pendingLogs.size() - 1; i >= pendingLogs.size() - logsToTag && i >= 0; i--) {
+                    pendingLogs[i].Action_Index__c = actionIndex;
+                    pendingLogs[i].Execution_Time_Ms__c = cpuConsumed;
+                }
+
+                actionIndex++;
             }
         } catch (DeclarativeFixException e) {
             // Rollback all DML operations on declarative fix errors
             Database.rollback(sp);
             // Clear success logs since those operations were rolled back, but keep failure logs
             clearSuccessLogs();
-            throw new DeclarativeFixException('Fix rolled back due to error: ' + e.getMessage());
+            throw new DeclarativeFixException('Declarative fix rolled back at action index ' + actionIndex + '. Error: ' + e.getMessage());
         } catch (Exception e) {
             // Rollback all DML operations on any unexpected error
             Database.rollback(sp);
             // Clear success logs since those operations were rolled back, but keep failure logs
             clearSuccessLogs();
-            throw new DeclarativeFixException('Fix rolled back due to unexpected error: ' + e.getMessage());
+            throw new DeclarativeFixException('Declarative fix rolled back at action index ' + actionIndex + '. Error: ' + e.getMessage());
         }
     }
 

@@ -1,6 +1,6 @@
 /**
  * @description Test class for BehaviorSettingsController
- * @version 3.0 - Updated to support Pattern Analysis Configuration (Sprint 3.4)
+ * @version 4.0 - Updated to support Data Retention settings (rawLogRetentionDays, summaryRetentionDays)
  */
 @isTest
 private with sharing class BehaviorSettingsControllerTest {
@@ -73,7 +73,7 @@ private with sharing class BehaviorSettingsControllerTest {
         delete [SELECT Id FROM BehaviorIQ_Configuration__c];
 
         Test.startTest();
-        Id recordId = BehaviorSettingsController.saveConfigSettings(15, 60, 48, 5, 14, 50000, 30);
+        Id recordId = BehaviorSettingsController.saveConfigSettings(15, 60, 48, 5, 14, 50000, 30, 14, 365);
         Test.stopTest();
 
         // Verify record was created
@@ -100,7 +100,7 @@ private with sharing class BehaviorSettingsControllerTest {
         insert existingConfig;
 
         Test.startTest();
-        Id recordId = BehaviorSettingsController.saveConfigSettings(7, 21, 24, 3, 7, 25000, 15);
+        Id recordId = BehaviorSettingsController.saveConfigSettings(7, 21, 24, 3, 7, 25000, 15, 14, 365);
         Test.stopTest();
 
         // Should update the existing record, not create a new one
@@ -127,7 +127,7 @@ private with sharing class BehaviorSettingsControllerTest {
         // Test null value
         Boolean exceptionThrown = false;
         try {
-            BehaviorSettingsController.saveConfigSettings(null, 90, 48, 5, 14, 50000, 30);
+            BehaviorSettingsController.saveConfigSettings(null, 90, 48, 5, 14, 50000, 30, 14, 365);
         } catch (AuraHandledException e) {
             exceptionThrown = true;
             // AuraHandledException.getMessage() returns 'Script-thrown exception' in test context
@@ -138,7 +138,7 @@ private with sharing class BehaviorSettingsControllerTest {
         // Test value below minimum
         exceptionThrown = false;
         try {
-            BehaviorSettingsController.saveConfigSettings(0, 90, 48, 5, 14, 50000, 30);
+            BehaviorSettingsController.saveConfigSettings(0, 90, 48, 5, 14, 50000, 30, 14, 365);
         } catch (AuraHandledException e) {
             exceptionThrown = true;
         }
@@ -147,7 +147,7 @@ private with sharing class BehaviorSettingsControllerTest {
         // Test value above maximum
         exceptionThrown = false;
         try {
-            BehaviorSettingsController.saveConfigSettings(1000, 90, 48, 5, 14, 50000, 30);
+            BehaviorSettingsController.saveConfigSettings(1000, 90, 48, 5, 14, 50000, 30, 14, 365);
         } catch (AuraHandledException e) {
             exceptionThrown = true;
         }
@@ -163,7 +163,7 @@ private with sharing class BehaviorSettingsControllerTest {
         // Test null value
         Boolean exceptionThrown = false;
         try {
-            BehaviorSettingsController.saveConfigSettings(30, null, 48, 5, 14, 50000, 30);
+            BehaviorSettingsController.saveConfigSettings(30, null, 48, 5, 14, 50000, 30, 14, 365);
         } catch (AuraHandledException e) {
             exceptionThrown = true;
             // AuraHandledException.getMessage() returns 'Script-thrown exception' in test context
@@ -174,7 +174,7 @@ private with sharing class BehaviorSettingsControllerTest {
         // Test value below minimum
         exceptionThrown = false;
         try {
-            BehaviorSettingsController.saveConfigSettings(30, 0, 48, 5, 14, 50000, 30);
+            BehaviorSettingsController.saveConfigSettings(30, 0, 48, 5, 14, 50000, 30, 14, 365);
         } catch (AuraHandledException e) {
             exceptionThrown = true;
         }
@@ -183,7 +183,7 @@ private with sharing class BehaviorSettingsControllerTest {
         // Test value above maximum
         exceptionThrown = false;
         try {
-            BehaviorSettingsController.saveConfigSettings(30, 1000, 48, 5, 14, 50000, 30);
+            BehaviorSettingsController.saveConfigSettings(30, 1000, 48, 5, 14, 50000, 30, 14, 365);
         } catch (AuraHandledException e) {
             exceptionThrown = true;
         }
@@ -196,7 +196,7 @@ private with sharing class BehaviorSettingsControllerTest {
     static void testSaveConfigSettings_BoundaryValues() {
         // Test minimum valid values
         Test.startTest();
-        Id recordId = BehaviorSettingsController.saveConfigSettings(1, 1, 1, 1, 1, 1, 1);
+        Id recordId = BehaviorSettingsController.saveConfigSettings(1, 1, 1, 1, 1, 1, 1, 7, 30);
         Test.stopTest();
 
         BehaviorIQ_Configuration__c savedConfig = [
@@ -212,7 +212,7 @@ private with sharing class BehaviorSettingsControllerTest {
     static void testSaveConfigSettings_MaxBoundaryValues() {
         // Test maximum valid values
         Test.startTest();
-        Id recordId = BehaviorSettingsController.saveConfigSettings(999, 999, 720, 999, 999, 999999999, 999);
+        Id recordId = BehaviorSettingsController.saveConfigSettings(999, 999, 720, 999, 999, 999999999, 999, 90, 730);
         Test.stopTest();
 
         BehaviorIQ_Configuration__c savedConfig = [
@@ -243,7 +243,7 @@ private with sharing class BehaviorSettingsControllerTest {
         Test.startTest();
 
         // Save custom values
-        Id savedId = BehaviorSettingsController.saveConfigSettings(42, 84, 48, 5, 14, 50000, 30);
+        Id savedId = BehaviorSettingsController.saveConfigSettings(42, 84, 48, 5, 14, 50000, 30, 14, 365);
         System.assertNotEquals(null, savedId, 'Save should return record ID');
 
         // Retrieve and verify
@@ -389,7 +389,7 @@ private with sharing class BehaviorSettingsControllerTest {
         Boolean exceptionThrown = false;
         try {
             // Invalid values trigger AuraHandledException
-            BehaviorSettingsController.saveConfigSettings(-1, 90, 48, 5, 14, 50000, 30);
+            BehaviorSettingsController.saveConfigSettings(-1, 90, 48, 5, 14, 50000, 30, 14, 365);
         } catch (AuraHandledException e) {
             exceptionThrown = true;
             // Lines 215-216 re-throw path covered
@@ -413,6 +413,134 @@ private with sharing class BehaviorSettingsControllerTest {
             System.assert(true, 'Exception rethrow path covered');
         }
         Test.stopTest();
+    }
+
+    // ==================== DATA RETENTION SETTINGS TESTS ====================
+
+    @isTest
+    static void testGetConfigSettings_RetentionDefaults() {
+        // Verify retention defaults are returned when no config exists
+        delete [SELECT Id FROM BehaviorIQ_Configuration__c];
+
+        Test.startTest();
+        BehaviorSettingsController.ConfigSettingsWrapper result = BehaviorSettingsController.getConfigSettings();
+        Test.stopTest();
+
+        System.assertEquals(BehaviorSettingsController.DEFAULT_RAW_LOG_RETENTION_DAYS, result.rawLogRetentionDays,
+            'Should return default raw log retention days');
+        System.assertEquals(BehaviorSettingsController.DEFAULT_SUMMARY_RETENTION_DAYS, result.summaryRetentionDays,
+            'Should return default summary retention days');
+    }
+
+    @isTest
+    static void testSaveConfigSettings_RetentionValues() {
+        // Test saving custom retention values
+        delete [SELECT Id FROM BehaviorIQ_Configuration__c];
+
+        Test.startTest();
+        Id recordId = BehaviorSettingsController.saveConfigSettings(30, 90, 48, 5, 14, 50000, 30, 21, 180);
+        Test.stopTest();
+
+        BehaviorIQ_Configuration__c config = [
+            SELECT Raw_Log_Retention_Days__c, Summary_Retention_Days__c
+            FROM BehaviorIQ_Configuration__c
+            WHERE Id = :recordId
+        ];
+        System.assertEquals(21, config.Raw_Log_Retention_Days__c, 'Raw log retention should be saved');
+        System.assertEquals(180, config.Summary_Retention_Days__c, 'Summary retention should be saved');
+    }
+
+    @isTest
+    static void testSaveConfigSettings_RetentionValidation_RawLogBelowMin() {
+        Test.startTest();
+        Boolean exceptionThrown = false;
+        try {
+            // Raw log retention minimum is 7
+            BehaviorSettingsController.saveConfigSettings(30, 90, 48, 5, 14, 50000, 30, 6, 365);
+        } catch (AuraHandledException e) {
+            exceptionThrown = true;
+        }
+        Test.stopTest();
+        System.assert(exceptionThrown, 'Should throw for raw log retention below 7');
+    }
+
+    @isTest
+    static void testSaveConfigSettings_RetentionValidation_RawLogAboveMax() {
+        Test.startTest();
+        Boolean exceptionThrown = false;
+        try {
+            // Raw log retention maximum is 90
+            BehaviorSettingsController.saveConfigSettings(30, 90, 48, 5, 14, 50000, 30, 91, 365);
+        } catch (AuraHandledException e) {
+            exceptionThrown = true;
+        }
+        Test.stopTest();
+        System.assert(exceptionThrown, 'Should throw for raw log retention above 90');
+    }
+
+    @isTest
+    static void testSaveConfigSettings_RetentionValidation_SummaryBelowMin() {
+        Test.startTest();
+        Boolean exceptionThrown = false;
+        try {
+            // Summary retention minimum is 30
+            BehaviorSettingsController.saveConfigSettings(30, 90, 48, 5, 14, 50000, 30, 14, 29);
+        } catch (AuraHandledException e) {
+            exceptionThrown = true;
+        }
+        Test.stopTest();
+        System.assert(exceptionThrown, 'Should throw for summary retention below 30');
+    }
+
+    @isTest
+    static void testSaveConfigSettings_RetentionValidation_SummaryAboveMax() {
+        Test.startTest();
+        Boolean exceptionThrown = false;
+        try {
+            // Summary retention maximum is 730
+            BehaviorSettingsController.saveConfigSettings(30, 90, 48, 5, 14, 50000, 30, 14, 731);
+        } catch (AuraHandledException e) {
+            exceptionThrown = true;
+        }
+        Test.stopTest();
+        System.assert(exceptionThrown, 'Should throw for summary retention above 730');
+    }
+
+    @isTest
+    static void testGetConfigSettings_RetentionFromExistingRecord() {
+        // Verify retention values are read from existing config
+        BehaviorIQ_Configuration__c config = new BehaviorIQ_Configuration__c(
+            Name = 'Retention Test',
+            Stale_Case_Threshold__c = 30,
+            Raw_Log_Retention_Days__c = 30,
+            Summary_Retention_Days__c = 500
+        );
+        insert config;
+
+        Test.startTest();
+        BehaviorSettingsController.ConfigSettingsWrapper result = BehaviorSettingsController.getConfigSettings();
+        Test.stopTest();
+
+        System.assertEquals(30, result.rawLogRetentionDays, 'Should return configured raw log retention');
+        System.assertEquals(500, result.summaryRetentionDays, 'Should return configured summary retention');
+    }
+
+    @isTest
+    static void testRetentionDefaultConstants() {
+        System.assertEquals(14, BehaviorSettingsController.DEFAULT_RAW_LOG_RETENTION_DAYS,
+            'Default raw log retention should be 14');
+        System.assertEquals(365, BehaviorSettingsController.DEFAULT_SUMMARY_RETENTION_DAYS,
+            'Default summary retention should be 365');
+    }
+
+    @isTest
+    static void testConfigSettingsWrapper_RetentionFields() {
+        BehaviorSettingsController.ConfigSettingsWrapper wrapper = new BehaviorSettingsController.ConfigSettingsWrapper();
+        wrapper.rawLogRetentionDays = 21;
+        wrapper.summaryRetentionDays = 180;
+
+        System.assertEquals(21, wrapper.rawLogRetentionDays, 'Wrapper should store raw log retention');
+        System.assertEquals(180, wrapper.summaryRetentionDays, 'Wrapper should store summary retention');
     }
 
 }

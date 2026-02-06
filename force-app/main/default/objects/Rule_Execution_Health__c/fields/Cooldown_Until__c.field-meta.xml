@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Cooldown_Until__c</fullName>
+    <description>DateTime after which the circuit can transition from Open to Half_Open for a trial execution.</description>
+    <externalId>false</externalId>
+    <label>Cooldown Until</label>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>DateTime</type>
+</CustomField>

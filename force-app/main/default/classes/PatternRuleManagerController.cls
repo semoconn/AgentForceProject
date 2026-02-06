@@ -510,6 +510,47 @@ public with sharing class PatternRuleManagerController {
         }
     }
 
+    // ==================== CIRCUIT BREAKER MANAGEMENT ====================
+
+    /**
+     * @description Allows admins to manually reset a circuit breaker for a rule.
+     * @param ruleDeveloperName The rule's DeveloperName
+     * @return Success message
+     */
+    @AuraEnabled
+    public static String resetCircuitBreaker(String ruleDeveloperName) {
+        if (String.isBlank(ruleDeveloperName)) {
+            throw new AuraHandledException('Rule developer name is required.');
+        }
+        try {
+            CircuitBreakerService.resetCircuit(ruleDeveloperName);
+            return 'Circuit breaker reset for rule: ' + ruleDeveloperName;
+        } catch (Exception e) {
+            throw new AuraHandledException('Failed to reset circuit breaker: ' + e.getMessage());
+        }
+    }
+
+    /**
+     * @description Gets circuit breaker status for all rules with health records.
+     * @return List of Rule_Execution_Health__c records with circuit state
+     */
+    @AuraEnabled(cacheable=true)
+    public static List<Rule_Execution_Health__c> getCircuitBreakerStatus() {
+        if (!Schema.sObjectType.Rule_Execution_Health__c.isAccessible()) {
+            return new List<Rule_Execution_Health__c>();
+        }
+        return [
+            SELECT Rule_Developer_Name__c, Circuit_State__c,
+                   Consecutive_Failures__c, Last_Failure_Time__c,
+                   Last_Success_Time__c, Last_Error__c, Cooldown_Until__c,
+                   Total_Failure_Count__c
+            FROM Rule_Execution_Health__c
+            WITH SECURITY_ENFORCED
+            ORDER BY Last_Failure_Time__c DESC NULLS LAST
+            LIMIT 100
+        ];
+    }
+
     // ==================== VALIDATION & TESTING ====================
 
     /**
