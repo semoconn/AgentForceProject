@@ -8,7 +8,7 @@
     </values>
     <values>
         <field>Query_Condition__c</field>
-        <value xsi:type="xsd:string">Owner.IsActive = false AND IsClosed = false</value>
+        <value xsi:type="xsd:string">Owner.IsActive = false AND Status != 'Closed'</value>
     </values>
     <values>
         <field>Fix_Type__c</field>
@@ -16,7 +16,7 @@
     </values>
     <values>
         <field>Fix_Config__c</field>
-        <value xsi:type="xsd:string">{"taskSubject": "Reassign case from inactive owner", "taskPriority": "High"}</value>
+        <value xsi:type="xsd:string">{"subject": "Reassign case from inactive owner", "priority": "High", "description": "This open case is owned by a deactivated user. Reassignment is critical to prevent SLA breaches and ensure customer support continuity.", "manualFixSteps": ["Open each case from the Affected Records table below - these are URGENT as SLAs may be at risk", "Click the Change Owner button to reassign the case", "Assign to an active support agent with appropriate skills for this case type", "Review the case history and add an internal comment summarizing the current status", "Check if any SLA milestones have been breached and escalate if needed", "Contact the customer if there has been a delay in response due to the ownership gap", "To prevent this issue: Create a Flow to auto-assign cases to a queue when the owner is deactivated"]}</value>
     </values>
     <values>
         <field>Is_Premium__c</field>

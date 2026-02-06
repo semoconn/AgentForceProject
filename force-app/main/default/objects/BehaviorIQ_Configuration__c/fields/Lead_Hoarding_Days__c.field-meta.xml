@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Lead_Hoarding_Days__c</fullName>
+    <defaultValue>5</defaultValue>
+    <description>Number of days after which a Lead owned by a user but not contacted is flagged as hoarding. Used by the Pattern Analysis Service for dynamic query injection.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>Enter the number of days (1-999) after which owned but uncontacted leads should be flagged.</inlineHelpText>
+    <label>Lead Hoarding Threshold (Days)</label>
+    <precision>3</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

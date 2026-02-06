@@ -56,10 +56,14 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
     // Track rule-level errors for health reporting (Database.Stateful preserves across batches)
     private List<String> ruleErrors = new List<String>();
 
+    // Track processed rule keys during batch execution for stale pain point detection
+    private Set<String> processedRuleKeys = new Set<String>();
+
     public PatternAnalysisService() {
         dismissedPainPointKeys = new Set<String>();
         pendingSnapshots = new List<Behavior_Snapshot__c>();
         ruleErrors = new List<String>();
+        processedRuleKeys = new Set<String>();
         loadDismissals();
     }
 
@@ -137,6 +141,9 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
         }
 
         if (detectedRecords == null || detectedRecords.isEmpty()) {
+            // Track rule as processed and mark any existing pain point as resolved
+            processedRuleKeys.add(rule.DeveloperName);
+            markPainPointResolved(rule.DeveloperName);
             return;
         }
 
@@ -207,11 +214,13 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
     private Boolean canExecuteRule(Behavior_Pattern_Rule__mdt rule, String objectApiName) {
         // License gate - skip premium rules for non-premium users
         if (rule.Is_Premium__c && !LicenseService.isPremium()) {
+            System.debug(LoggingLevel.INFO, 'Skipping rule [' + rule.DeveloperName + ']: Premium license required but user has Free tier.');
             return false;
         }
 
         // Dismissal check - skip rules the user has dismissed
         if (dismissedPainPointKeys.contains(rule.DeveloperName)) {
+            System.debug(LoggingLevel.INFO, 'Skipping rule [' + rule.DeveloperName + ']: Pattern was dismissed by user.');
             return false;
         }
 
@@ -223,10 +232,12 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
 
         // FLS check - skip rules where required fields aren't accessible
         if ((Test.isRunningTest() && forceFLSCheckFailure) || !validateQueryFieldsAccessible(objectApiName, rule.Query_Condition__c)) {
-            System.debug(LoggingLevel.WARN, 'Skipping rule [' + rule.DeveloperName + ']: Required fields not accessible.');
+            System.debug(LoggingLevel.WARN, 'Skipping rule [' + rule.DeveloperName + ']: Required fields not accessible. Query: ' + rule.Query_Condition__c);
             return false;
         }
 
+        // All checks passed - rule can execute
+        System.debug(LoggingLevel.DEBUG, 'Rule [' + rule.DeveloperName + '] passed all checks, proceeding with detection on ' + objectApiName);
         return true;
     }
 
@@ -589,7 +600,7 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
             return false;
         }
 
-        // Get the related object type
+        // Get the related object type(s) - polymorphic fields like OwnerId can reference multiple objects
         Schema.DescribeFieldResult fieldDescribe = lookupField.getDescribe();
         List<Schema.SObjectType> referenceTo = fieldDescribe.getReferenceTo();
 
@@ -597,30 +608,41 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
             return false;
         }
 
-        // Check if the target field on the related object is accessible
-        Schema.SObjectType relatedType = referenceTo[0];
-        Map<String, Schema.SObjectField> relatedFields = relatedType.getDescribe().fields.getMap();
+        // Check if the target field is accessible on ANY of the referenced objects
+        // This handles polymorphic fields like OwnerId which references both Group and User
+        for (Schema.SObjectType relatedType : referenceTo) {
+            Map<String, Schema.SObjectField> relatedFields = relatedType.getDescribe().fields.getMap();
+            Schema.SObjectField targetFieldRef = relatedFields.get(targetField.toLowerCase());
 
-        Schema.SObjectField targetFieldRef = relatedFields.get(targetField.toLowerCase());
-        if (targetFieldRef == null) {
-            System.debug(LoggingLevel.DEBUG, 'Target field not found: ' + targetField + ' on ' + relatedType.getDescribe().getName());
-            return false;
+            if (targetFieldRef != null && targetFieldRef.getDescribe().isAccessible()) {
+                return true; // Found the field and it's accessible on this related object
+            }
         }
 
-        return targetFieldRef.getDescribe().isAccessible();
+        // Field not found or not accessible on any referenced object
+        System.debug(LoggingLevel.DEBUG, 'Target field not found or not accessible: ' + targetField + ' on any of ' + referenceTo);
+        return false;
     }
 
     /**
-     * @description Checks if a token is a known SOQL literal or keyword that isn't a field.
+     * @description Checks if a token is a known SOQL literal, keyword, or function that isn't a field.
      * @param token The token to check
-     * @return True if this is a known SOQL literal
+     * @return True if this is a known SOQL literal or function
      */
     private static Boolean isKnownSoqlLiteral(String token) {
         Set<String> literals = new Set<String>{
-            'TRUE', 'FALSE', 'NULL', 'TODAY', 'YESTERDAY', 'TOMORROW',
+            // Boolean and null literals
+            'TRUE', 'FALSE', 'NULL',
+            // Date literals
+            'TODAY', 'YESTERDAY', 'TOMORROW',
             'LAST_WEEK', 'THIS_WEEK', 'NEXT_WEEK', 'LAST_MONTH', 'THIS_MONTH',
             'NEXT_MONTH', 'LAST_QUARTER', 'THIS_QUARTER', 'NEXT_QUARTER',
-            'LAST_YEAR', 'THIS_YEAR', 'NEXT_YEAR'
+            'LAST_YEAR', 'THIS_YEAR', 'NEXT_YEAR',
+            // SOQL Date Functions (used in WHERE clauses)
+            'DAY_IN_WEEK', 'DAY_IN_MONTH', 'DAY_IN_YEAR', 'DAY_ONLY',
+            'CALENDAR_MONTH', 'CALENDAR_QUARTER', 'CALENDAR_YEAR',
+            'FISCAL_MONTH', 'FISCAL_QUARTER', 'FISCAL_YEAR',
+            'HOUR_IN_DAY', 'WEEK_IN_MONTH', 'WEEK_IN_YEAR'
         };
         return literals.contains(token.toUpperCase());
     }
@@ -646,19 +668,52 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
         String ruleName = rule.DeveloperName;
         Decimal thresholdValue = null;
 
-        if (config != null) {
+        if (config != null && ruleName != null) {
             // Check for Stale_Case rules (days)
-            if (ruleName != null && ruleName.startsWithIgnoreCase('Stale_Case')) {
+            if (ruleName.startsWithIgnoreCase('Stale_Case')) {
                 thresholdValue = config.Stale_Case_Threshold__c;
             }
             // Check for Stale_Opp/Stale_Opportunity rules (days)
-            else if (ruleName != null && (ruleName.startsWithIgnoreCase('Stale_Opp') ||
-                                           ruleName.startsWithIgnoreCase('Stale_Opportunity'))) {
+            else if (ruleName.startsWithIgnoreCase('Stale_Opp') ||
+                     ruleName.startsWithIgnoreCase('Stale_Opportunity')) {
                 thresholdValue = config.Stale_Opportunity_Threshold__c;
+            }
+            // Check for Unassigned_Lead rules (hours converted to days)
+            else if (ruleName.startsWithIgnoreCase('Unassigned_Lead')) {
+                Decimal hours = config.Unassigned_Lead_Hours__c;
+                if (hours != null) {
+                    // Convert hours to days, rounding up (48 hours = 2 days)
+                    thresholdValue = Math.ceil(hours / 24);
+                }
+            }
+            // Check for Lead_Hoarding rules (days)
+            else if (ruleName.startsWithIgnoreCase('Lead_Hoarding')) {
+                thresholdValue = config.Lead_Hoarding_Days__c;
+            }
+            // Check for High_Value_Ghosting rules (days + amount)
+            else if (ruleName.startsWithIgnoreCase('High_Value')) {
+                thresholdValue = config.High_Value_Inactivity_Days__c;
+                // Also inject amount threshold
+                Decimal amountThreshold = config.High_Value_Amount_Threshold__c;
+                if (amountThreshold != null) {
+                    String amountPattern = 'Amount\\s*>\\s*\\d+';
+                    String amountReplacement = 'Amount > ' + amountThreshold.intValue();
+                    queryCondition = queryCondition.replaceAll(amountPattern, amountReplacement);
+                }
+            }
+            // Check for Contract_Expiry rules (uses NEXT_N_DAYS instead of LAST_N_DAYS)
+            else if (ruleName.startsWithIgnoreCase('Contract_Expiry')) {
+                Decimal expiryDays = config.Contract_Expiry_Days__c;
+                if (expiryDays != null) {
+                    String nextDaysPattern = 'NEXT_N_DAYS:\\d+';
+                    String nextDaysReplacement = 'NEXT_N_DAYS:' + expiryDays.intValue();
+                    queryCondition = queryCondition.replaceAll(nextDaysPattern, nextDaysReplacement);
+                }
+                // Don't set thresholdValue since we already handled the replacement
             }
         }
 
-        // Apply threshold substitution if we have a configured value
+        // Apply threshold substitution if we have a configured value (for LAST_N_DAYS patterns)
         if (thresholdValue != null) {
             // Use regex to replace LAST_N_DAYS:\d+ with the configured value
             // In Apex, \d needs to be escaped as \\d in the regex string
@@ -765,7 +820,10 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
                 // TC-6.1/6.2: Query config - CRUD check done above, class uses 'with sharing'
                 // Note: Configuration is admin-level data; if user lacks FLS, defaults are used (via catch block)
                 List<BehaviorIQ_Configuration__c> configs = [
-                    SELECT Id, Stale_Case_Threshold__c, Stale_Opportunity_Threshold__c, Global_Exclusion_Filter__c
+                    SELECT Id, Stale_Case_Threshold__c, Stale_Opportunity_Threshold__c,
+                           Unassigned_Lead_Hours__c, Lead_Hoarding_Days__c,
+                           High_Value_Inactivity_Days__c, High_Value_Amount_Threshold__c,
+                           Contract_Expiry_Days__c, Global_Exclusion_Filter__c
                     FROM BehaviorIQ_Configuration__c
                     LIMIT 1
                 ];
@@ -784,6 +842,8 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
     }
 
     public void finish(Database.BatchableContext bc) {
+        // Refresh existing pain points to resolve orphaned/stale entries
+        refreshExistingPainPoints();
         insertPendingSnapshots();
         logJobStatus(bc);
         deleteOldLogs();
@@ -792,6 +852,32 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
     // --- HELPER METHODS ---
 
     private void upsertPainPoint(String key, String label, String description, String obj, Integer count, String examples, Decimal totalImpact) {
+        // Query existing pain point to preserve user-set statuses
+        String effectiveStatus = 'New';
+        List<Identified_Pain_Point__c> existing = [
+            SELECT Id, Status__c FROM Identified_Pain_Point__c
+            WHERE Unique_Key__c = :key
+            WITH USER_MODE
+            LIMIT 1
+        ];
+
+        if (!existing.isEmpty()) {
+            String currentStatus = existing[0].Status__c;
+            if (currentStatus == 'Dismissed') {
+                // Always preserve Dismissed - user explicitly ignored this pain point
+                effectiveStatus = 'Dismissed';
+            } else if (currentStatus == 'Resolved' && count > 0) {
+                // Re-activate resolved pain point if records reappear
+                effectiveStatus = 'New';
+            } else if (currentStatus == 'Acknowledged') {
+                // Preserve Acknowledged - user acknowledged but hasn't fixed
+                effectiveStatus = 'Acknowledged';
+            } else if (currentStatus == 'New') {
+                // Keep as New
+                effectiveStatus = 'New';
+            }
+        }
+
         Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
             Unique_Key__c = key,
             Name = label,
@@ -801,7 +887,7 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
             Impact_Score__c = totalImpact,
             Example_Records__c = examples,
             Last_Detected__c = System.now(),
-            Status__c = 'New'
+            Status__c = effectiveStatus
         );
 
         try {
@@ -818,8 +904,122 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
                 Id painPointId = results[0].getId();
                 createSnapshot(key, count, totalImpact, painPointId);
             }
+
+            // Track this rule as processed for stale detection
+            processedRuleKeys.add(key);
         } catch (Exception e) {
             System.debug(LoggingLevel.ERROR, 'Upsert failed: ' + e.getMessage());
+        }
+    }
+
+    /**
+     * @description Marks an existing pain point as resolved when detection returns 0 results.
+     * Preserves 'Dismissed' status (user intentionally ignored this pain point).
+     * @param ruleKey The unique key (DeveloperName) of the rule
+     */
+    private void markPainPointResolved(String ruleKey) {
+        try {
+            List<Identified_Pain_Point__c> existing = [
+                SELECT Id, Status__c, Occurrences__c
+                FROM Identified_Pain_Point__c
+                WHERE Unique_Key__c = :ruleKey
+                WITH USER_MODE
+                LIMIT 1
+            ];
+
+            if (existing.isEmpty()) {
+                return; // No existing pain point to resolve
+            }
+
+            Identified_Pain_Point__c pp = existing[0];
+
+            // Preserve Dismissed status - user explicitly ignored this pain point
+            if (pp.Status__c == 'Dismissed') {
+                return;
+            }
+
+            // Only update if not already resolved
+            if (pp.Status__c != 'Resolved') {
+                pp.Status__c = 'Resolved';
+                pp.Occurrences__c = 0;
+                pp.Example_Records__c = null;
+                pp.Last_Detected__c = System.now();
+
+                SObjectAccessDecision securityDecision = Security.stripInaccessible(AccessType.UPDATABLE, new List<Identified_Pain_Point__c>{pp});
+                Database.update(securityDecision.getRecords(), false);
+            }
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'Failed to mark pain point resolved [' + ruleKey + ']: ' + e.getMessage());
+        }
+    }
+
+    /**
+     * @description Refreshes existing pain points that weren't processed in this batch run.
+     * This handles orphaned pain points (rules deleted/deactivated) by marking them as resolved.
+     * Called at the end of batch execution to ensure data consistency.
+     */
+    private void refreshExistingPainPoints() {
+        try {
+            // Query all active pain points that weren't processed in this run
+            List<Identified_Pain_Point__c> activePainPoints = [
+                SELECT Id, Unique_Key__c, Status__c, Occurrences__c
+                FROM Identified_Pain_Point__c
+                WHERE Status__c NOT IN ('Resolved', 'Dismissed')
+                WITH USER_MODE
+                LIMIT 1000
+            ];
+
+            if (activePainPoints.isEmpty()) {
+                return;
+            }
+
+            // Build set of active rule keys for lookup
+            Set<String> activeRuleKeys = new Set<String>();
+            for (Behavior_Pattern_Rule__mdt rule : [
+                SELECT DeveloperName FROM Behavior_Pattern_Rule__mdt WHERE Is_Active__c != false
+            ]) {
+                activeRuleKeys.add(rule.DeveloperName);
+            }
+
+            List<Identified_Pain_Point__c> toUpdate = new List<Identified_Pain_Point__c>();
+
+            for (Identified_Pain_Point__c pp : activePainPoints) {
+                String key = pp.Unique_Key__c;
+
+                // Skip if already processed in this batch run
+                if (processedRuleKeys.contains(key)) {
+                    continue;
+                }
+
+                // Check if this is an orphaned pain point (rule deleted or deactivated)
+                // Also handle timestamped keys from partial fixes (e.g., "Rule_Name_20240130")
+                String baseKey = key;
+                if (key != null && key.contains('_') && key.length() > 14) {
+                    // Try to extract base rule name (remove timestamp suffix if present)
+                    Integer lastUnderscore = key.lastIndexOf('_');
+                    String possibleTimestamp = key.substring(lastUnderscore + 1);
+                    if (possibleTimestamp.length() == 13 && possibleTimestamp.isNumeric()) {
+                        baseKey = key.substring(0, lastUnderscore);
+                    }
+                }
+
+                // If the rule no longer exists or is inactive, mark the pain point as resolved
+                if (!activeRuleKeys.contains(key) && !activeRuleKeys.contains(baseKey)) {
+                    pp.Status__c = 'Resolved';
+                    pp.Occurrences__c = 0;
+                    pp.Example_Records__c = null;
+                    pp.Last_Detected__c = System.now();
+                    toUpdate.add(pp);
+                }
+            }
+
+            if (!toUpdate.isEmpty()) {
+                SObjectAccessDecision securityDecision = Security.stripInaccessible(AccessType.UPDATABLE, toUpdate);
+                Database.update(securityDecision.getRecords(), false);
+                System.debug(LoggingLevel.INFO, 'PatternAnalysisService: Resolved ' + toUpdate.size() + ' orphaned pain points');
+            }
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'Failed to refresh existing pain points: ' + e.getMessage());
         }
     }
 
@@ -1336,7 +1536,7 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
         } else if (objLower == 'task') {
             fields = new List<String>{ 'Id', 'Subject', 'Status', 'Priority', 'ActivityDate', 'CreatedDate', 'OwnerId' };
         } else if (objLower == 'contract') {
-            fields = new List<String>{ 'Id', 'ContractNumber', 'Status', 'StartDate', 'EndDate', 'AccountId', 'CreatedDate', 'OwnerId' };
+            fields = new List<String>{ 'Id', 'ContractNumber', 'Status', 'StartDate', 'EndDate', 'AccountId', 'Account.Name', 'CreatedDate', 'OwnerId' };
         } else {
             // Default fields for any other object (including custom objects like Project__c)
             // Uses dynamic field detection for custom objects
@@ -1510,9 +1710,23 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
                 pp.Occurrences__c = liveCount;
 
                 // Recalculate impact score based on new count
-                // For Opportunity/Contract, keep the stored value (it's cumulative value, not count-based)
                 String objName = pp.Object_API_Name__c != null ? pp.Object_API_Name__c.toLowerCase() : '';
-                if (objName != 'opportunity' && objName != 'contract') {
+                if (objName == 'opportunity') {
+                    // For Opportunities, recalculate by summing Amount of remaining matching records
+                    Decimal liveAmount = calculateLiveOpportunityAmount(pp);
+                    if (liveAmount != null) {
+                        pp.Impact_Score__c = liveAmount;
+                        System.debug(LoggingLevel.DEBUG, 'Recalculated Opportunity impact score: ' + liveAmount);
+                    }
+                    // If calculation failed, keep existing value (defensive)
+                } else if (objName == 'contract') {
+                    // For Contracts, recalculate by summing ContractNumber/value of remaining matching records
+                    // Note: Contract impact calculation would follow same pattern as Opportunity
+                    // Currently keeping existing value - can be enhanced in future
+                    Decimal costPerIncident = pp.Cost_Per_Incident__c != null ? pp.Cost_Per_Incident__c : 0;
+                    pp.Impact_Score__c = liveCount * costPerIncident;
+                } else {
+                    // For other objects, calculate from count * cost per incident
                     Decimal costPerIncident = pp.Cost_Per_Incident__c != null ? pp.Cost_Per_Incident__c : 0;
                     pp.Impact_Score__c = liveCount * costPerIncident;
                 }
@@ -1731,6 +1945,181 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
 
         } catch (Exception pluginEx) {
             System.debug(LoggingLevel.ERROR, 'Plugin count failed: ' + pluginEx.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * @description Calculates the live impact score for Opportunity pain points by summing
+     * the Amount field of all currently matching Opportunity records.
+     *
+     * This is needed because Opportunity impact is based on actual dollar amounts,
+     * not count * cost_per_incident like other objects. When records are fixed,
+     * the remaining impact must be recalculated from the remaining records' amounts.
+     *
+     * SECURITY: Uses USER_MODE to respect sharing rules when summing amounts.
+     * Returns null on errors to preserve existing Impact_Score (defensive).
+     *
+     * @param painPoint The pain point record containing rule key and exclusion info
+     * @return The sum of Amount from matching Opportunity records, or null if calculation failed
+     */
+    private static Decimal calculateLiveOpportunityAmount(Identified_Pain_Point__c painPoint) {
+        if (painPoint == null || String.isBlank(painPoint.Unique_Key__c)) {
+            return null;
+        }
+
+        try {
+            // Extract base rule name from potentially timestamped key
+            String baseRuleName = extractBaseRuleName(painPoint.Unique_Key__c);
+
+            // Query the rule from metadata
+            List<Behavior_Pattern_Rule__mdt> rules = [
+                SELECT DeveloperName, Object_API_Name__c, Query_Condition__c,
+                       Logic_Type__c, Apex_Handler_Class__c, Fix_Config__c
+                FROM Behavior_Pattern_Rule__mdt
+                WHERE DeveloperName = :baseRuleName
+                LIMIT 1
+            ];
+
+            if (rules.isEmpty()) {
+                System.debug(LoggingLevel.WARN, 'Rule not found for key: ' + baseRuleName);
+                return null;
+            }
+
+            Behavior_Pattern_Rule__mdt rule = rules[0];
+            String objectApiName = rule.Object_API_Name__c;
+
+            // Verify this is an Opportunity rule
+            if (objectApiName == null || objectApiName.toLowerCase() != 'opportunity') {
+                System.debug(LoggingLevel.WARN, 'calculateLiveOpportunityAmount called for non-Opportunity object: ' + objectApiName);
+                return null;
+            }
+
+            // Build exclusion list from Fixed_Record_Ids__c
+            Set<Id> excludeIds = parseExcludeIds(painPoint.Fixed_Record_Ids__c, 5000);
+
+            // Handle Apex Plugin rules
+            if (rule.Logic_Type__c == 'Apex_Plugin' && String.isNotBlank(rule.Apex_Handler_Class__c)) {
+                return calculatePluginOpportunityAmount(rule, excludeIds);
+            }
+
+            // Get effective query condition with admin threshold injection
+            PatternAnalysisService service = new PatternAnalysisService();
+            String effectiveCondition = service.getEffectiveQuery(rule);
+
+            if (String.isBlank(effectiveCondition)) {
+                return null;
+            }
+
+            // Validate FLS for query fields
+            if (!validateQueryFieldsAccessible('Opportunity', effectiveCondition)) {
+                System.debug(LoggingLevel.WARN, 'FLS check failed for Opportunity query fields');
+                return null;
+            }
+
+            // Build query to get matching Opportunity IDs
+            String idQuery = 'SELECT Id FROM Opportunity WHERE (' + effectiveCondition + ')';
+            if (!excludeIds.isEmpty()) {
+                idQuery += ' AND Id NOT IN :excludeIds';
+            }
+            idQuery += ' LIMIT 5000'; // Cap for heap protection
+
+            // Execute query to get matching IDs
+            List<Opportunity> matchingOpps = Database.query(idQuery);
+
+            if (matchingOpps.isEmpty()) {
+                return 0; // True zero - no matching records
+            }
+
+            // Extract IDs
+            List<Id> matchingIds = new List<Id>();
+            for (Opportunity opp : matchingOpps) {
+                matchingIds.add(opp.Id);
+            }
+
+            // Sum amounts with USER_MODE sharing enforcement
+            return sumOpportunityAmounts(matchingIds);
+
+        } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'Error calculating live Opportunity amount: ' + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * @description Sums Opportunity amounts with proper sharing enforcement.
+     * Uses USER_MODE to ensure only accessible records are included in the sum.
+     *
+     * @param opportunityIds List of Opportunity IDs to sum
+     * @return Total amount from accessible Opportunities, or 0 if none accessible
+     */
+    private static Decimal sumOpportunityAmounts(List<Id> opportunityIds) {
+        if (opportunityIds == null || opportunityIds.isEmpty()) {
+            return 0;
+        }
+
+        try {
+            // Query with USER_MODE to respect sharing rules
+            List<Opportunity> accessibleOpps = [
+                SELECT Id, Amount
+                FROM Opportunity
+                WHERE Id IN :opportunityIds
+                WITH USER_MODE
+            ];
+
+            // Sum the amounts
+            Decimal totalAmount = 0;
+            for (Opportunity opp : accessibleOpps) {
+                if (opp.Amount != null) {
+                    totalAmount += opp.Amount;
+                }
+            }
+
+            return totalAmount;
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'sumOpportunityAmounts error: ' + e.getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * @description Calculates Opportunity amount for Apex Plugin rules with sharing enforcement.
+     *
+     * @param rule The pattern rule metadata
+     * @param excludeIds Set of IDs to exclude
+     * @return The sum of Opportunity amounts from plugin results, or null on error
+     */
+    private static Decimal calculatePluginOpportunityAmount(Behavior_Pattern_Rule__mdt rule, Set<Id> excludeIds) {
+        try {
+            Map<String, Object> config = new Map<String, Object>();
+            if (String.isNotBlank(rule.Fix_Config__c)) {
+                config = (Map<String, Object>) JSON.deserializeUntyped(rule.Fix_Config__c);
+            }
+            PatternPluginContext context = new PatternPluginContext(
+                'Opportunity',
+                rule.Query_Condition__c,
+                config,
+                rule.DeveloperName
+            );
+            List<Id> matchedIds = PluginInvoker.invokeAnalyze(rule.Apex_Handler_Class__c, context);
+
+            if (matchedIds == null || matchedIds.isEmpty()) {
+                return 0;
+            }
+
+            // Remove excluded IDs
+            Set<Id> matchedSet = new Set<Id>(matchedIds);
+            matchedSet.removeAll(excludeIds);
+
+            if (matchedSet.isEmpty()) {
+                return 0;
+            }
+
+            // Sum with sharing enforcement
+            return sumOpportunityAmounts(new List<Id>(matchedSet));
+
+        } catch (Exception pluginEx) {
+            System.debug(LoggingLevel.ERROR, 'Plugin Opportunity amount calculation failed: ' + pluginEx.getMessage());
             return null;
         }
     }

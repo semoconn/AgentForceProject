@@ -28,7 +28,7 @@
     </values>
     <values>
         <field>Fix_Config__c</field>
-        <value xsi:type="xsd:string">{"filterCondition": "StageName = 'Closed Won' AND CloseDate >= LAST_N_DAYS:90", "taskSubject": "Add contract documentation to closed-won opportunity"}</value>
+        <value xsi:type="xsd:string">{"subject": "Add contract documentation to closed-won opportunity", "priority": "High", "description": "This closed-won opportunity is missing the signed contract or agreement. Please attach the signed contract PDF, SOW, pricing sheet, or approval emails to ensure compliance and audit readiness.", "filterCondition": "StageName = 'Closed Won' AND CloseDate >= LAST_N_DAYS:90", "manualFixSteps": ["Open each Closed Won opportunity from the Affected Records table", "Locate the signed contract, order form, or agreement for this deal", "Attach the signed contract PDF to the opportunity using Files or Attachments", "Add any supporting documents: SOWs, addendums, pricing sheets, or approval emails", "Link the related Quote if CPQ is used, ensuring it shows as the Primary Quote", "Verify the opportunity Amount matches the contract value for accurate reporting", "Update the Close Notes field with key contract terms for future reference", "To prevent this: Create a validation rule requiring file attachments before Closed Won stage"]}</value>
     </values>
     <values>
         <field>Is_Premium__c</field>

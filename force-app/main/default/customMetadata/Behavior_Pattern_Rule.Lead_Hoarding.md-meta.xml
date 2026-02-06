@@ -20,7 +20,7 @@
     </values>
     <values>
         <field>Fix_Config__c</field>
-        <value xsi:type="xsd:string">{"queueName": "Lead_Redistribution_Queue", "useAssignmentRules": true, "requireOwnerChange": true}</value>
+        <value xsi:type="xsd:string">{"queueName": "Lead_Redistribution_Queue", "useAssignmentRules": true, "requireOwnerChange": true, "manualFixSteps": ["Review the Affected Records table to identify reps with untouched leads", "Contact each rep to understand why leads have not been contacted (capacity, quality issues, vacation)", "For leads with valid prospects: Ensure immediate outreach within 24 hours", "For leads the rep cannot handle: Reassign to another active sales rep or back to the queue", "Review lead assignment rules to ensure balanced distribution across the team", "Set up lead aging reports and alerts to catch hoarding patterns earlier", "Consider implementing Lead Round Robin or territory-based assignment to prevent future hoarding", "Coach reps on lead response time best practices - first contact within 5 minutes is ideal"]}</value>
     </values>
     <values>
         <field>Is_Premium__c</field>

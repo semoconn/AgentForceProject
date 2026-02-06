@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Contract_Expiry_Days__c</fullName>
+    <defaultValue>30</defaultValue>
+    <description>Number of days before contract expiry to flag for renewal attention. Used by the Pattern Analysis Service for dynamic query injection.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>Enter the number of days (1-999) before expiry that contracts should be flagged.</inlineHelpText>
+    <label>Contract Expiry Alert (Days)</label>
+    <precision>3</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

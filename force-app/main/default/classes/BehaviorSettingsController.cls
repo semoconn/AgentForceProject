@@ -1,103 +1,25 @@
 /**
- * @description       : Controller for the BehaviorIQ Settings LWC. Handles reading and writing Custom Metadata
- *                      and BehaviorIQ_Configuration__c custom object settings.
- * @author            : Gemini
+ * @description       : Controller for the BehaviorIQ Settings LWC. Handles reading and writing
+ *                      BehaviorIQ_Configuration__c custom object settings for detection thresholds.
+ * @author            : BehaviorIQ
  * @group             : BehaviorIQ
 **/
 public with sharing class BehaviorSettingsController {
 
-    private static final String METADATA_RECORD_NAME = 'Default';
-    private static final String METADATA_FULL_NAME = 'Behavior_Setting.Default';
     private static final String CONFIG_RECORD_NAME = 'Default';
 
-    // Default threshold values for Pattern Analysis
+    // Default threshold values for Detection Thresholds
     public static final Integer DEFAULT_STALE_CASE_THRESHOLD = 30;
     public static final Integer DEFAULT_STALE_OPP_THRESHOLD = 90;
-
-    @AuraEnabled(cacheable=true)
-    public static Behavior_Setting__mdt getBehaviorSettings() {
-        try {
-            // CMDT queries don't support WITH USER_MODE - CMDT is read-only and admin-controlled
-            List<Behavior_Setting__mdt> settings = [  // NOPMD - ApexCRUDViolation: CMDT doesn't support USER_MODE
-                SELECT Id,
-                       Stale_Opportunity_Days__c,
-                       Unassigned_Lead_Age_Hours__c,
-                       Sequential_Action_Threshold__c,
-                       Stale_Case_Days__c
-                FROM Behavior_Setting__mdt
-                WHERE DeveloperName = :METADATA_RECORD_NAME
-                LIMIT 1
-            ];
-
-            if (settings.isEmpty()) {
-                throw new AuraHandledException('Settings record not found.');
-            }
-            return settings[0];
-        } catch (AuraHandledException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new AuraHandledException('Unable to fetch settings: ' + e.getMessage());
-        }
-    }
-
-    @AuraEnabled
-    public static String updateBehaviorSettings(Integer staleDays, Integer leadHours, Integer seqThreshold, Integer caseDays) {
-        try {
-            Metadata.CustomMetadata customMetadata = new Metadata.CustomMetadata();
-            customMetadata.fullName = METADATA_FULL_NAME;
-            customMetadata.label = METADATA_RECORD_NAME; 
-
-            // 1. Opportunity
-            Metadata.CustomMetadataValue staleDaysField = new Metadata.CustomMetadataValue();
-            staleDaysField.field = 'Stale_Opportunity_Days__c';
-            staleDaysField.value = staleDays;
-            customMetadata.values.add(staleDaysField);
-
-            // 2. Lead
-            Metadata.CustomMetadataValue leadHoursField = new Metadata.CustomMetadataValue();
-            leadHoursField.field = 'Unassigned_Lead_Age_Hours__c';
-            leadHoursField.value = leadHours;
-            customMetadata.values.add(leadHoursField);
-
-            // 3. Bot/Action
-            Metadata.CustomMetadataValue seqThresholdField = new Metadata.CustomMetadataValue();
-            seqThresholdField.field = 'Sequential_Action_Threshold__c';
-            seqThresholdField.value = seqThreshold;
-            customMetadata.values.add(seqThresholdField);
-
-            // 4. NEW: Case
-            Metadata.CustomMetadataValue caseDaysField = new Metadata.CustomMetadataValue();
-            caseDaysField.field = 'Stale_Case_Days__c';
-            caseDaysField.value = caseDays;
-            customMetadata.values.add(caseDaysField);
-
-            Metadata.DeployContainer mdContainer = new Metadata.DeployContainer();
-            mdContainer.addMetadata(customMetadata);
-
-            Id jobId = Metadata.Operations.enqueueDeployment(mdContainer, new BehaviorSettingsUpdateCallback());
-            
-            return String.valueOf(jobId);
-
-        } catch (Exception e) {
-            throw new AuraHandledException('Failed to queue setting update: ' + e.getMessage());
-        }
-    }
-
-    public class BehaviorSettingsUpdateCallback implements Metadata.DeployCallback {
-        public void handleResult(Metadata.DeployResult result, Metadata.DeployCallbackContext context) {
-            if (result.status == Metadata.DeployStatus.Succeeded) {
-                System.debug('BehaviorIQ Settings updated successfully.');
-            } else {
-                System.debug('BehaviorIQ Settings update failed: ' + result.errorMessage);
-            }
-        }
-    }
-
-    // ==================== CONFIGURATION OBJECT METHODS (Sprint 3.4) ====================
+    public static final Integer DEFAULT_UNASSIGNED_LEAD_HOURS = 48;
+    public static final Integer DEFAULT_LEAD_HOARDING_DAYS = 5;
+    public static final Integer DEFAULT_HIGH_VALUE_INACTIVITY_DAYS = 14;
+    public static final Decimal DEFAULT_HIGH_VALUE_AMOUNT = 50000;
+    public static final Integer DEFAULT_CONTRACT_EXPIRY_DAYS = 30;
 
     /**
-     * @description Retrieves the Pattern Analysis configuration settings from BehaviorIQ_Configuration__c.
-     *              Returns a wrapper with the threshold values, creating defaults if no record exists.
+     * @description Retrieves all detection threshold settings from BehaviorIQ_Configuration__c.
+     *              Returns a wrapper with the threshold values, using defaults if no record exists.
      * @return ConfigSettingsWrapper containing the current threshold settings
      */
     @AuraEnabled(cacheable=true)
@@ -109,7 +31,14 @@ public with sharing class BehaviorSettingsController {
 
             // Use USER_MODE for sharing/FLS enforcement, then stripInaccessible for additional protection
             List<BehaviorIQ_Configuration__c> configs = [
-                SELECT Id, Name, Stale_Case_Threshold__c, Stale_Opportunity_Threshold__c
+                SELECT Id, Name,
+                       Stale_Case_Threshold__c,
+                       Stale_Opportunity_Threshold__c,
+                       Unassigned_Lead_Hours__c,
+                       Lead_Hoarding_Days__c,
+                       High_Value_Inactivity_Days__c,
+                       High_Value_Amount_Threshold__c,
+                       Contract_Expiry_Days__c
                 FROM BehaviorIQ_Configuration__c
                 WITH USER_MODE
                 LIMIT 1
@@ -126,30 +55,25 @@ public with sharing class BehaviorSettingsController {
 
             if (!accessibleConfigs.isEmpty()) {
                 BehaviorIQ_Configuration__c config = accessibleConfigs[0];
-                // Check if fields were stripped due to FLS - use defaults if so
                 Set<String> removedFields = securityDecision.getRemovedFields().get('BehaviorIQ_Configuration__c');
 
-                if (removedFields == null || !removedFields.contains('Stale_Case_Threshold__c')) {
-                    wrapper.staleCaseThreshold = config.Stale_Case_Threshold__c != null
-                        ? Integer.valueOf(config.Stale_Case_Threshold__c)
-                        : DEFAULT_STALE_CASE_THRESHOLD;
-                } else {
-                    wrapper.staleCaseThreshold = DEFAULT_STALE_CASE_THRESHOLD;
-                }
-
-                if (removedFields == null || !removedFields.contains('Stale_Opportunity_Threshold__c')) {
-                    wrapper.staleOpportunityThreshold = config.Stale_Opportunity_Threshold__c != null
-                        ? Integer.valueOf(config.Stale_Opportunity_Threshold__c)
-                        : DEFAULT_STALE_OPP_THRESHOLD;
-                } else {
-                    wrapper.staleOpportunityThreshold = DEFAULT_STALE_OPP_THRESHOLD;
-                }
-
+                wrapper.staleCaseThreshold = getIntegerValue(config.Stale_Case_Threshold__c, removedFields, 'Stale_Case_Threshold__c', DEFAULT_STALE_CASE_THRESHOLD);
+                wrapper.staleOpportunityThreshold = getIntegerValue(config.Stale_Opportunity_Threshold__c, removedFields, 'Stale_Opportunity_Threshold__c', DEFAULT_STALE_OPP_THRESHOLD);
+                wrapper.unassignedLeadHours = getIntegerValue(config.Unassigned_Lead_Hours__c, removedFields, 'Unassigned_Lead_Hours__c', DEFAULT_UNASSIGNED_LEAD_HOURS);
+                wrapper.leadHoardingDays = getIntegerValue(config.Lead_Hoarding_Days__c, removedFields, 'Lead_Hoarding_Days__c', DEFAULT_LEAD_HOARDING_DAYS);
+                wrapper.highValueInactivityDays = getIntegerValue(config.High_Value_Inactivity_Days__c, removedFields, 'High_Value_Inactivity_Days__c', DEFAULT_HIGH_VALUE_INACTIVITY_DAYS);
+                wrapper.highValueAmountThreshold = getDecimalValue(config.High_Value_Amount_Threshold__c, removedFields, 'High_Value_Amount_Threshold__c', DEFAULT_HIGH_VALUE_AMOUNT);
+                wrapper.contractExpiryDays = getIntegerValue(config.Contract_Expiry_Days__c, removedFields, 'Contract_Expiry_Days__c', DEFAULT_CONTRACT_EXPIRY_DAYS);
                 wrapper.recordId = config.Id;
             } else {
                 // Return defaults if no record exists
                 wrapper.staleCaseThreshold = DEFAULT_STALE_CASE_THRESHOLD;
                 wrapper.staleOpportunityThreshold = DEFAULT_STALE_OPP_THRESHOLD;
+                wrapper.unassignedLeadHours = DEFAULT_UNASSIGNED_LEAD_HOURS;
+                wrapper.leadHoardingDays = DEFAULT_LEAD_HOARDING_DAYS;
+                wrapper.highValueInactivityDays = DEFAULT_HIGH_VALUE_INACTIVITY_DAYS;
+                wrapper.highValueAmountThreshold = DEFAULT_HIGH_VALUE_AMOUNT;
+                wrapper.contractExpiryDays = DEFAULT_CONTRACT_EXPIRY_DAYS;
                 wrapper.recordId = null;
             }
 
@@ -163,21 +87,58 @@ public with sharing class BehaviorSettingsController {
     }
 
     /**
-     * @description Saves the Pattern Analysis configuration settings to BehaviorIQ_Configuration__c.
+     * @description Helper method to safely get Integer value from config field with FLS check
+     */
+    private static Integer getIntegerValue(Decimal fieldValue, Set<String> removedFields, String fieldName, Integer defaultValue) {
+        if (removedFields != null && removedFields.contains(fieldName)) {
+            return defaultValue;
+        }
+        return fieldValue != null ? Integer.valueOf(fieldValue) : defaultValue;
+    }
+
+    /**
+     * @description Helper method to safely get Decimal value from config field with FLS check
+     */
+    private static Decimal getDecimalValue(Decimal fieldValue, Set<String> removedFields, String fieldName, Decimal defaultValue) {
+        if (removedFields != null && removedFields.contains(fieldName)) {
+            return defaultValue;
+        }
+        return fieldValue != null ? fieldValue : defaultValue;
+    }
+
+    /**
+     * @description Saves all detection threshold settings to BehaviorIQ_Configuration__c.
      *              Creates the record if it doesn't exist, otherwise updates the existing one.
-     * @param staleCaseThreshold The number of days for stale Case detection
-     * @param staleOpportunityThreshold The number of days for stale Opportunity detection
+     * @param staleCaseThreshold Days for stale Case detection
+     * @param staleOpportunityThreshold Days for stale Opportunity detection
+     * @param unassignedLeadHours Hours before unassigned leads are flagged
+     * @param leadHoardingDays Days before lead hoarding is flagged
+     * @param highValueInactivityDays Days of inactivity for high-value opportunities
+     * @param highValueAmountThreshold Amount threshold for "high value" opportunities
+     * @param contractExpiryDays Days before contract expiry to flag
      * @return The Id of the upserted configuration record
      */
     @AuraEnabled
-    public static Id saveConfigSettings(Integer staleCaseThreshold, Integer staleOpportunityThreshold) {
+    public static Id saveConfigSettings(
+        Integer staleCaseThreshold,
+        Integer staleOpportunityThreshold,
+        Integer unassignedLeadHours,
+        Integer leadHoardingDays,
+        Integer highValueInactivityDays,
+        Decimal highValueAmountThreshold,
+        Integer contractExpiryDays
+    ) {
         try {
             // Validate inputs
-            if (staleCaseThreshold == null || staleCaseThreshold < 1 || staleCaseThreshold > 999) {
-                throw new AuraHandledException('Stale Case Threshold must be between 1 and 999 days.');
-            }
-            if (staleOpportunityThreshold == null || staleOpportunityThreshold < 1 || staleOpportunityThreshold > 999) {
-                throw new AuraHandledException('Stale Opportunity Threshold must be between 1 and 999 days.');
+            validateThreshold(staleCaseThreshold, 'Stale Case Threshold', 1, 999);
+            validateThreshold(staleOpportunityThreshold, 'Stale Opportunity Threshold', 1, 999);
+            validateThreshold(unassignedLeadHours, 'Unassigned Lead Hours', 1, 720);
+            validateThreshold(leadHoardingDays, 'Lead Hoarding Days', 1, 999);
+            validateThreshold(highValueInactivityDays, 'High-Value Inactivity Days', 1, 999);
+            validateThreshold(contractExpiryDays, 'Contract Expiry Days', 1, 999);
+
+            if (highValueAmountThreshold == null || highValueAmountThreshold < 1 || highValueAmountThreshold > 999999999) {
+                throw new AuraHandledException('High-Value Amount Threshold must be between 1 and 999,999,999.');
             }
 
             // Check object permissions
@@ -189,7 +150,7 @@ public with sharing class BehaviorSettingsController {
 
             // Try to find existing record with USER_MODE for security
             List<BehaviorIQ_Configuration__c> existingConfigs = [
-                SELECT Id, Stale_Case_Threshold__c, Stale_Opportunity_Threshold__c
+                SELECT Id
                 FROM BehaviorIQ_Configuration__c
                 WITH USER_MODE
                 LIMIT 1
@@ -198,18 +159,21 @@ public with sharing class BehaviorSettingsController {
             BehaviorIQ_Configuration__c configToSave;
 
             if (!existingConfigs.isEmpty()) {
-                // Update existing record
                 configToSave = existingConfigs[0];
             } else {
-                // Create new record
                 configToSave = new BehaviorIQ_Configuration__c(
                     Name = CONFIG_RECORD_NAME
                 );
             }
 
-            // Set the threshold values
+            // Set all threshold values
             configToSave.Stale_Case_Threshold__c = staleCaseThreshold;
             configToSave.Stale_Opportunity_Threshold__c = staleOpportunityThreshold;
+            configToSave.Unassigned_Lead_Hours__c = unassignedLeadHours;
+            configToSave.Lead_Hoarding_Days__c = leadHoardingDays;
+            configToSave.High_Value_Inactivity_Days__c = highValueInactivityDays;
+            configToSave.High_Value_Amount_Threshold__c = highValueAmountThreshold;
+            configToSave.Contract_Expiry_Days__c = contractExpiryDays;
 
             // Use Security.stripInaccessible for field-level security
             SObjectAccessDecision securityDecision = Security.stripInaccessible(
@@ -229,11 +193,25 @@ public with sharing class BehaviorSettingsController {
     }
 
     /**
+     * @description Helper method to validate threshold values
+     */
+    private static void validateThreshold(Integer value, String fieldName, Integer minValue, Integer maxValue) {
+        if (value == null || value < minValue || value > maxValue) {
+            throw new AuraHandledException(fieldName + ' must be between ' + minValue + ' and ' + maxValue + '.');
+        }
+    }
+
+    /**
      * @description Wrapper class for configuration settings to be returned to LWC
      */
     public class ConfigSettingsWrapper {
         @AuraEnabled public Integer staleCaseThreshold;
         @AuraEnabled public Integer staleOpportunityThreshold;
+        @AuraEnabled public Integer unassignedLeadHours;
+        @AuraEnabled public Integer leadHoardingDays;
+        @AuraEnabled public Integer highValueInactivityDays;
+        @AuraEnabled public Decimal highValueAmountThreshold;
+        @AuraEnabled public Integer contractExpiryDays;
         @AuraEnabled public Id recordId;
     }
 

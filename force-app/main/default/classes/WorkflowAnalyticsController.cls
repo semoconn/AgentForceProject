@@ -1362,6 +1362,28 @@ public with sharing class WorkflowAnalyticsController {
         }
     }
 
+    /**
+     * @description Returns the count of active standard users in the org.
+     * Used by the dashboard to display accurate "Active Users" metric.
+     * Filters to UserType='Standard' to exclude system users (Integration User,
+     * Automated Process, Security User, etc.)
+     * @return Integer count of active standard users, or 0 if no access or on error
+     */
+    @AuraEnabled(cacheable=true)
+    public static Integer getActiveUsersCount() {
+        try {
+            if (!Schema.sObjectType.User.isAccessible()) {
+                return 0;
+            }
+            // Filter to Standard users only - excludes system users like:
+            // - Integration User, Automated Process, Security User, Platform Integration, etc.
+            return [SELECT COUNT() FROM User WHERE IsActive = true AND UserType = 'Standard' WITH SECURITY_ENFORCED];
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'getActiveUsersCount error: ' + e.getMessage());
+            return 0;
+        }
+    }
+
     // --- NEW: Trend Data for Charts ---
 
     // Constants for trend data retrieval - documented rationale:

@@ -5,12 +5,13 @@ import { refreshApex } from '@salesforce/apex';
 // Apex Controllers
 import getPainPoints from '@salesforce/apex/WorkflowAnalyticsController.getPainPoints';
 import runAutoFix from '@salesforce/apex/WorkflowAnalyticsController.runAutoFix';
-import dismissSuggestion from '@salesforce/apex/WorkflowAnalyticsController.dismissSuggestion';
+import dismissPainPoint from '@salesforce/apex/PainPointController.dismissPainPoint';
 import restoreSuggestion from '@salesforce/apex/WorkflowAnalyticsController.restoreSuggestion';
 import markPainPointResolved from '@salesforce/apex/WorkflowAnalyticsController.markPainPointResolved';
 import getDashboardData from '@salesforce/apex/WorkflowAnalyticsController.getDashboardData';
 import getTotalEventsAnalyzed from '@salesforce/apex/WorkflowAnalyticsController.getTotalEventsAnalyzed';
 import getMonitoredObjectsCount from '@salesforce/apex/WorkflowAnalyticsController.getMonitoredObjectsCount';
+import getActiveUsersCount from '@salesforce/apex/WorkflowAnalyticsController.getActiveUsersCount';
 import getEnhancedSystemHealth from '@salesforce/apex/WorkflowAnalyticsController.getEnhancedSystemHealth';
 import getSolutionGuide from '@salesforce/apex/SolutionGuideController.getSolutionGuide';
 import getPatternMatches from '@salesforce/apex/PatternAnalysisService.getPatternMatches';
@@ -48,6 +49,7 @@ export default class BehaviorIQDashboard extends LightningElement {
         if (this._wiredPainPointsResult) refreshPromises.push(refreshApex(this._wiredPainPointsResult));
         if (this._wiredEventsResult) refreshPromises.push(refreshApex(this._wiredEventsResult));
         if (this._wiredObjectsCountResult) refreshPromises.push(refreshApex(this._wiredObjectsCountResult));
+        if (this._wiredActiveUsersResult) refreshPromises.push(refreshApex(this._wiredActiveUsersResult));
         if (this._wiredSystemHealthResult) refreshPromises.push(refreshApex(this._wiredSystemHealthResult));
 
         if (refreshPromises.length > 0) {
@@ -118,7 +120,7 @@ export default class BehaviorIQDashboard extends LightningElement {
             { label: 'Account', fieldName: 'AccountName', type: 'text', sortable: true },
             { label: 'Status', fieldName: 'Status', type: 'text', sortable: true },
             { label: 'Start Date', fieldName: 'StartDate', type: 'date', sortable: true },
-            { label: 'Contract Term', fieldName: 'ContractTerm', type: 'number', sortable: true }
+            { label: 'End Date', fieldName: 'EndDate', type: 'date', sortable: true }
         ],
         Default: [
             { label: 'Name', fieldName: 'Name', type: 'text', sortable: true },
@@ -150,10 +152,12 @@ export default class BehaviorIQDashboard extends LightningElement {
     _wiredDashboardResult;
     _wiredEventsResult;
     _wiredObjectsCountResult;
+    _wiredActiveUsersResult;
     _wiredSystemHealthResult;
     _currentPainPointId = null; // Track the pain point being fixed for resolution
     @track totalEventsAnalyzed = 0;
     @track monitoredObjectsCount = 0;
+    @track activeUsersCount = 0;
     @track lastScanTime = null; // From System_Health_Log__c for accurate analysis job timing
 
     // 0. Load Total Events Analyzed (Dynamic ROI metric)
@@ -182,7 +186,20 @@ export default class BehaviorIQDashboard extends LightningElement {
         }
     }
 
-    // 0c. Load System Health for Last Scan time (analysis job completion time)
+    // 0c. Load Active Users Count from Org
+    @wire(getActiveUsersCount)
+    wiredActiveUsersCount(result) {
+        this._wiredActiveUsersResult = result;
+        if (result.data !== undefined) {
+            this.activeUsersCount = result.data;
+            this.updateMetricsWithDynamicData();
+        } else if (result.error) {
+            console.error('Error loading active users count:', result.error);
+            this.activeUsersCount = 0;
+        }
+    }
+
+    // 0d. Load System Health for Last Scan time (analysis job completion time)
     @wire(getEnhancedSystemHealth)
     wiredSystemHealth(result) {
         this._wiredSystemHealthResult = result;
@@ -224,8 +241,8 @@ export default class BehaviorIQDashboard extends LightningElement {
         // Format the events count with thousands separator
         const formattedEventsCount = this.totalEventsAnalyzed.toLocaleString();
 
-        // Calculate active users from recent logs (unique users in last 30 days)
-        const uniqueUsers = new Set(this.recentLogs.map(log => log.User__c)).size;
+        // Use active users count from org (actual active Salesforce users)
+        const activeUsers = this.activeUsersCount;
 
         // Use configured monitored objects count (from BehaviorIQ_Configuration__c)
         const objectsMonitored = this.monitoredObjectsCount;
@@ -238,7 +255,7 @@ export default class BehaviorIQDashboard extends LightningElement {
         // Build metrics with real data (fallback to sensible defaults if no data)
         this.metrics = [
             { id: '1', label: 'Events Analyzed', value: formattedEventsCount || '0', key: 'events_analyzed' },
-            { id: '2', label: 'Active Users', value: String(uniqueUsers || 0), key: 'active_users' },
+            { id: '2', label: 'Active Users', value: String(activeUsers || 0), key: 'active_users' },
             { id: '3', label: 'Objects Monitored', value: String(objectsMonitored || 0), key: 'objects_monitored' },
             { id: '4', label: 'Last Scan', value: lastScanDisplay, key: 'last_scan' }
         ];
@@ -411,6 +428,7 @@ export default class BehaviorIQDashboard extends LightningElement {
             refreshApex(this._wiredPainPointsResult),
             refreshApex(this._wiredEventsResult),
             refreshApex(this._wiredObjectsCountResult),
+            refreshApex(this._wiredActiveUsersResult),
             refreshApex(this._wiredSystemHealthResult)
         ]).then(() => {
             // Also refresh the health gauge component
@@ -688,15 +706,16 @@ export default class BehaviorIQDashboard extends LightningElement {
     }
 
     handleDismiss(event) {
-        const painPointId = event.currentTarget.dataset.id;
-        if (!painPointId) return;
+        const uniqueKey = event.currentTarget.dataset.key;
+        if (!uniqueKey) return;
         this.isLoading = true;
-        dismissSuggestion({ painPointId })
+        dismissPainPoint({ uniqueKey, reason: 'Dismissed via Dashboard' })
             .then(() => {
                 this.showToast('Dismissed', 'Suggestion dismissed', 'success');
                 refreshApex(this._wiredPainPointsResult);
                 this.refreshHealthGauge();
             })
+            .catch(err => this.showToast('Error', err?.body?.message || 'Failed to dismiss', 'error'))
             .finally(() => this.isLoading = false);
     }
 

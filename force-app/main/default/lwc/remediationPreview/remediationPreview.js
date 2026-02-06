@@ -47,6 +47,17 @@ const COLUMN_CONFIG = {
         { label: 'Title', fieldName: 'Title', type: 'text', sortable: true },
         { label: 'Created Date', fieldName: 'CreatedDate', type: 'date', sortable: true }
     ],
+    Contract: [
+        { label: 'Contract Number', fieldName: 'ContractNumber', type: 'text', sortable: true },
+        { label: 'Account', fieldName: 'AccountName', type: 'text', sortable: true },
+        { label: 'Status', fieldName: 'Status', type: 'text', sortable: true },
+        { label: 'Start Date', fieldName: 'StartDate', type: 'date', sortable: true,
+            typeAttributes: { year: 'numeric', month: 'short', day: '2-digit' }
+        },
+        { label: 'End Date', fieldName: 'EndDate', type: 'date', sortable: true,
+            typeAttributes: { year: 'numeric', month: 'short', day: '2-digit' }
+        }
+    ],
     // Default columns for unknown object types
     Default: [
         { label: 'Name', fieldName: 'Name', type: 'text', sortable: true },
@@ -150,7 +161,12 @@ export default class RemediationPreview extends LightningElement {
 
     get modalTitle() {
         if (this.readOnly) {
-            return `Fixed Records: ${this.ruleLabel || this.ruleDeveloperName || 'Remediated Records'}`;
+            // If we have a fixedAtTimestamp, these are previously fixed records
+            // Otherwise, this is a read-only view of currently affected records
+            if (this.fixedAtTimestamp) {
+                return `Fixed Records: ${this.ruleLabel || this.ruleDeveloperName || 'Remediated Records'}`;
+            }
+            return `Affected Records: ${this.ruleLabel || this.ruleDeveloperName || 'Sample Records'}`;
         }
         return `Preview: ${this.ruleLabel || this.ruleDeveloperName || 'Affected Records'}`;
     }
@@ -298,6 +314,18 @@ export default class RemediationPreview extends LightningElement {
                 message = 'Renewal opportunities will be created from the selected records.';
                 break;
 
+            case 'Escalation_Revert':
+                message = 'The IsEscalated flag will be set to FALSE on the selected cases, removing them from the escalation queue.';
+                if (config.postChatter) {
+                    message += '\n\nA Chatter post will be added to each case';
+                    if (config.chatterMessage) {
+                        message += `: "${config.chatterMessage}"`;
+                    } else {
+                        message += ' notifying the team of the de-escalation.';
+                    }
+                }
+                break;
+
             default:
                 message = `The selected records will be processed using "${fixType}" action.`;
         }
@@ -357,6 +385,14 @@ export default class RemediationPreview extends LightningElement {
                 records = records.map(r => ({
                     ...r,
                     ProbabilityDisplay: r.Probability != null ? `${r.Probability}%` : ''
+                }));
+            }
+
+            // Transform Contract records to flatten Account.Name to AccountName
+            if (this.objectApiName === 'Contract') {
+                records = records.map(r => ({
+                    ...r,
+                    AccountName: r.Account ? r.Account.Name : ''
                 }));
             }
 

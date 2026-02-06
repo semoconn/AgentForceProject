@@ -24,7 +24,7 @@
     </values>
     <values>
         <field>Fix_Config__c</field>
-        <value xsi:type="xsd:string">{"duplicateField": "Name", "excludeNulls": true, "subject": "Review &amp; Merge Duplicate Account", "priority": "Normal", "description": "This account has a duplicate name. Review both records and consolidate to maintain accurate customer data."}</value>
+        <value xsi:type="xsd:string">{"duplicateField": "Name", "excludeNulls": true, "subject": "Review &amp; Merge Duplicate Account", "priority": "Normal", "description": "This account has a duplicate name. Review both records and consolidate to maintain accurate customer data.", "manualFixSteps": ["Open each duplicate account from the Affected Records table below", "Compare both account records: review related contacts, opportunities, cases, and activity history", "Identify the master record (typically the one with more related records or recent activity)", "Navigate to Setup &gt; Data Management &gt; Duplicate Management to access the Merge Accounts feature", "Use the Merge tool to select which field values to keep from each record", "If no merge tool access: Re-parent all child records (Contacts, Opportunities, Cases) to the master account", "Delete the duplicate account after verifying all relationships are preserved", "Enable Duplicate Rules in Setup &gt; Duplicate Management to prevent future duplicate accounts"]}</value>
     </values>
     <values>
         <field>Is_Premium__c</field>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>High_Value_Amount_Threshold__c</fullName>
+    <defaultValue>50000</defaultValue>
+    <description>Amount threshold above which an Opportunity is considered high-value. Used by the Pattern Analysis Service for dynamic query injection.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>Enter the opportunity amount threshold that defines a high-value deal.</inlineHelpText>
+    <label>High-Value Amount Threshold</label>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackTrending>false</trackTrending>
+    <type>Currency</type>
+</CustomField>

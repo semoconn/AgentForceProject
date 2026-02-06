@@ -16,7 +16,7 @@
     </values>
     <values>
         <field>Fix_Config__c</field>
-        <value xsi:type="xsd:string">{"taskSubject": "Reassign contact from inactive owner", "taskPriority": "Normal"}</value>
+        <value xsi:type="xsd:string">{"subject": "Reassign contact from inactive owner", "priority": "Normal", "description": "This contact is owned by a deactivated user and needs reassignment to ensure continued relationship tracking.", "manualFixSteps": ["Open each contact from the Affected Records table below", "Click the Change Owner button (or Edit &gt; Owner field)", "Assign to an active user - ideally the same owner as the related Account", "Review if the contact has any open Activities or Campaign memberships that need attention", "Check the contact role on any related Opportunities", "For bulk reassignment: Use Data Loader to update the OwnerId field for multiple contacts", "To prevent this issue: Set up a Flow to reassign contacts when their owner is deactivated"]}</value>
     </values>
     <values>
         <field>Is_Premium__c</field>
