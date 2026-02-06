@@ -3804,7 +3804,7 @@ private with sharing class PatternAnalysisServiceTest {
 
         Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
             Name = 'Test Sync Match',
-            Unique_Key__c = 'Stale_Case_14',
+            Unique_Key__c = 'Stale_Case_30',
             Object_API_Name__c = 'Case',
             Occurrences__c = 0,
             Status__c = 'New',
@@ -3833,7 +3833,7 @@ private with sharing class PatternAnalysisServiceTest {
 
         Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
             Name = 'Test Sync Differs',
-            Unique_Key__c = 'Stale_Case_14',
+            Unique_Key__c = 'Stale_Case_30',
             Object_API_Name__c = 'Case',
             Occurrences__c = 10,
             Status__c = 'New',
@@ -3860,7 +3860,7 @@ private with sharing class PatternAnalysisServiceTest {
 
         Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
             Name = 'Test Auto Resolve',
-            Unique_Key__c = 'Stale_Case_14',
+            Unique_Key__c = 'Stale_Case_30',
             Object_API_Name__c = 'Case',
             Occurrences__c = 5,
             Status__c = 'New',
@@ -3921,7 +3921,7 @@ private with sharing class PatternAnalysisServiceTest {
 
         Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
             Name = 'Test Trend Update',
-            Unique_Key__c = 'Stale_Case_14',
+            Unique_Key__c = 'Stale_Case_30',
             Object_API_Name__c = 'Case',
             Occurrences__c = 10,
             Status__c = 'New',
@@ -3987,7 +3987,7 @@ private with sharing class PatternAnalysisServiceTest {
 
         Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
             Name = 'Test Dismissed',
-            Unique_Key__c = 'Stale_Case_14',
+            Unique_Key__c = 'Stale_Case_30',
             Object_API_Name__c = 'Case',
             Occurrences__c = 5,
             Status__c = 'Dismissed'
@@ -4024,7 +4024,7 @@ private with sharing class PatternAnalysisServiceTest {
 
         // Create mock rule
         Behavior_Pattern_Rule__mdt mockRule = createMockRule(
-            'Stale_Case_14',
+            'Stale_Case_30',
             'Stale Case Test',
             'Case',
             'Status != \'Closed\'',
@@ -4037,7 +4037,7 @@ private with sharing class PatternAnalysisServiceTest {
 
         Test.startTest();
         System.runAs(testUser) {
-            List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_14', 50, whitelistIds, null);
+            List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_30', 50, whitelistIds, null);
             System.assertNotEquals(null, results, 'Should return results list');
             System.assertEquals(2, results.size(), 'Should return only whitelisted records');
         }
@@ -4062,7 +4062,7 @@ private with sharing class PatternAnalysisServiceTest {
 
         // Create mock rule
         Behavior_Pattern_Rule__mdt mockRule = createMockRule(
-            'Stale_Case_14',
+            'Stale_Case_30',
             'Stale Case Test',
             'Case',
             'Status != \'Closed\'',
@@ -4076,7 +4076,7 @@ private with sharing class PatternAnalysisServiceTest {
 
         Test.startTest();
         System.runAs(testUser) {
-            List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_14', 50, whitelistIds, null);
+            List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_30', 50, whitelistIds, null);
             System.assertNotEquals(null, results, 'Should return results list');
         }
         Test.stopTest();
@@ -4100,7 +4100,7 @@ private with sharing class PatternAnalysisServiceTest {
 
         // Create mock rule
         Behavior_Pattern_Rule__mdt mockRule = createMockRule(
-            'Stale_Case_14',
+            'Stale_Case_30',
             'Stale Case Test',
             'Case',
             'Status != \'Closed\'',
@@ -4113,7 +4113,7 @@ private with sharing class PatternAnalysisServiceTest {
 
         Test.startTest();
         System.runAs(testUser) {
-            List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_14', 50, null, blacklistIds);
+            List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_30', 50, null, blacklistIds);
             System.assertNotEquals(null, results, 'Should return results list');
             // Verify blacklisted IDs are not in results
             Set<Id> resultIds = new Set<Id>();
@@ -4144,7 +4144,7 @@ private with sharing class PatternAnalysisServiceTest {
 
         // Create mock rule
         Behavior_Pattern_Rule__mdt mockRule = createMockRule(
-            'Stale_Case_14',
+            'Stale_Case_30',
             'Stale Case Test',
             'Case',
             'Status != \'Closed\'',
@@ -4158,7 +4158,7 @@ private with sharing class PatternAnalysisServiceTest {
 
         Test.startTest();
         System.runAs(testUser) {
-            List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_14', 50, null, blacklistIds);
+            List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_30', 50, null, blacklistIds);
             System.assertNotEquals(null, results, 'Should return results list');
         }
         Test.stopTest();
@@ -4179,7 +4179,7 @@ private with sharing class PatternAnalysisServiceTest {
 
         // Create mock rule
         Behavior_Pattern_Rule__mdt mockRule = createMockRule(
-            'Stale_Case_14',
+            'Stale_Case_30',
             'Stale Case Test',
             'Case',
             'Status != \'Closed\'',
@@ -4192,7 +4192,7 @@ private with sharing class PatternAnalysisServiceTest {
 
         Test.startTest();
         System.runAs(testUser) {
-            List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_14', 50, whitelistIds, null);
+            List<SObject> results = PatternAnalysisService.getPatternMatches('Stale_Case_30', 50, whitelistIds, null);
             System.assertNotEquals(null, results, 'Should return results list');
             System.assertEquals(1, results.size(), 'Should only return valid whitelisted record');
         }
@@ -4246,7 +4246,7 @@ private with sharing class PatternAnalysisServiceTest {
         // Create pain point with Fixed_Record_Ids__c populated
         Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
             Name = 'Fixed IDs Sync Test',
-            Unique_Key__c = 'Stale_Case_14',
+            Unique_Key__c = 'Stale_Case_30',
             Object_API_Name__c = 'Case',
             Occurrences__c = 10,
             Status__c = 'New',
@@ -4271,7 +4271,7 @@ private with sharing class PatternAnalysisServiceTest {
 
         // Create an existing snapshot for today
         Behavior_Snapshot__c existingSnapshot = new Behavior_Snapshot__c(
-            Metric_Name__c = 'Stale_Case_14',
+            Metric_Name__c = 'Stale_Case_30',
             Snapshot_Date__c = Date.today(),
             Record_Count__c = 5,
             Impact_Score__c = 500
@@ -4281,7 +4281,7 @@ private with sharing class PatternAnalysisServiceTest {
         // Create pain point
         Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
             Name = 'Snapshot Update Test',
-            Unique_Key__c = 'Stale_Case_14',
+            Unique_Key__c = 'Stale_Case_30',
             Object_API_Name__c = 'Case',
             Occurrences__c = 10,
             Status__c = 'New',
@@ -4299,7 +4299,7 @@ private with sharing class PatternAnalysisServiceTest {
         // Verify snapshot was updated (not duplicated)
         List<Behavior_Snapshot__c> snapshots = [
             SELECT Record_Count__c FROM Behavior_Snapshot__c
-            WHERE Metric_Name__c = 'Stale_Case_14' AND Snapshot_Date__c = TODAY
+            WHERE Metric_Name__c = 'Stale_Case_30' AND Snapshot_Date__c = TODAY
         ];
         System.assertEquals(1, snapshots.size(), 'Should have exactly one snapshot');
     }
@@ -4335,7 +4335,7 @@ private with sharing class PatternAnalysisServiceTest {
         // Create pain point with matching key that will find 0 records
         Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
             Name = 'Auto-Resolve Test',
-            Unique_Key__c = 'Stale_Case_14',
+            Unique_Key__c = 'Stale_Case_30',
             Object_API_Name__c = 'Case',
             Occurrences__c = 5,
             Status__c = 'New',
@@ -4345,7 +4345,7 @@ private with sharing class PatternAnalysisServiceTest {
 
         // Create mock rule that will find no matches
         Behavior_Pattern_Rule__mdt mockRule = createMockRule(
-            'Stale_Case_14',
+            'Stale_Case_30',
             'Stale Case',
             'Case',
             'Status = \'New\' AND Subject = \'NonExistent12345\'',
