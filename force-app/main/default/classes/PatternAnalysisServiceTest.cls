@@ -5264,7 +5264,7 @@ private with sharing class PatternAnalysisServiceTest {
             for (Integer i = 0; i < 3; i++) {
                 oldHealthLogs.add(new System_Health_Log__c(
                     Job_Name__c = 'Retention_Health_' + i,
-                    Status__c = 'Completed'
+                    Status__c = 'Success'
                 ));
             }
             insert oldHealthLogs;
@@ -5307,7 +5307,10 @@ private with sharing class PatternAnalysisServiceTest {
             for (Integer i = 0; i < 3; i++) {
                 oldRemLogs.add(new Remediation_Log__c(
                     Rule_Developer_Name__c = 'Retention_Rem_' + i,
-                    Object_API_Name__c = 'Case'
+                    Object_API_Name__c = 'Case',
+                    Action_Taken__c = 'Field_Update',
+                    Affected_Record_ID__c = '001000000000000AAA',
+                    Status__c = 'Success'
                 ));
             }
             insert oldRemLogs;
@@ -5360,10 +5363,10 @@ private with sharing class PatternAnalysisServiceTest {
                 Metric_Name__c = 'Chain_All', Snapshot_Date__c = Date.today().addDays(-60),
                 Record_Count__c = 1, Impact_Score__c = 10
             );
-            System_Health_Log__c healthLog = new System_Health_Log__c(Job_Name__c = 'Chain_All', Status__c = 'Completed');
+            System_Health_Log__c healthLog = new System_Health_Log__c(Job_Name__c = 'Chain_All', Status__c = 'Success');
             insert healthLog;
             Test.setCreatedDate(healthLog.Id, Datetime.now().addDays(-60));
-            Remediation_Log__c remLog = new Remediation_Log__c(Rule_Developer_Name__c = 'Chain_All', Object_API_Name__c = 'Case');
+            Remediation_Log__c remLog = new Remediation_Log__c(Rule_Developer_Name__c = 'Chain_All', Object_API_Name__c = 'Case', Action_Taken__c = 'Field_Update', Affected_Record_ID__c = '001000000000000AAA', Status__c = 'Success');
             insert remLog;
             Test.setCreatedDate(remLog.Id, Datetime.now().addDays(-120));
         }
