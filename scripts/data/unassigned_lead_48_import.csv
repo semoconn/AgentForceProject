@@ -1,0 +1,9 @@
+LastName,FirstName,Company,Status,OwnerId,CreatedDate,LeadSource,Description
+BIQ Unassigned Lead 1,Test,Acme Corporation,Open - Not Contacted,00GKY000003MZHB2A4,2026-01-25T10:00:00.000Z,Web,Test lead for Unassigned_Lead_48 pattern - sitting in queue 5+ days
+BIQ Unassigned Lead 2,Demo,Global Industries,Open - Not Contacted,00GKY000003MZHB2A4,2026-01-26T14:30:00.000Z,Partner Referral,Test lead for Unassigned_Lead_48 pattern - sitting in queue 4+ days
+BIQ Unassigned Lead 3,Sample,Tech Solutions Inc,Open - Not Contacted,00GKY000003MZHB2A4,2026-01-24T09:15:00.000Z,Trade Show,Test lead for Unassigned_Lead_48 pattern - sitting in queue 6+ days
+BIQ Unassigned Lead 4,Mock,Enterprise Systems,Open - Not Contacted,00GKY000003MZHB2A4,2026-01-27T11:45:00.000Z,Web,Test lead for Unassigned_Lead_48 pattern - sitting in queue 3+ days
+BIQ Unassigned Lead 5,Pattern,Innovation Labs,Open - Not Contacted,00GKY000003MZHB2A4,2026-01-23T08:00:00.000Z,Advertisement,Test lead for Unassigned_Lead_48 pattern - sitting in queue 7+ days
+BIQ Unassigned Lead 6,Queue,Healthcare Plus,Open - Not Contacted,00GKY000003MZHB2A4,2026-01-25T16:20:00.000Z,Partner Referral,Test lead for Unassigned_Lead_48 pattern - sitting in queue 5+ days
+BIQ Unassigned Lead 7,Waiting,Financial Services Co,Open - Not Contacted,00GKY000003MZHB2A4,2026-01-26T13:00:00.000Z,Web,Test lead for Unassigned_Lead_48 pattern - sitting in queue 4+ days
+BIQ Unassigned Lead 8,Stale,Manufacturing Group,Open - Not Contacted,00GKY000003MZHB2A4,2026-01-24T15:30:00.000Z,Trade Show,Test lead for Unassigned_Lead_48 pattern - sitting in queue 6+ days

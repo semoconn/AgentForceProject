@@ -32,6 +32,12 @@ export default class PatternRuleEditor extends LightningElement {
     @track testResult = null;
     @track currentStep = 1;
 
+    // Edit mode section toggle state
+    @track basicInfoOpen = true;
+    @track detectionLogicOpen = true;
+    @track remediationOpen = true;
+    @track advancedOpen = false;
+
     // Options
     @track objectOptions = [];
     @track fixTypeOptions = [];
@@ -65,9 +71,14 @@ export default class PatternRuleEditor extends LightningElement {
                 value: f.value
             }));
 
-            // Filter out 'Standard' - only show 'Declarative' and 'Apex_Plugin'
+            // Filter out 'Standard' unless editing a Standard rule
             this.logicTypeOptions = logicTypes
-                .filter(l => l.value !== 'Standard')
+                .filter(l => {
+                    if (l.value === 'Standard') {
+                        return this.mode === 'edit' && this.rule && this.rule.logicType === 'Standard';
+                    }
+                    return true;
+                })
                 .map(l => ({
                     label: l.label,
                     value: l.value
@@ -198,6 +209,118 @@ export default class PatternRuleEditor extends LightningElement {
 
     get nextButtonVariant() {
         return this.currentStep === 4 ? 'brand' : 'neutral';
+    }
+
+    // Layout mode: wizard (create/clone) vs single-page (edit)
+    get isEditMode() {
+        return this.mode === 'edit';
+    }
+
+    get isWizardMode() {
+        return this.mode === 'create' || this.mode === 'clone';
+    }
+
+    get isStandardRule() {
+        return this.rule && this.rule.logicType === 'Standard';
+    }
+
+    // Edit mode: show read-only query for Standard rules
+    get showQueryAsReadOnly() {
+        return this.isEditMode && this.isStandardRule;
+    }
+
+    // Edit mode: show interactive query builder for Declarative rules
+    get showEditableQueryBuilder() {
+        return !this.showQueryAsReadOnly && this.showQueryBuilder;
+    }
+
+    // Edit mode field locks
+    get objectDisabled() {
+        return this.mode === 'edit';
+    }
+
+    get logicTypeDisabled() {
+        return this.mode === 'edit';
+    }
+
+    get objectFieldHelp() {
+        return this.mode === 'edit'
+            ? 'Target Object cannot be changed when editing. Clone this rule to use a different object.'
+            : 'The Salesforce object this rule will detect patterns on.';
+    }
+
+    get logicTypeFieldHelp() {
+        return this.mode === 'edit'
+            ? 'Logic Type cannot be changed when editing. Clone this rule to change the logic type.'
+            : 'Declarative: Use visual query builder. Apex Plugin: Use custom Apex class.';
+    }
+
+    // Edit mode section toggle getters
+    get basicInfoSectionClass() {
+        return `slds-section${this.basicInfoOpen ? ' slds-is-open' : ''}`;
+    }
+
+    get basicInfoChevron() {
+        return this.basicInfoOpen ? 'utility:chevrondown' : 'utility:chevronright';
+    }
+
+    get detectionLogicSectionClass() {
+        return `slds-section${this.detectionLogicOpen ? ' slds-is-open' : ''}`;
+    }
+
+    get detectionLogicChevron() {
+        return this.detectionLogicOpen ? 'utility:chevrondown' : 'utility:chevronright';
+    }
+
+    get remediationSectionClass() {
+        return `slds-section${this.remediationOpen ? ' slds-is-open' : ''}`;
+    }
+
+    get remediationChevron() {
+        return this.remediationOpen ? 'utility:chevrondown' : 'utility:chevronright';
+    }
+
+    get advancedSectionClass() {
+        return `slds-section${this.advancedOpen ? ' slds-is-open' : ''}`;
+    }
+
+    get advancedChevron() {
+        return this.advancedOpen ? 'utility:chevrondown' : 'utility:chevronright';
+    }
+
+    // Edit mode section toggle handlers
+    handleToggleBasicInfo() {
+        this.basicInfoOpen = !this.basicInfoOpen;
+    }
+
+    handleToggleDetectionLogic() {
+        this.detectionLogicOpen = !this.detectionLogicOpen;
+    }
+
+    handleToggleRemediation() {
+        this.remediationOpen = !this.remediationOpen;
+    }
+
+    handleToggleAdvanced() {
+        this.advancedOpen = !this.advancedOpen;
+    }
+
+    // Test result display helpers
+    get testResultClass() {
+        if (!this.testResult) return '';
+        return this.testResult.success
+            ? 'slds-notify slds-notify_alert slds-alert_info slds-m-top_small'
+            : 'slds-notify slds-notify_alert slds-alert_error slds-m-top_small';
+    }
+
+    get testResultIcon() {
+        if (!this.testResult) return 'utility:info';
+        return this.testResult.success ? 'utility:success' : 'utility:error';
+    }
+
+    // Active status toggle for edit mode
+    handleActiveChange(event) {
+        this.isActive = event.target.checked;
     }
 
     // Event handlers

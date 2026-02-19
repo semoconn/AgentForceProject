@@ -1,50 +1,85 @@
 /**
- * @description Generic batch class for deleting records returned by a SOQL query.
+ * @description Generic batch class for deleting records older than a cutoff date.
+ * Uses Schema tokens for injection-proof query construction.
  * Uses inherited sharing to respect the sharing context of the calling code.
+ *
+ * Security:
+ * - Object/field names derived from Schema.SObjectType and Schema.SObjectField tokens (no string injection)
+ * - Queries use WITH SECURITY_ENFORCED for FLS enforcement
+ * - Object-level isDeletable() check before DELETE DML
  */
 public virtual inherited sharing class DeleteRecordsBatch implements Database.Batchable<sObject> {
-    
+
     private final String query;
-    private final String jobName = 'Generic Delete Batch';
 
     /**
-     * @param soqlQuery The query string to select records for deletion.
+     * @description Constructs a deletion batch for records older than a Date cutoff.
+     * Uses Schema tokens so object/field names cannot be injected.
+     * @param sObjectType The SObject type token (e.g., Behavior_Log_Summary__c.SObjectType)
+     * @param dateField The Date field token to filter on (e.g., Behavior_Log_Summary__c.Log_Date__c)
+     * @param cutoffDate Records with this field value before this date will be deleted
      */
-    public DeleteRecordsBatch(String soqlQuery) {
-        this.query = soqlQuery;
+    public DeleteRecordsBatch(Schema.SObjectType sObjectType, Schema.SObjectField dateField, Date cutoffDate) {
+        String objectName = sObjectType.getDescribe().getName();
+        String fieldName = dateField.getDescribe().getName();
+        // String.valueOf(Date) produces SOQL-safe YYYY-MM-DD format
+        this.query = 'SELECT Id FROM ' + objectName +
+                     ' WHERE ' + fieldName + ' < ' + String.valueOf(cutoffDate) +
+                     ' WITH SECURITY_ENFORCED';
+    }
+
+    /**
+     * @description Constructs a deletion batch for records older than a DateTime cutoff.
+     * Uses Schema tokens so object/field names cannot be injected.
+     * @param sObjectType The SObject type token (e.g., Behavior_Log__c.SObjectType)
+     * @param dateTimeField The DateTime field token to filter on (e.g., Schema.SObjectType.Behavior_Log__c.fields.CreatedDate)
+     * @param cutoffDateTime Records with this field value before this datetime will be deleted
+     */
+    public DeleteRecordsBatch(Schema.SObjectType sObjectType, Schema.SObjectField dateTimeField, DateTime cutoffDateTime) {
+        String objectName = sObjectType.getDescribe().getName();
+        String fieldName = dateTimeField.getDescribe().getName();
+        String isoDate = cutoffDateTime.formatGmt('yyyy-MM-dd\'T\'HH:mm:ss\'Z\'');
+        this.query = 'SELECT Id FROM ' + objectName +
+                     ' WHERE ' + fieldName + ' < ' + isoDate +
+                     ' WITH SECURITY_ENFORCED';
     }
 
     public Database.QueryLocator start(Database.BatchableContext bc) {
         System.debug('[DeleteRecordsBatch.start] Query: ' + query);
-        
-        // SECURITY FIX: Ensure the query enforces security
-        String secureQuery = query;
-        if (!secureQuery.contains('SECURITY_ENFORCED')) {
-            secureQuery += ' WITH SECURITY_ENFORCED';
-        }
-        return Database.getQueryLocator(secureQuery);
+        return Database.getQueryLocator(query);
     }
 
-    public virtual void execute(Database.BatchableContext bc, List<sObject> scope) { // ADDED 'virtual'
-        // The check here is simplified to allow the test to cover the else branch easily.
-        // SECURITY FIX: Explicit check for Delete permissions
-        if (!scope.isEmpty() && Schema.sObjectType.Behavior_Log__c.isDeletable()) {
+    public virtual void execute(Database.BatchableContext bc, List<sObject> scope) {
+        // Object-level permission check: isDeletable() is the correct enforcement for DELETE.
+        // Note: Security.stripInaccessible does not support AccessType.DELETABLE —
+        // object-level isDeletable() is the Salesforce-prescribed check for delete DML.
+        if (!scope.isEmpty() && scope[0].getSObjectType().getDescribe().isDeletable()) {
              try {
-                // Bulk delete the records in the current chunk
-                delete scope;
-                System.debug('[DeleteRecordsBatch.execute] Successfully deleted ' + scope.size() + ' records.');
-            } catch (DmlException e) {
-                // Log and absorb DML exceptions to ensure batch continues (Covered by testDmlException)
+                // Use partial delete so one bad record doesn't stop the entire batch chain
+                Database.DeleteResult[] results = Database.delete(scope, false);
+                Integer successCount = 0;
+                Integer failCount = 0;
+                for (Database.DeleteResult dr : results) {
+                    if (dr.isSuccess()) {
+                        successCount++;
+                    } else {
+                        failCount++;
+                        for (Database.Error err : dr.getErrors()) {
+                            System.debug(LoggingLevel.ERROR, '[DeleteRecordsBatch.execute] Delete failed for ' +
+                                dr.getId() + ': ' + err.getMessage());
+                        }
+                    }
+                }
+                System.debug('[DeleteRecordsBatch.execute] Deleted ' + successCount + ' records, ' + failCount + ' failures.');
+            } catch (Exception e) {
                 System.debug(LoggingLevel.ERROR, '[DeleteRecordsBatch.execute] Error deleting records in batch: ' + e.getMessage());
             }
         } else {
-            // Covered by testNonDeletableAndEmptyScope
             System.debug('[DeleteRecordsBatch.execute] Scope is empty or sObject is not deletable (skipping deletion).');
         }
     }
 
-    public void finish(Database.BatchableContext bc) {
-        // Logging is often done in the calling finish method (e.g., PatternAnalysisService.finish)
+    public virtual void finish(Database.BatchableContext bc) {
         System.debug('[DeleteRecordsBatch.finish] Batch finished. Job ID: ' + bc.getJobId());
     }
 }

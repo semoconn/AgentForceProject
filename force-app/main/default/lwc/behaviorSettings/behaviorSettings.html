@@ -242,6 +242,122 @@
                     </div>
                 </div>
 
+                <!-- Data Retention -->
+                <div class="slds-section slds-is-open slds-m-bottom_medium">
+                    <h3 class="slds-section__title">
+                        <span class="slds-truncate slds-p-horizontal_small slds-text-title_caps" title="Data Retention">
+                            <lightning-icon icon-name="utility:clock" size="x-small" class="slds-m-right_x-small"></lightning-icon>
+                            Data Retention
+                        </span>
+                    </h3>
+                    <div class="slds-section__content">
+                        <p class="slds-text-body_small slds-text-color_weak slds-m-bottom_small">
+                            Configure how long BehaviorIQ keeps historical data. Older records are automatically deleted during scheduled batch runs.
+                        </p>
+                        <div class="slds-grid slds-gutters slds-wrap">
+                            <!-- Raw Log Retention -->
+                            <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
+                                <div class="slds-box slds-box_x-small slds-theme_shade slds-m-bottom_small setting-box">
+                                    <lightning-input
+                                        type="number"
+                                        name="rawLogRetentionDays"
+                                        label="Raw Log Retention (Days)"
+                                        value={rawLogRetentionDays}
+                                        onchange={handleConfigInputChange}
+                                        min="7"
+                                        max="90"
+                                        step="1"
+                                        variant="label-stacked">
+                                    </lightning-input>
+                                    <p class="slds-text-body_small slds-text-color_weak slds-m-top_x-small">
+                                        Individual event logs. <strong>Default: 14 days</strong> (7-90)
+                                    </p>
+                                </div>
+                            </div>
+
+                            <!-- Summary Retention -->
+                            <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
+                                <div class="slds-box slds-box_x-small slds-theme_shade slds-m-bottom_small setting-box">
+                                    <lightning-input
+                                        type="number"
+                                        name="summaryRetentionDays"
+                                        label="Summary Retention (Days)"
+                                        value={summaryRetentionDays}
+                                        onchange={handleConfigInputChange}
+                                        min="30"
+                                        max="730"
+                                        step="1"
+                                        variant="label-stacked">
+                                    </lightning-input>
+                                    <p class="slds-text-body_small slds-text-color_weak slds-m-top_x-small">
+                                        Daily aggregate counters for leaderboard and trends. <strong>Default: 365 days</strong> (30-730)
+                                    </p>
+                                </div>
+                            </div>
+
+                            <!-- Snapshot Retention -->
+                            <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
+                                <div class="slds-box slds-box_x-small slds-theme_shade slds-m-bottom_small setting-box">
+                                    <lightning-input
+                                        type="number"
+                                        name="snapshotRetentionDays"
+                                        label="Snapshot Retention (Days)"
+                                        value={snapshotRetentionDays}
+                                        onchange={handleConfigInputChange}
+                                        min="30"
+                                        max="365"
+                                        step="1"
+                                        variant="label-stacked">
+                                    </lightning-input>
+                                    <p class="slds-text-body_small slds-text-color_weak slds-m-top_x-small">
+                                        Trend chart snapshot data. <strong>Default: 90 days</strong> (30-365)
+                                    </p>
+                                </div>
+                            </div>
+
+                            <!-- Health Log Retention -->
+                            <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
+                                <div class="slds-box slds-box_x-small slds-theme_shade slds-m-bottom_small setting-box">
+                                    <lightning-input
+                                        type="number"
+                                        name="healthLogRetentionDays"
+                                        label="Health Log Retention (Days)"
+                                        value={healthLogRetentionDays}
+                                        onchange={handleConfigInputChange}
+                                        min="30"
+                                        max="365"
+                                        step="1"
+                                        variant="label-stacked">
+                                    </lightning-input>
+                                    <p class="slds-text-body_small slds-text-color_weak slds-m-top_x-small">
+                                        Batch job diagnostic logs. <strong>Default: 90 days</strong> (30-365)
+                                    </p>
+                                </div>
+                            </div>
+
+                            <!-- Remediation Log Retention -->
+                            <div class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2">
+                                <div class="slds-box slds-box_x-small slds-theme_shade slds-m-bottom_small setting-box">
+                                    <lightning-input
+                                        type="number"
+                                        name="remediationRetentionDays"
+                                        label="Remediation Log Retention (Days)"
+                                        value={remediationRetentionDays}
+                                        onchange={handleConfigInputChange}
+                                        min="90"
+                                        max="730"
+                                        step="1"
+                                        variant="label-stacked">
+                                    </lightning-input>
+                                    <p class="slds-text-body_small slds-text-color_weak slds-m-top_x-small">
+                                        Auto-fix audit trail. Keep longer for compliance. <strong>Default: 365 days</strong> (90-730)
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Action Buttons -->
                 <div class="slds-grid slds-grid_align-spread slds-m-top_medium slds-p-top_small slds-border_top">
                     <lightning-button

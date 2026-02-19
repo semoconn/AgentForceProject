@@ -260,9 +260,15 @@
                                             <template if:true={condition.logic}>
                                                 <span class="slds-badge slds-badge_lightest slds-m-right_x-small">{condition.logic}</span>
                                             </template>
-                                            <strong>{condition.fieldLabel}</strong>
-                                            <span class="slds-m-horizontal_xx-small">{condition.operatorLabel}</span>
-                                            <em>{condition.value}</em>
+                                            <template if:true={condition.isRawFallback}>
+                                                <span class="slds-badge slds-badge_inverse slds-m-right_x-small">Raw SOQL</span>
+                                                <code class="slds-text-body_small">{condition.conditionString}</code>
+                                            </template>
+                                            <template if:false={condition.isRawFallback}>
+                                                <strong>{condition.fieldLabel}</strong>
+                                                <span class="slds-m-horizontal_xx-small">{condition.operatorLabel}</span>
+                                                <em>{condition.value}</em>
+                                            </template>
                                         </div>
                                         <lightning-button-icon
                                             icon-name="utility:delete"

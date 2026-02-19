@@ -390,4 +390,75 @@ private class DeclarativeFixExecutorTest {
         // Verify logs for all records
         System.assertEquals(accounts.size(), logs.size(), 'Should create log for each record');
     }
+
+    @IsTest
+    static void testActionIndex_SingleAction() {
+        // Test: Single action sets Action_Index__c = 0 and Execution_Time_Ms__c is populated
+        Account testAccount = [SELECT Id FROM Account LIMIT 1];
+
+        String configJson = '{"actions": [{"type": "UpdateField", "field": "Industry", "value": "Energy"}]}';
+
+        List<Remediation_Log__c> logs = new List<Remediation_Log__c>();
+        DeclarativeFixExecutor executor = new DeclarativeFixExecutor(logs, 'Test_Rule');
+
+        Test.startTest();
+        executor.execute(new List<Id>{ testAccount.Id }, configJson);
+        Test.stopTest();
+
+        // Verify log created with telemetry fields
+        System.assertEquals(1, logs.size(), 'Should create one log');
+        System.assertEquals(0, logs[0].Action_Index__c, 'Single action should have Action_Index__c = 0');
+        System.assertNotEquals(null, logs[0].Execution_Time_Ms__c, 'Execution_Time_Ms__c should be populated');
+        System.assert(logs[0].Execution_Time_Ms__c >= 0, 'Execution_Time_Ms__c should be non-negative');
+    }
+
+    @IsTest
+    static void testActionIndex_MultipleActions() {
+        // Test: Multiple actions get sequential Action_Index__c values and Execution_Time_Ms__c
+        Account testAccount = [SELECT Id FROM Account LIMIT 1];
+
+        String configJson = '{"actions": [' +
+            '{"type": "UpdateField", "field": "Industry", "value": "Retail"},' +
+            '{"type": "CreateTask", "subject": "Follow up after industry change"}' +
+        ']}';
+
+        List<Remediation_Log__c> logs = new List<Remediation_Log__c>();
+        DeclarativeFixExecutor executor = new DeclarativeFixExecutor(logs, 'Test_Rule');
+
+        Test.startTest();
+        executor.execute(new List<Id>{ testAccount.Id }, configJson);
+        Test.stopTest();
+
+        // Verify two logs created
+        System.assertEquals(2, logs.size(), 'Should create two logs (one per action)');
+
+        // Sort logs by Action_Index__c to ensure deterministic order
+        List<Remediation_Log__c> sortedLogs = new List<Remediation_Log__c>();
+        for (Remediation_Log__c log : logs) {
+            sortedLogs.add(log);
+        }
+        sortedLogs.sort();
+
+        // Find UpdateField and CreateTask logs by Action_Taken__c
+        Remediation_Log__c updateFieldLog;
+        Remediation_Log__c createTaskLog;
+        for (Remediation_Log__c log : logs) {
+            if (log.Action_Taken__c == 'UpdateField') {
+                updateFieldLog = log;
+            } else if (log.Action_Taken__c == 'CreateTask') {
+                createTaskLog = log;
+            }
+        }
+
+        System.assertNotEquals(null, updateFieldLog, 'Should have an UpdateField log');
+        System.assertNotEquals(null, createTaskLog, 'Should have a CreateTask log');
+
+        // Verify Action_Index__c ordering
+        System.assertEquals(0, updateFieldLog.Action_Index__c, 'UpdateField should have Action_Index__c = 0');
+        System.assertEquals(1, createTaskLog.Action_Index__c, 'CreateTask should have Action_Index__c = 1');
+
+        // Verify Execution_Time_Ms__c is populated and non-negative
+        System.assert(updateFieldLog.Execution_Time_Ms__c >= 0, 'UpdateField Execution_Time_Ms__c should be >= 0');
+        System.assert(createTaskLog.Execution_Time_Ms__c >= 0, 'CreateTask Execution_Time_Ms__c should be >= 0');
+    }
 }

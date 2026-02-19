@@ -1,0 +1,6 @@
+Name,Industry,Type,Rating,AnnualRevenue
+"Acme Corporation",Technology,Customer - Direct,Hot,5000000
+"Global Industries",Financial Services,Customer - Channel,Warm,2500000
+"TechStart Inc",Technology,Prospect,Cold,500000
+"Enterprise Solutions",Healthcare,Customer - Direct,Hot,10000000
+"SMB Partners",Retail,Customer - Channel,Warm,1000000

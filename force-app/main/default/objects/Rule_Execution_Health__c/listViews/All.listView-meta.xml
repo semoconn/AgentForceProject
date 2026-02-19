@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListView xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>All</fullName>
+    <columns>NAME</columns>
+    <columns>Rule_Developer_Name__c</columns>
+    <columns>Circuit_State__c</columns>
+    <columns>Consecutive_Failures__c</columns>
+    <columns>Last_Success_Time__c</columns>
+    <columns>Last_Failure_Time__c</columns>
+    <columns>Last_Error__c</columns>
+    <columns>Cooldown_Until__c</columns>
+    <filterScope>Everything</filterScope>
+    <label>All</label>
+</ListView>

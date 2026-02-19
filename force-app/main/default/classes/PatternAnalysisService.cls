@@ -124,31 +124,39 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
             return;
         }
 
-        // Route based on Logic Type (default to 'Standard' for backward compatibility)
-        String logicType = String.isNotBlank(rule.Logic_Type__c) ? rule.Logic_Type__c : 'Standard';
+        try {
+            // Route based on Logic Type (default to 'Standard' for backward compatibility)
+            String logicType = String.isNotBlank(rule.Logic_Type__c) ? rule.Logic_Type__c : 'Standard';
 
-        List<SObject> detectedRecords;
+            List<SObject> detectedRecords;
 
-        switch on logicType {
-            when 'Apex_Plugin' {
-                // Invoke custom plugin for analysis
-                detectedRecords = executePluginAnalysis(rule, objectApiName);
+            switch on logicType {
+                when 'Apex_Plugin' {
+                    // Invoke custom plugin for analysis
+                    detectedRecords = executePluginAnalysis(rule, objectApiName);
+                }
+                when else {
+                    // 'Standard' and 'Declarative' both use Query_Condition__c for detection
+                    detectedRecords = executeDetectionQuery(rule, objectApiName);
+                }
             }
-            when else {
-                // 'Standard' and 'Declarative' both use Query_Condition__c for detection
-                detectedRecords = executeDetectionQuery(rule, objectApiName);
+
+            if (detectedRecords == null || detectedRecords.isEmpty()) {
+                // Track rule as processed and mark any existing pain point as resolved
+                processedRuleKeys.add(rule.DeveloperName);
+                markPainPointResolved(rule.DeveloperName);
+                CircuitBreakerService.recordSuccess(rule.DeveloperName);
+                return;
             }
-        }
 
-        if (detectedRecords == null || detectedRecords.isEmpty()) {
-            // Track rule as processed and mark any existing pain point as resolved
-            processedRuleKeys.add(rule.DeveloperName);
-            markPainPointResolved(rule.DeveloperName);
-            return;
-        }
+            // Generate and persist the pain point
+            persistDetectionResults(rule, objectApiName, detectedRecords);
+            CircuitBreakerService.recordSuccess(rule.DeveloperName);
 
-        // Generate and persist the pain point
-        persistDetectionResults(rule, objectApiName, detectedRecords);
+        } catch (Exception e) {
+            CircuitBreakerService.recordFailure(rule.DeveloperName, e.getMessage());
+            ruleErrors.add('Rule [' + rule.DeveloperName + ']: ' + e.getMessage());
+        }
     }
 
     /**
@@ -236,6 +244,13 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
             return false;
         }
 
+        // Circuit breaker check - skip rules whose circuit is open due to repeated failures
+        if (!CircuitBreakerService.canExecute(rule.DeveloperName)) {
+            System.debug(LoggingLevel.INFO, 'Skipping rule [' + rule.DeveloperName +
+                ']: Circuit breaker is open (state: ' + CircuitBreakerService.getCircuitState(rule.DeveloperName) + ').');
+            return false;
+        }
+
         // All checks passed - rule can execute
         System.debug(LoggingLevel.DEBUG, 'Rule [' + rule.DeveloperName + '] passed all checks, proceeding with detection on ' + objectApiName);
         return true;
@@ -297,16 +312,45 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
      * @param objectApiName The target object API name
      * @param detectedRecords Records that match the pattern
      */
+    @TestVisible
     private void persistDetectionResults(Behavior_Pattern_Rule__mdt rule, String objectApiName, List<SObject> detectedRecords) {
-        Integer count = detectedRecords.size();
-
-        // Collect sample IDs for reference
-        List<Id> exampleIds = new List<Id>();
-        for (Integer i = 0; i < Math.min(count, 5); i++) {
-            exampleIds.add(detectedRecords[i].Id);
+        // Exclude already-fixed records so batch doesn't overwrite post-fix counts
+        List<SObject> activeRecords = detectedRecords;
+        String ruleKey = rule.DeveloperName;
+        List<Identified_Pain_Point__c> existingPPs = [
+            SELECT Fixed_Record_Ids__c FROM Identified_Pain_Point__c
+            WHERE Unique_Key__c = :ruleKey
+            WITH USER_MODE
+            LIMIT 1
+        ];
+        if (!existingPPs.isEmpty() && String.isNotBlank(existingPPs[0].Fixed_Record_Ids__c)) {
+            Set<Id> fixedIds = parseExcludeIds(existingPPs[0].Fixed_Record_Ids__c, 5000);
+            if (!fixedIds.isEmpty()) {
+                activeRecords = new List<SObject>();
+                for (SObject rec : detectedRecords) {
+                    if (!fixedIds.contains(rec.Id)) {
+                        activeRecords.add(rec);
+                    }
+                }
+            }
         }
 
-        Decimal totalImpact = calculateFinancialImpact(rule, objectApiName, detectedRecords);
+        // If all detected records have been fixed, mark as resolved
+        if (activeRecords.isEmpty()) {
+            processedRuleKeys.add(rule.DeveloperName);
+            markPainPointResolved(rule.DeveloperName);
+            return;
+        }
+
+        Integer count = activeRecords.size();
+
+        // Collect sample IDs from active (unfixed) records
+        List<Id> exampleIds = new List<Id>();
+        for (Integer i = 0; i < Math.min(count, 5); i++) {
+            exampleIds.add(activeRecords[i].Id);
+        }
+
+        Decimal totalImpact = calculateFinancialImpact(rule, objectApiName, activeRecords);
 
         // Use description from metadata if available, otherwise fall back to generic description
         String description = String.isNotBlank(rule.Description__c)
@@ -823,7 +867,10 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
                     SELECT Id, Stale_Case_Threshold__c, Stale_Opportunity_Threshold__c,
                            Unassigned_Lead_Hours__c, Lead_Hoarding_Days__c,
                            High_Value_Inactivity_Days__c, High_Value_Amount_Threshold__c,
-                           Contract_Expiry_Days__c, Global_Exclusion_Filter__c
+                           Contract_Expiry_Days__c, Global_Exclusion_Filter__c,
+                           Raw_Log_Retention_Days__c, Summary_Retention_Days__c,
+                           Snapshot_Retention_Days__c, Health_Log_Retention_Days__c,
+                           Remediation_Retention_Days__c
                     FROM BehaviorIQ_Configuration__c
                     LIMIT 1
                 ];
@@ -855,7 +902,7 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
         // Query existing pain point to preserve user-set statuses
         String effectiveStatus = 'New';
         List<Identified_Pain_Point__c> existing = [
-            SELECT Id, Status__c FROM Identified_Pain_Point__c
+            SELECT Id, Status__c, Fixed_Record_Ids__c FROM Identified_Pain_Point__c
             WHERE Unique_Key__c = :key
             WITH USER_MODE
             LIMIT 1
@@ -889,6 +936,11 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
             Last_Detected__c = System.now(),
             Status__c = effectiveStatus
         );
+
+        // Preserve Fixed_Record_Ids__c from existing record so batch doesn't erase fix history
+        if (!existing.isEmpty() && String.isNotBlank(existing[0].Fixed_Record_Ids__c)) {
+            pp.Fixed_Record_Ids__c = existing[0].Fixed_Record_Ids__c;
+        }
 
         try {
             // Test hook for exception coverage
@@ -1079,12 +1131,133 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
     }
 
     private void deleteOldLogs() {
-        if (!Schema.sObjectType.Behavior_Log__c.isDeletable()) return;
+        // Read configurable retention periods (fall back to defaults)
+        Integer rawRetentionDays = DEFAULT_RETENTION_DAYS;
+        Integer summaryRetentionDays = 365;
+        Integer snapshotRetentionDays = 90;
+        Integer healthLogRetentionDays = 90;
+        Integer remediationRetentionDays = 365;
+
         try {
-            Date cutoffDate = Date.today().addDays(-DEFAULT_RETENTION_DAYS);
-            String isoDate = Datetime.newInstanceGmt(cutoffDate.year(), cutoffDate.month(), cutoffDate.day()).format('yyyy-MM-dd\'T\'HH:mm:ss\'Z\'');
-            Database.executeBatch(new DeleteRecordsBatch('SELECT Id FROM Behavior_Log__c WHERE CreatedDate < ' + isoDate), 2000);
-        } catch (Exception e) {}
+            BehaviorIQ_Configuration__c config = getConfiguration();
+            if (config != null) {
+                if (config.Raw_Log_Retention_Days__c != null) {
+                    rawRetentionDays = Integer.valueOf(config.Raw_Log_Retention_Days__c);
+                }
+                if (config.Summary_Retention_Days__c != null) {
+                    summaryRetentionDays = Integer.valueOf(config.Summary_Retention_Days__c);
+                }
+                if (config.Snapshot_Retention_Days__c != null) {
+                    snapshotRetentionDays = Integer.valueOf(config.Snapshot_Retention_Days__c);
+                }
+                if (config.Health_Log_Retention_Days__c != null) {
+                    healthLogRetentionDays = Integer.valueOf(config.Health_Log_Retention_Days__c);
+                }
+                if (config.Remediation_Retention_Days__c != null) {
+                    remediationRetentionDays = Integer.valueOf(config.Remediation_Retention_Days__c);
+                }
+            }
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'Using default retention periods: ' + e.getMessage());
+        }
+
+        // Build chained batch sequence (runs sequentially to avoid 5-concurrent-batch governor limit)
+        // Chain order: Raw Logs -> Summaries -> Snapshots -> Health Logs -> Remediation Logs
+        // Chain is built bottom-up so each batch knows its successor
+
+        // 5. Remediation Logs (last in chain, no next batch)
+        DeleteRecordsBatch remediationBatch = null;
+        if (Schema.sObjectType.Remediation_Log__c.isDeletable()) {
+            Date remCutoff = Date.today().addDays(-remediationRetentionDays);
+            DateTime remCutoffDt = Datetime.newInstanceGmt(remCutoff.year(), remCutoff.month(), remCutoff.day());
+            remediationBatch = new DeleteRecordsBatch(
+                Remediation_Log__c.SObjectType,
+                Remediation_Log__c.CreatedDate,
+                remCutoffDt
+            );
+        }
+
+        // 4. Health Logs -> chains to Remediation
+        DeleteRecordsBatch healthBatch = null;
+        if (Schema.sObjectType.System_Health_Log__c.isDeletable()) {
+            Date healthCutoff = Date.today().addDays(-healthLogRetentionDays);
+            DateTime healthCutoffDt = Datetime.newInstanceGmt(healthCutoff.year(), healthCutoff.month(), healthCutoff.day());
+            ChainedDeleteRecordsBatch chainedHealth = new ChainedDeleteRecordsBatch(
+                System_Health_Log__c.SObjectType,
+                System_Health_Log__c.CreatedDate,
+                healthCutoffDt
+            );
+            if (remediationBatch != null) {
+                chainedHealth.setNextBatch(remediationBatch, 2000);
+            }
+            healthBatch = chainedHealth;
+        }
+
+        // 3. Snapshots -> chains to Health Logs (or Remediation if Health skipped)
+        DeleteRecordsBatch snapshotBatch = null;
+        if (Schema.sObjectType.Behavior_Snapshot__c.isDeletable()) {
+            Date snapshotCutoff = Date.today().addDays(-snapshotRetentionDays);
+            ChainedDeleteRecordsBatch chainedSnapshot = new ChainedDeleteRecordsBatch(
+                Behavior_Snapshot__c.SObjectType,
+                Behavior_Snapshot__c.Snapshot_Date__c,
+                snapshotCutoff
+            );
+            DeleteRecordsBatch nextAfterSnapshot = healthBatch != null ? healthBatch : remediationBatch;
+            if (nextAfterSnapshot != null) {
+                chainedSnapshot.setNextBatch(nextAfterSnapshot, 2000);
+            }
+            snapshotBatch = chainedSnapshot;
+        }
+
+        // 2. Summary Logs -> chains to Snapshots (or next available)
+        DeleteRecordsBatch summaryBatch = null;
+        if (Schema.sObjectType.Behavior_Log_Summary__c.isDeletable()) {
+            Date summaryCutoff = Date.today().addDays(-summaryRetentionDays);
+            ChainedDeleteRecordsBatch chainedSummary = new ChainedDeleteRecordsBatch(
+                Behavior_Log_Summary__c.SObjectType,
+                Behavior_Log_Summary__c.Log_Date__c,
+                summaryCutoff
+            );
+            DeleteRecordsBatch nextAfterSummary = snapshotBatch != null ? snapshotBatch
+                : (healthBatch != null ? healthBatch : remediationBatch);
+            if (nextAfterSummary != null) {
+                chainedSummary.setNextBatch(nextAfterSummary, 2000);
+            }
+            summaryBatch = chainedSummary;
+        }
+
+        // 1. Raw Logs -> chains to Summary (or next available) -- START OF CHAIN
+        DeleteRecordsBatch firstBatch = null;
+        if (Schema.sObjectType.Behavior_Log__c.isDeletable()) {
+            Date cutoffDate = Date.today().addDays(-rawRetentionDays);
+            DateTime cutoffDateTime = Datetime.newInstanceGmt(cutoffDate.year(), cutoffDate.month(), cutoffDate.day());
+            ChainedDeleteRecordsBatch chainedRaw = new ChainedDeleteRecordsBatch(
+                Behavior_Log__c.SObjectType,
+                Behavior_Log__c.CreatedDate,
+                cutoffDateTime
+            );
+            DeleteRecordsBatch nextAfterRaw = summaryBatch != null ? summaryBatch
+                : (snapshotBatch != null ? snapshotBatch
+                : (healthBatch != null ? healthBatch : remediationBatch));
+            if (nextAfterRaw != null) {
+                chainedRaw.setNextBatch(nextAfterRaw, 2000);
+            }
+            firstBatch = chainedRaw;
+        } else {
+            // If raw logs aren't deletable, start with the next available batch
+            firstBatch = summaryBatch != null ? summaryBatch
+                : (snapshotBatch != null ? snapshotBatch
+                : (healthBatch != null ? healthBatch : remediationBatch));
+        }
+
+        // Kick off the chain (only 1 batch job active at a time)
+        if (firstBatch != null) {
+            try {
+                Database.executeBatch(firstBatch, 2000);
+            } catch (Exception e) {
+                System.debug(LoggingLevel.ERROR, 'Failed to schedule retention cleanup chain: ' + e.getMessage());
+            }
+        }
     }
 
     private void logJobStatus(Database.BatchableContext bc) {
@@ -1129,7 +1302,8 @@ public with sharing class PatternAnalysisService implements Database.Batchable<S
                 Job_Name__c = JOB_NAME,
                 Job_ID__c = jobId,
                 Status__c = (totalErrors > 0) ? 'Failed' : 'Success',
-                Error_Count__c = totalErrors
+                Error_Count__c = totalErrors,
+                CPU_Time_Ms__c = Limits.getCpuTime()
             );
             // Add error details if field is accessible
             if (hasRuleErrors && Schema.sObjectType.System_Health_Log__c.fields.Error_Details__c.isCreateable()) {

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Raw_Log_Retention_Days__c</fullName>
+    <defaultValue>14</defaultValue>
+    <description>Number of days to retain raw Behavior_Log__c records. After this period, raw logs are deleted but daily summaries are preserved. Defaults to 14 days.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>Days to keep individual event logs (7-90). Daily summaries are kept longer.</inlineHelpText>
+    <label>Raw Log Retention (Days)</label>
+    <precision>3</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

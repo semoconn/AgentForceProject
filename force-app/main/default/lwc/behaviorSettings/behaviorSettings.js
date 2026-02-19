@@ -13,6 +13,13 @@ const DEFAULT_HIGH_VALUE_INACTIVITY_DAYS = 14;
 const DEFAULT_HIGH_VALUE_AMOUNT = 50000;
 const DEFAULT_CONTRACT_EXPIRY_DAYS = 30;
 
+// Factory Defaults for Data Retention
+const DEFAULT_RAW_LOG_RETENTION = 14;
+const DEFAULT_SUMMARY_RETENTION = 365;
+const DEFAULT_SNAPSHOT_RETENTION = 90;
+const DEFAULT_HEALTH_LOG_RETENTION = 90;
+const DEFAULT_REMEDIATION_RETENTION = 365;
+
 export default class BehaviorSettings extends LightningElement {
     // Detection Threshold settings (BehaviorIQ_Configuration__c)
     @track staleCaseThreshold;
@@ -22,6 +29,13 @@ export default class BehaviorSettings extends LightningElement {
     @track highValueInactivityDays;
     @track highValueAmountThreshold;
     @track contractExpiryDays;
+
+    // Data Retention settings
+    @track rawLogRetentionDays;
+    @track summaryRetentionDays;
+    @track snapshotRetentionDays;
+    @track healthLogRetentionDays;
+    @track remediationRetentionDays;
 
     @track isLoading = true;
 
@@ -41,6 +55,11 @@ export default class BehaviorSettings extends LightningElement {
             this.highValueInactivityDays = data.highValueInactivityDays || DEFAULT_HIGH_VALUE_INACTIVITY_DAYS;
             this.highValueAmountThreshold = data.highValueAmountThreshold || DEFAULT_HIGH_VALUE_AMOUNT;
             this.contractExpiryDays = data.contractExpiryDays || DEFAULT_CONTRACT_EXPIRY_DAYS;
+            this.rawLogRetentionDays = data.rawLogRetentionDays || DEFAULT_RAW_LOG_RETENTION;
+            this.summaryRetentionDays = data.summaryRetentionDays || DEFAULT_SUMMARY_RETENTION;
+            this.snapshotRetentionDays = data.snapshotRetentionDays || DEFAULT_SNAPSHOT_RETENTION;
+            this.healthLogRetentionDays = data.healthLogRetentionDays || DEFAULT_HEALTH_LOG_RETENTION;
+            this.remediationRetentionDays = data.remediationRetentionDays || DEFAULT_REMEDIATION_RETENTION;
             this.isLoading = false;
         } else if (error) {
             this.showToast('Error', 'Failed to load detection threshold settings.', 'error');
@@ -52,6 +71,11 @@ export default class BehaviorSettings extends LightningElement {
             this.highValueInactivityDays = DEFAULT_HIGH_VALUE_INACTIVITY_DAYS;
             this.highValueAmountThreshold = DEFAULT_HIGH_VALUE_AMOUNT;
             this.contractExpiryDays = DEFAULT_CONTRACT_EXPIRY_DAYS;
+            this.rawLogRetentionDays = DEFAULT_RAW_LOG_RETENTION;
+            this.summaryRetentionDays = DEFAULT_SUMMARY_RETENTION;
+            this.snapshotRetentionDays = DEFAULT_SNAPSHOT_RETENTION;
+            this.healthLogRetentionDays = DEFAULT_HEALTH_LOG_RETENTION;
+            this.remediationRetentionDays = DEFAULT_REMEDIATION_RETENTION;
             this.isLoading = false;
         }
     }
@@ -86,6 +110,21 @@ export default class BehaviorSettings extends LightningElement {
             case 'contractExpiryDays':
                 this.contractExpiryDays = val;
                 break;
+            case 'rawLogRetentionDays':
+                this.rawLogRetentionDays = val;
+                break;
+            case 'summaryRetentionDays':
+                this.summaryRetentionDays = val;
+                break;
+            case 'snapshotRetentionDays':
+                this.snapshotRetentionDays = val;
+                break;
+            case 'healthLogRetentionDays':
+                this.healthLogRetentionDays = val;
+                break;
+            case 'remediationRetentionDays':
+                this.remediationRetentionDays = val;
+                break;
             default:
                 break;
         }
@@ -99,11 +138,26 @@ export default class BehaviorSettings extends LightningElement {
         this.highValueInactivityDays = DEFAULT_HIGH_VALUE_INACTIVITY_DAYS;
         this.highValueAmountThreshold = DEFAULT_HIGH_VALUE_AMOUNT;
         this.contractExpiryDays = DEFAULT_CONTRACT_EXPIRY_DAYS;
+        this.rawLogRetentionDays = DEFAULT_RAW_LOG_RETENTION;
+        this.summaryRetentionDays = DEFAULT_SUMMARY_RETENTION;
+        this.snapshotRetentionDays = DEFAULT_SNAPSHOT_RETENTION;
+        this.healthLogRetentionDays = DEFAULT_HEALTH_LOG_RETENTION;
+        this.remediationRetentionDays = DEFAULT_REMEDIATION_RETENTION;
 
-        this.showToast('Reset', 'All thresholds reset to defaults. Click Save to apply.', 'info');
+        this.showToast('Reset', 'All settings reset to defaults. Click Save to apply.', 'info');
     }
 
     async handleSaveConfig() {
+        // Trigger native input validation for visual feedback
+        const inputs = this.template.querySelectorAll('lightning-input');
+        let allValid = true;
+        inputs.forEach((input) => {
+            if (!input.reportValidity()) {
+                allValid = false;
+            }
+        });
+        if (!allValid) return;
+
         // Validate inputs
         if (!this.validateThreshold(this.staleCaseThreshold, 'Stale Case Threshold', 1, 999)) return;
         if (!this.validateThreshold(this.staleOpportunityThreshold, 'Stale Opportunity Threshold', 1, 999)) return;
@@ -112,6 +166,11 @@ export default class BehaviorSettings extends LightningElement {
         if (!this.validateThreshold(this.highValueInactivityDays, 'High-Value Inactivity Days', 1, 999)) return;
         if (!this.validateThreshold(this.highValueAmountThreshold, 'High-Value Amount', 1, 999999999)) return;
         if (!this.validateThreshold(this.contractExpiryDays, 'Contract Expiry Days', 1, 999)) return;
+        if (!this.validateThreshold(this.rawLogRetentionDays, 'Raw Log Retention', 7, 90)) return;
+        if (!this.validateThreshold(this.summaryRetentionDays, 'Summary Retention', 30, 730)) return;
+        if (!this.validateThreshold(this.snapshotRetentionDays, 'Snapshot Retention', 30, 365)) return;
+        if (!this.validateThreshold(this.healthLogRetentionDays, 'Health Log Retention', 30, 365)) return;
+        if (!this.validateThreshold(this.remediationRetentionDays, 'Remediation Log Retention', 90, 730)) return;
 
         this.isLoading = true;
         try {
@@ -122,10 +181,15 @@ export default class BehaviorSettings extends LightningElement {
                 leadHoardingDays: this.leadHoardingDays,
                 highValueInactivityDays: this.highValueInactivityDays,
                 highValueAmountThreshold: this.highValueAmountThreshold,
-                contractExpiryDays: this.contractExpiryDays
+                contractExpiryDays: this.contractExpiryDays,
+                rawLogRetentionDays: this.rawLogRetentionDays,
+                summaryRetentionDays: this.summaryRetentionDays,
+                snapshotRetentionDays: this.snapshotRetentionDays,
+                healthLogRetentionDays: this.healthLogRetentionDays,
+                remediationRetentionDays: this.remediationRetentionDays
             });
 
-            this.showToast('Success', 'Detection thresholds saved successfully.', 'success');
+            this.showToast('Success', 'Settings saved successfully.', 'success');
 
             // Refresh the wire to get updated data
             await refreshApex(this.wiredConfigSettingsResult);
@@ -141,7 +205,7 @@ export default class BehaviorSettings extends LightningElement {
     // ==================== UTILITY METHODS ====================
 
     validateThreshold(value, fieldName, min, max) {
-        if (value === null || value === undefined || value < min || value > max) {
+        if (value === null || value === undefined || isNaN(value) || value < min || value > max) {
             this.showToast('Validation Error', `${fieldName} must be between ${min} and ${max.toLocaleString()}.`, 'error');
             return false;
         }

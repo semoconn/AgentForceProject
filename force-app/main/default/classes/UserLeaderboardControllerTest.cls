@@ -47,6 +47,29 @@ private with sharing class UserLeaderboardControllerTest {
                 Timestamp__c = System.now()
             ));
             insert logs;
+
+            // Create matching Behavior_Log_Summary__c records (controller now queries summaries)
+            String todayStr = String.valueOf(Date.today());
+            List<Behavior_Log_Summary__c> summaries = new List<Behavior_Log_Summary__c>();
+            summaries.add(new Behavior_Log_Summary__c(
+                User__c = testStandardUser.Id,
+                Action_Name__c = 'Stale Opportunity',
+                Object_API_Name__c = 'Opportunity',
+                Log_Date__c = Date.today(),
+                Event_Count__c = 5,
+                Composite_Key__c = testStandardUser.Id + '_Opportunity_Stale Opportunity_' + todayStr,
+                Last_Event_Time__c = System.now()
+            ));
+            summaries.add(new Behavior_Log_Summary__c(
+                User__c = testStandardUser.Id,
+                Action_Name__c = 'Unassigned Lead',
+                Object_API_Name__c = 'Lead',
+                Log_Date__c = Date.today(),
+                Event_Count__c = 1,
+                Composite_Key__c = testStandardUser.Id + '_Lead_Unassigned Lead_' + todayStr,
+                Last_Event_Time__c = System.now()
+            ));
+            insert summaries;
         }
     }
 
@@ -278,6 +301,7 @@ private with sharing class UserLeaderboardControllerTest {
 
         // Delete all behavior logs
         delete [SELECT Id FROM Behavior_Log__c];
+        delete [SELECT Id FROM Behavior_Log_Summary__c];
 
         System.runAs(admin) {
             UserLeaderboardController.forcePremiumContext = true;
@@ -313,6 +337,23 @@ private with sharing class UserLeaderboardControllerTest {
                 Timestamp__c = System.now()
             ));
             insert additionalLogs;
+
+            // Add matching summaries for additional logs
+            String todayStr = String.valueOf(Date.today());
+            insert new List<Behavior_Log_Summary__c>{
+                new Behavior_Log_Summary__c(
+                    User__c = standardUser.Id, Action_Name__c = 'Record_Viewed',
+                    Object_API_Name__c = 'Account', Log_Date__c = Date.today(),
+                    Event_Count__c = 1, Composite_Key__c = standardUser.Id + '_Account_Record_Viewed_' + todayStr,
+                    Last_Event_Time__c = System.now()
+                ),
+                new Behavior_Log_Summary__c(
+                    User__c = standardUser.Id, Action_Name__c = 'Record_Deleted',
+                    Object_API_Name__c = 'Contact', Log_Date__c = Date.today(),
+                    Event_Count__c = 1, Composite_Key__c = standardUser.Id + '_Contact_Record_Deleted_' + todayStr,
+                    Last_Event_Time__c = System.now()
+                )
+            };
         }
 
         System.runAs(admin) {
@@ -396,6 +437,14 @@ private with sharing class UserLeaderboardControllerTest {
                 ));
             }
             insert adminLogs;
+
+            // Add matching summary
+            insert new Behavior_Log_Summary__c(
+                User__c = admin.Id, Action_Name__c = 'Admin_Action',
+                Object_API_Name__c = 'Account', Log_Date__c = Date.today(),
+                Event_Count__c = 3, Composite_Key__c = admin.Id + '_Account_Admin_Action_' + String.valueOf(Date.today()),
+                Last_Event_Time__c = System.now()
+            );
         }
 
         System.runAs(admin) {
@@ -418,6 +467,7 @@ private with sharing class UserLeaderboardControllerTest {
 
         // Delete all logs to ensure empty aggregates
         delete [SELECT Id FROM Behavior_Log__c];
+        delete [SELECT Id FROM Behavior_Log_Summary__c];
 
         System.runAs(admin) {
             UserLeaderboardController.forcePremiumContext = true;
@@ -506,8 +556,10 @@ private with sharing class UserLeaderboardControllerTest {
         }
         insert testUsers;
 
-        // Create logs for each user
+        // Create logs and summaries for each user
         List<Behavior_Log__c> logs = new List<Behavior_Log__c>();
+        List<Behavior_Log_Summary__c> summaries = new List<Behavior_Log_Summary__c>();
+        String todayStr = String.valueOf(Date.today());
         for (User u : testUsers) {
             logs.add(new Behavior_Log__c(
                 User__c = u.Id,
@@ -515,8 +567,15 @@ private with sharing class UserLeaderboardControllerTest {
                 Object_API_Name__c = 'Account',
                 Timestamp__c = System.now()
             ));
+            summaries.add(new Behavior_Log_Summary__c(
+                User__c = u.Id, Action_Name__c = 'Test_Action',
+                Object_API_Name__c = 'Account', Log_Date__c = Date.today(),
+                Event_Count__c = 1, Composite_Key__c = u.Id + '_Account_Test_Action_' + todayStr,
+                Last_Event_Time__c = System.now()
+            ));
         }
         insert logs;
+        insert summaries;
 
         System.runAs(admin) {
             UserLeaderboardController.forcePremiumContext = true;
@@ -769,6 +828,14 @@ private with sharing class UserLeaderboardControllerTest {
                 ));
             }
             insert extraLogs;
+
+            // Add matching summary
+            insert new Behavior_Log_Summary__c(
+                User__c = standardUser.Id, Action_Name__c = 'Extra_Action',
+                Object_API_Name__c = 'Account', Log_Date__c = Date.today(),
+                Event_Count__c = 20, Composite_Key__c = standardUser.Id + '_Account_Extra_Action_' + String.valueOf(Date.today()),
+                Last_Event_Time__c = System.now()
+            );
         }
 
         System.runAs(admin) {
@@ -1055,6 +1122,7 @@ private with sharing class UserLeaderboardControllerTest {
 
         // Delete all behavior logs
         delete [SELECT Id FROM Behavior_Log__c];
+        delete [SELECT Id FROM Behavior_Log_Summary__c];
 
         System.runAs(admin) {
             UserLeaderboardController.forcePremiumContext = true;
@@ -1582,6 +1650,7 @@ private with sharing class UserLeaderboardControllerTest {
 
         // Delete existing logs and pain points
         delete [SELECT Id FROM Behavior_Log__c];
+        delete [SELECT Id FROM Behavior_Log_Summary__c];
         delete [SELECT Id FROM Identified_Pain_Point__c];
 
         // Create accounts owned by different users
@@ -1618,10 +1687,17 @@ private with sharing class UserLeaderboardControllerTest {
             ));
             insert pps;
 
-            // Create behavior logs so users appear
+            // Create behavior logs and summaries so users appear in leaderboard
             insert new List<Behavior_Log__c>{
                 new Behavior_Log__c(User__c = standardUser.Id, Action_Name__c = 'Test', Object_API_Name__c = 'Account', Timestamp__c = System.now()),
                 new Behavior_Log__c(User__c = admin.Id, Action_Name__c = 'Test', Object_API_Name__c = 'Account', Timestamp__c = System.now())
+            };
+            String todayStr = String.valueOf(Date.today());
+            insert new List<Behavior_Log_Summary__c>{
+                new Behavior_Log_Summary__c(User__c = standardUser.Id, Action_Name__c = 'Test', Object_API_Name__c = 'Account',
+                    Log_Date__c = Date.today(), Event_Count__c = 1, Composite_Key__c = standardUser.Id + '_Account_Test_' + todayStr, Last_Event_Time__c = System.now()),
+                new Behavior_Log_Summary__c(User__c = admin.Id, Action_Name__c = 'Test', Object_API_Name__c = 'Account',
+                    Log_Date__c = Date.today(), Event_Count__c = 1, Composite_Key__c = admin.Id + '_Account_Test_' + todayStr, Last_Event_Time__c = System.now())
             };
         }
 

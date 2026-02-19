@@ -146,6 +146,67 @@ private with sharing class PatternFixServiceTest {
         clearMockRule();
     }
 
+    @isTest
+    static void testTaskCreation_RecordNamePopulated() {
+        // Setup - use Opportunity to verify Name field extraction
+        Opportunity opp = new Opportunity(
+            Name = 'High Value Ghost Deal',
+            StageName = 'Prospecting',
+            CloseDate = Date.today().addDays(30)
+        );
+        insert opp;
+
+        PatternFixService.mockRule = createMockRule('Task_Creation', false, '{"subject":"Follow up on ghost deal"}');
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(new List<Id>{opp.Id}, 'Test_Rule');
+        Test.stopTest();
+
+        // Verify Record_Name__c is populated with Opportunity Name
+        List<Remediation_Log__c> logs = [
+            SELECT Record_Name__c, Object_API_Name__c, Action_Taken__c, Status__c
+            FROM Remediation_Log__c
+            WHERE Affected_Record_ID__c = :String.valueOf(opp.Id)
+        ];
+        System.assertEquals(1, logs.size(), 'Expected exactly 1 remediation log');
+        System.assertEquals('High Value Ghost Deal', logs[0].Record_Name__c, 'Record_Name__c should contain Opportunity Name');
+        System.assertEquals('Opportunity', logs[0].Object_API_Name__c, 'Object_API_Name__c should be Opportunity');
+        System.assertEquals('Task_Creation', logs[0].Action_Taken__c, 'Action should be Task_Creation');
+        System.assertEquals('Success', logs[0].Status__c, 'Status should be Success');
+
+        clearMockRule();
+    }
+
+    @isTest
+    static void testTaskCreation_RecordNamePopulated_Case() {
+        // Setup - verify CaseNumber extraction for Case objects
+        Case c = new Case(Subject = 'Test Case Name', Status = 'New');
+        insert c;
+
+        // Get the auto-generated CaseNumber
+        String caseNumber = [SELECT CaseNumber FROM Case WHERE Id = :c.Id].CaseNumber;
+
+        PatternFixService.mockRule = createMockRule('Task_Creation', false, '{"subject":"Follow up"}');
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(new List<Id>{c.Id}, 'Test_Rule');
+        Test.stopTest();
+
+        // Verify Record_Name__c is populated with CaseNumber
+        List<Remediation_Log__c> logs = [
+            SELECT Record_Name__c, Object_API_Name__c
+            FROM Remediation_Log__c
+            WHERE Affected_Record_ID__c = :String.valueOf(c.Id)
+        ];
+        System.assertEquals(1, logs.size(), 'Expected exactly 1 remediation log');
+        System.assertEquals(caseNumber, logs[0].Record_Name__c, 'Record_Name__c should contain CaseNumber');
+        System.assertEquals('Case', logs[0].Object_API_Name__c, 'Object_API_Name__c should be Case');
+
+        clearMockRule();
+    }
+
     // ==================== OWNER ASSIGNMENT TESTS ====================
 
     @isTest
@@ -449,6 +510,36 @@ private with sharing class PatternFixServiceTest {
         // No log should be created since method returned early
         List<Remediation_Log__c> logs = [SELECT Id FROM Remediation_Log__c WHERE Affected_Record_ID__c = :String.valueOf(opp.Id)];
         System.assertEquals(0, logs.size(), 'No remediation log should be created for empty field config');
+
+        clearMockRule();
+    }
+
+    @isTest
+    static void testFieldUpdate_RecordNameFromSnapshot() {
+        // Regression test: Record_Name__c should still be extracted from snapshot for Field_Update
+        Opportunity opp = new Opportunity(
+            Name = 'Snapshot Name Test',
+            StageName = 'Prospecting',
+            CloseDate = Date.today().addDays(30)
+        );
+        insert opp;
+
+        PatternFixService.mockRule = createMockRule('Field_Update', false, '{"field":"StageName","value":"Qualification"}');
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(new List<Id>{opp.Id}, 'Test_Rule');
+        Test.stopTest();
+
+        List<Remediation_Log__c> logs = [
+            SELECT Record_Name__c, Object_API_Name__c, Snapshot_JSON__c
+            FROM Remediation_Log__c
+            WHERE Affected_Record_ID__c = :String.valueOf(opp.Id)
+        ];
+        System.assertEquals(1, logs.size(), 'Expected exactly 1 remediation log');
+        System.assertEquals('Snapshot Name Test', logs[0].Record_Name__c, 'Record_Name__c should be extracted from snapshot');
+        System.assertEquals('Opportunity', logs[0].Object_API_Name__c, 'Object_API_Name__c should be Opportunity');
+        System.assertNotEquals(null, logs[0].Snapshot_JSON__c, 'Snapshot_JSON__c should be populated for Field_Update');
 
         clearMockRule();
     }
@@ -2046,6 +2137,36 @@ private with sharing class PatternFixServiceTest {
         clearMockRule();
     }
 
+    @isTest
+    static void testNoAction_RecordNamePopulated() {
+        // Verify Record_Name__c is populated for No_Action with Opportunity
+        Opportunity opp = new Opportunity(
+            Name = 'Seasonal Pattern Opp',
+            StageName = 'Prospecting',
+            CloseDate = Date.today().addDays(30)
+        );
+        insert opp;
+
+        String config = '{"message":"Expected pattern"}';
+        PatternFixService.mockRule = createMockRule('No_Action', false, config);
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(new List<Id>{opp.Id}, 'Test_Rule');
+        Test.stopTest();
+
+        List<Remediation_Log__c> logs = [
+            SELECT Record_Name__c, Object_API_Name__c
+            FROM Remediation_Log__c
+            WHERE Affected_Record_ID__c = :String.valueOf(opp.Id)
+        ];
+        System.assertEquals(1, logs.size(), 'Expected exactly 1 remediation log');
+        System.assertEquals('Seasonal Pattern Opp', logs[0].Record_Name__c, 'Record_Name__c should contain Opportunity Name');
+        System.assertEquals('Opportunity', logs[0].Object_API_Name__c, 'Object_API_Name__c should be Opportunity');
+
+        clearMockRule();
+    }
+
     // ==================== EMAIL OPT-OUT TESTS ====================
 
     @isTest
@@ -3574,6 +3695,159 @@ private with sharing class PatternFixServiceTest {
         System.assert(true, 'Email personalization code path exercised');
 
         PatternFixService.forceEmailSendException = false;
+        clearMockRule();
+    }
+
+    // ==================== CIRCUIT BREAKER TESTS ====================
+
+    @isTest
+    static void testCircuitBreaker_BlocksOpenCircuit() {
+        // Pre-create an Open circuit breaker record for the test rule
+        Rule_Execution_Health__c health = new Rule_Execution_Health__c(
+            Rule_Developer_Name__c = 'CB_Block_Rule',
+            Consecutive_Failures__c = 5,
+            Circuit_State__c = 'Open',
+            Last_Failure_Time__c = System.now(),
+            Cooldown_Until__c = System.now().addMinutes(60),
+            Total_Failure_Count__c = 5,
+            Last_Error__c = 'Test failure'
+        );
+        insert health;
+
+        Case c = new Case(Subject = 'Circuit Breaker Block Test', Status = 'New');
+        insert c;
+
+        PatternFixService.mockRule = createMockRule('Task_Creation', false, '{"subject":"Should not run"}');
+
+        Test.startTest();
+        Boolean exceptionThrown = false;
+        try {
+            PatternFixService service = new PatternFixService();
+            service.executeFix(new List<Id>{c.Id}, 'CB_Block_Rule');
+        } catch (AuraHandledException e) {
+            exceptionThrown = true;
+        }
+        Test.stopTest();
+
+        System.assert(exceptionThrown, 'Should throw AuraHandledException when circuit is open');
+
+        // Verify no task was created
+        List<Task> tasks = [SELECT Id FROM Task WHERE WhatId = :c.Id];
+        System.assertEquals(0, tasks.size(), 'No task should be created when circuit is open');
+
+        clearMockRule();
+    }
+
+    @isTest
+    static void testCircuitBreaker_AllowsClosedCircuit() {
+        // Pre-create a Closed circuit breaker record
+        Rule_Execution_Health__c health = new Rule_Execution_Health__c(
+            Rule_Developer_Name__c = 'CB_Allow_Rule',
+            Consecutive_Failures__c = 0,
+            Circuit_State__c = 'Closed',
+            Last_Success_Time__c = System.now(),
+            Total_Failure_Count__c = 0
+        );
+        insert health;
+
+        Case c = new Case(Subject = 'Circuit Breaker Allow Test', Status = 'New');
+        insert c;
+
+        PatternFixService.mockRule = createMockRule('Task_Creation', false, '{"subject":"Allowed task"}');
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(new List<Id>{c.Id}, 'CB_Allow_Rule');
+        Test.stopTest();
+
+        // Verify task was created (circuit was closed, so execution proceeded)
+        List<Task> tasks = [SELECT Id FROM Task WHERE WhatId = :c.Id];
+        System.assertEquals(1, tasks.size(), 'Task should be created when circuit is closed');
+
+        clearMockRule();
+    }
+
+    @isTest
+    static void testCircuitBreaker_RecordsSuccessAfterFix() {
+        Case c = new Case(Subject = 'CB Success Record Test', Status = 'New');
+        insert c;
+
+        PatternFixService.mockRule = createMockRule('Task_Creation', false, '{"subject":"Success tracking"}');
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(new List<Id>{c.Id}, 'CB_Success_Rule');
+        Test.stopTest();
+
+        // Verify circuit breaker recorded success
+        List<Rule_Execution_Health__c> healthRecords = [
+            SELECT Consecutive_Failures__c, Circuit_State__c, Last_Success_Time__c
+            FROM Rule_Execution_Health__c
+            WHERE Rule_Developer_Name__c = 'CB_Success_Rule'
+        ];
+        System.assertEquals(1, healthRecords.size(), 'Health record should exist after execution');
+        System.assertEquals(0, healthRecords[0].Consecutive_Failures__c, 'Failures should be 0 after success');
+        System.assertEquals('Closed', healthRecords[0].Circuit_State__c, 'Circuit should be Closed after success');
+        System.assertNotEquals(null, healthRecords[0].Last_Success_Time__c, 'Last success time should be set');
+
+        clearMockRule();
+    }
+
+    @isTest
+    static void testCircuitBreaker_RecordsFailureOnException() {
+        Case c = new Case(Subject = 'CB Failure Record Test', Status = 'New');
+        insert c;
+
+        PatternFixService.mockRule = createMockRule('Task_Creation', false, '{"subject":"Failure tracking"}');
+        PatternFixService.forceTaskCreationException = true;
+
+        Test.startTest();
+        try {
+            PatternFixService service = new PatternFixService();
+            service.executeFix(new List<Id>{c.Id}, 'CB_Failure_Rule');
+        } catch (Exception e) {
+            // Expected
+        }
+        Test.stopTest();
+
+        // Verify circuit breaker recorded failure
+        List<Rule_Execution_Health__c> healthRecords = [
+            SELECT Consecutive_Failures__c, Circuit_State__c, Last_Error__c
+            FROM Rule_Execution_Health__c
+            WHERE Rule_Developer_Name__c = 'CB_Failure_Rule'
+        ];
+        System.assertEquals(1, healthRecords.size(), 'Health record should exist after failure');
+        System.assert(healthRecords[0].Consecutive_Failures__c >= 1, 'Should have at least 1 failure');
+
+        PatternFixService.resetTestFlags();
+    }
+
+    // ==================== EXECUTION TIME TELEMETRY TESTS ====================
+
+    @isTest
+    static void testExecutionTimeTelemetry_StandardFix() {
+        // Verify that Execution_Time_Ms__c is NOT set on standard fix logs
+        // (only plugin fixes track CPU time)
+        Case c = new Case(Subject = 'Telemetry Standard Fix Test', Status = 'New');
+        insert c;
+
+        PatternFixService.mockRule = createMockRule('Task_Creation', false, '{"subject":"Telemetry test"}');
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(new List<Id>{c.Id}, 'Test_Rule');
+        Test.stopTest();
+
+        // Verify log was created
+        List<Remediation_Log__c> logs = [
+            SELECT Execution_Time_Ms__c, Plugin_Class__c
+            FROM Remediation_Log__c
+            WHERE Affected_Record_ID__c = :String.valueOf(c.Id)
+        ];
+        System.assertEquals(1, logs.size(), 'Expected 1 remediation log');
+        // Standard fixes don't set Plugin_Class__c
+        System.assertEquals(null, logs[0].Plugin_Class__c, 'Plugin_Class__c should be null for standard fixes');
+
         clearMockRule();
     }
 }

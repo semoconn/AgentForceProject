@@ -4,9 +4,12 @@
 
 This document provides comprehensive end-to-end test cases for the BehaviorIQ Pattern Behavior detection and remediation feature. Test cases are organized by:
 - **License Tier** (FREE vs PREMIUM)
-- **Permission Set Security** (Admin vs User vs Unprivileged)
+- **Permission Set Security** (Admin vs Unprivileged)
 - **Bulk Stress Testing**
 - **Security Bypass Attempts**
+- **Data Storage Optimization & Circuit Breaker** (Part 8)
+
+> **Namespace Note:** All SOQL queries and Apex code blocks use the `biq__` namespace prefix for custom objects/fields and `biq.` for Apex classes, as required when running in a **subscriber org** where the managed package is installed. If running in the **packaging org** (source development), remove the `biq__`/`biq.` prefixes.
 
 ---
 
@@ -19,16 +22,11 @@ Before running these tests, follow the complete new customer experience:
 sf project deploy start --target-org <your-scratch-org>
 ```
 
-### Step 2: Create Test Users (3 Required)
+### Step 2: Create Test Users (2 Required)
 
 **Admin User** - Full BehaviorIQ access:
 ```bash
 sf org assign permset -n BehaviorIQ_Admin -o <your-scratch-org> -u <admin-user>
-```
-
-**Standard User** - Tracking marker only (no operational permissions):
-```bash
-sf org assign permset -n BehaviorIQ_User -o <your-scratch-org> -u <standard-user>
 ```
 
 **Unprivileged User** - No BehaviorIQ permission sets assigned
@@ -71,7 +69,7 @@ sf apex run --file scripts/apex/e2e_security_test_data.apex --target-org <your-s
 
 ### Step 5: Run Pattern Analysis
 ```apex
-Database.executeBatch(new PatternAnalysisBatch(), 200);
+Database.executeBatch(new biq.PatternAnalysisBatch(), 200);
 ```
 
 ---
@@ -80,18 +78,18 @@ Database.executeBatch(new PatternAnalysisBatch(), 200);
 
 ### Set License to FREE (Default)
 ```apex
-BehaviorIQ_License__c license = BehaviorIQ_License__c.getOrgDefaults();
-license.Status__c = 'Free';
+biq__BehaviorIQ_License__c license = biq__BehaviorIQ_License__c.getOrgDefaults();
+license.biq__Status__c = 'Free';
 upsert license;
-System.debug('License set to: ' + license.Status__c);
+System.debug('License set to: ' + license.biq__Status__c);
 ```
 
 ### Set License to PREMIUM
 ```apex
-BehaviorIQ_License__c license = BehaviorIQ_License__c.getOrgDefaults();
-license.Status__c = 'Premium';
+biq__BehaviorIQ_License__c license = biq__BehaviorIQ_License__c.getOrgDefaults();
+license.biq__Status__c = 'Premium';
 upsert license;
-System.debug('License set to: ' + license.Status__c);
+System.debug('License set to: ' + license.biq__Status__c);
 ```
 
 ---
@@ -136,7 +134,7 @@ System.debug('License set to: ' + license.Status__c);
 
 # PART 1: FREE TIER TESTING
 
-These tests can be run with `Status__c = 'Free'`. Only 4 patterns are available on the free tier.
+These tests can be run with `biq__Status__c = 'Free'`. Only 4 patterns are available on the free tier.
 
 ## Free Tier Test Suite
 
@@ -153,20 +151,20 @@ These tests can be run with `Status__c = 'Free'`. Only 4 patterns are available 
 
 **Steps:**
 1. Set license to FREE
-2. Run: `Database.executeBatch(new PatternAnalysisBatch(), 200);`
+2. Run: `Database.executeBatch(new biq.PatternAnalysisBatch(), 200);`
 3. Query for Contact_Data_Gap pain point
 
 **Expected Results:**
-- [ ] Identified_Pain_Point__c record created with Unique_Key__c = 'Contact_Data_Gap'
-- [ ] Occurrences__c = 15 (or matches count of contacts missing data)
-- [ ] Object_API_Name__c = 'Contact'
-- [ ] Cost_Per_Incident__c = $50
+- [ ] `biq__Identified_Pain_Point__c` record created with `biq__Unique_Key__c` = 'Contact_Data_Gap'
+- [ ] `biq__Occurrences__c` = 15 (or matches count of contacts missing data)
+- [ ] `biq__Object_API_Name__c` = 'Contact'
+- [ ] `biq__Cost_Per_Incident__c` = $50
 
 **Verification Query:**
 ```sql
-SELECT Id, Name, Unique_Key__c, Occurrences__c, Impact_Score__c
-FROM Identified_Pain_Point__c
-WHERE Unique_Key__c = 'Contact_Data_Gap'
+SELECT Id, Name, biq__Unique_Key__c, biq__Occurrences__c, biq__Impact_Score__c
+FROM biq__Identified_Pain_Point__c
+WHERE biq__Unique_Key__c = 'Contact_Data_Gap'
 ```
 
 ---
@@ -190,7 +188,7 @@ Status != 'Closed' AND LastModifiedDate < LAST_N_DAYS:14
 
 **Expected Results (when data aged):**
 - [ ] Stale_Case_14 pain point created
-- [ ] Object_API_Name__c = 'Case'
+- [ ] `biq__Object_API_Name__c` = 'Case'
 
 ---
 
@@ -244,9 +242,9 @@ CreatedDate = LAST_WEEK AND DAY_IN_WEEK(CreatedDate) IN (1, 7)
 
 **Verification Query:**
 ```sql
-SELECT Unique_Key__c, Occurrences__c
-FROM Identified_Pain_Point__c
-WHERE Unique_Key__c IN ('High_Value_Ghosting', 'Stale_Opp_90', 'Orphan_Contact', 'Duplicate_Leads')
+SELECT biq__Unique_Key__c, biq__Occurrences__c
+FROM biq__Identified_Pain_Point__c
+WHERE biq__Unique_Key__c IN ('High_Value_Ghosting', 'Stale_Opp_90', 'Orphan_Contact', 'Duplicate_Leads')
 ```
 Should return 0 records.
 
@@ -316,19 +314,19 @@ Amount > 50000 AND (LastActivityDate < LAST_N_DAYS:14 OR LastActivityDate = null
 
 **Steps:**
 1. Set license to PREMIUM
-2. Run: `Database.executeBatch(new PatternAnalysisBatch(), 200);`
+2. Run: `Database.executeBatch(new biq.PatternAnalysisBatch(), 200);`
 3. Query for High_Value_Ghosting pain point
 
 **Expected Results:**
-- [ ] Identified_Pain_Point__c created with Unique_Key__c = 'High_Value_Ghosting'
-- [ ] Occurrences__c = 10
-- [ ] Impact_Score__c = sum of Opportunity.Amount values
+- [ ] `biq__Identified_Pain_Point__c` created with `biq__Unique_Key__c` = 'High_Value_Ghosting'
+- [ ] `biq__Occurrences__c` = 10
+- [ ] `biq__Impact_Score__c` = sum of Opportunity.Amount values
 
 **Verification Query:**
 ```sql
-SELECT Id, Name, Unique_Key__c, Occurrences__c, Impact_Score__c
-FROM Identified_Pain_Point__c
-WHERE Unique_Key__c = 'High_Value_Ghosting'
+SELECT Id, Name, biq__Unique_Key__c, biq__Occurrences__c, biq__Impact_Score__c
+FROM biq__Identified_Pain_Point__c
+WHERE biq__Unique_Key__c = 'High_Value_Ghosting'
 ```
 
 ---
@@ -355,9 +353,9 @@ WHERE Unique_Key__c = 'High_Value_Ghosting'
 
 **Expected Results:**
 - [ ] Duplicate_Leads pain point created
-- [ ] Occurrences__c = 12 (all duplicates counted)
-- [ ] Example_Records__c contains lead IDs with duplicates
-- [ ] Object_API_Name__c = 'Lead'
+- [ ] `biq__Occurrences__c` = 12 (all duplicates counted)
+- [ ] `biq__Example_Records__c` contains lead IDs with duplicates
+- [ ] `biq__Object_API_Name__c` = 'Lead'
 
 ---
 
@@ -372,8 +370,8 @@ WHERE Unique_Key__c = 'High_Value_Ghosting'
 
 **Expected Results:**
 - [ ] Duplicate_Contacts pain point created
-- [ ] Occurrences__c = 10
-- [ ] Object_API_Name__c = 'Contact'
+- [ ] `biq__Occurrences__c` = 10
+- [ ] `biq__Object_API_Name__c` = 'Contact'
 
 ---
 
@@ -392,8 +390,8 @@ WHERE Unique_Key__c = 'High_Value_Ghosting'
 
 **Expected Results:**
 - [ ] Duplicate_Accounts pain point created
-- [ ] Occurrences__c = 8
-- [ ] Object_API_Name__c = 'Account'
+- [ ] `biq__Occurrences__c` = 8
+- [ ] `biq__Object_API_Name__c` = 'Account'
 
 ---
 
@@ -408,8 +406,8 @@ WHERE Unique_Key__c = 'High_Value_Ghosting'
 
 **Expected Results:**
 - [ ] Orphan_Contact pain point created
-- [ ] Occurrences__c = 10
-- [ ] Object_API_Name__c = 'Contact'
+- [ ] `biq__Occurrences__c` = 10
+- [ ] `biq__Object_API_Name__c` = 'Contact'
 
 ---
 
@@ -424,7 +422,7 @@ WHERE Unique_Key__c = 'High_Value_Ghosting'
 
 **Expected Results:**
 - [ ] Orphan_Opportunity pain point created
-- [ ] Occurrences__c = 6
+- [ ] `biq__Occurrences__c` = 6
 
 ---
 
@@ -439,7 +437,7 @@ WHERE Unique_Key__c = 'High_Value_Ghosting'
 
 **Expected Results:**
 - [ ] Orphan_Case pain point created
-- [ ] Occurrences__c = 8
+- [ ] `biq__Occurrences__c` = 8
 
 ---
 
@@ -459,11 +457,11 @@ WHERE Unique_Key__c = 'High_Value_Ghosting'
 
 **Expected Results:**
 - [ ] Frequent_Flyer_Churn pain point created (if qualifying accounts exist)
-- [ ] Object_API_Name__c = 'Case'
+- [ ] `biq__Object_API_Name__c` = 'Case'
 
 ---
 
-### PT-1.9: Premature Escalation Detection - Don't see pain point
+### PT-1.9: Premature Escalation Detection - Verified
 
 **Objective:** Verify escalated cases without High priority are detected.
 
@@ -508,7 +506,7 @@ IsClosed = false AND LastStageChangeDate < LAST_N_DAYS:90
 
 ---
 
-### PT-2.1: Task Creation Fix (Premium)
+### PT-2.1: Task Creation Fix (Premium) - Verified
 
 **Objective:** Verify Task_Creation fix works on premium patterns.
 
@@ -523,11 +521,11 @@ IsClosed = false AND LastStageChangeDate < LAST_N_DAYS:90
 - [ ] Tasks created for each selected opportunity
 - [ ] Task Subject: "URGENT: High-Value Opportunity Needs Attention"
 - [ ] Task assigned to opportunity owner
-- [ ] Remediation_Log__c records created with Status__c = 'Success'
+- [ ] `biq__Remediation_Log__c` records created with `biq__Status__c` = 'Success'
 
 ---
 
-### PT-2.2: Task Creation Fix for Unassigned Leads
+### PT-2.2: Task Creation Fix for Unassigned Leads - Verified
 
 **Objective:** Verify Task_Creation fix creates tasks for unassigned leads owned by a Queue.
 
@@ -549,13 +547,13 @@ WHERE Owner.Type = 'Queue' AND CreatedDate < LAST_N_DAYS:2 AND Status = 'Open - 
 **Expected Results (when testable):**
 - [ ] Tasks created for each selected lead
 - [ ] Task Subject: "URGENT: Assign unassigned lead sitting in queue 48+ hours"
-- [ ] Remediation_Log__c records created with Status__c = 'Success'
+- [ ] `biq__Remediation_Log__c` records created with `biq__Status__c` = 'Success'
 
 > **Note:** "Unassigned" means `Owner.Type = 'Queue'`, NOT a null Owner field.
 
 ---
 
-### PT-2.3: Escalation Revert Fix
+### PT-2.3: Escalation Revert Fix - Verified
 
 **Objective:** Verify Escalation_Revert fix removes improper escalations.
 
@@ -563,11 +561,11 @@ WHERE Owner.Type = 'Queue' AND CreatedDate < LAST_N_DAYS:2 AND Status = 'Open - 
 
 **Expected Results:**
 - [ ] IsEscalated set to false
-- [ ] Remediation_Log__c records created
+- [ ] `biq__Remediation_Log__c` records created
 
 ---
 
-### PT-3.1: Pattern Rule Manager (Premium Features)
+### PT-3.1: Pattern Rule Manager (Premium Features) - Verified
 
 **Objective:** Verify Pattern Rule Manager shows premium features.
 
@@ -584,21 +582,21 @@ WHERE Owner.Type = 'Queue' AND CreatedDate < LAST_N_DAYS:2 AND Status = 'Open - 
 
 # PART 3: PERMISSION SET SECURITY TESTING
 
-This section tests the security boundaries between BehaviorIQ_Admin, BehaviorIQ_User, and unprivileged users.
+This section tests the security boundaries between BehaviorIQ_Admin and unprivileged users.
 
 ## Permission Set Reference
 
-| Category | BehaviorIQ_Admin | BehaviorIQ_User | No Permission Set |
-|----------|-----------------|-----------------|-------------------|
-| Purpose | Full admin control | Tracking marker only | No access |
-| Object CRUD | 9 objects (full) | 0 objects | 0 objects |
-| Field Permissions | 50+ fields | 0 fields | 0 fields |
-| Apex Classes | 9 classes | 0 classes | 0 classes |
-| Tabs | 9 tabs | 0 tabs | 0 tabs |
+| Category | BehaviorIQ_Admin | No Permission Set |
+|----------|-----------------|-------------------|
+| Purpose | Full admin control | No access |
+| Object CRUD | 9 objects (full) | 0 objects |
+| Field Permissions | 50+ fields | 0 fields |
+| Apex Classes | 9 classes | 0 classes |
+| Tabs | 9 tabs | 0 tabs |
 
 ## PS-1: Admin Permission Set Tests
 
-### PS-1.1: Admin Can View Pain Points
+### PS-1.1: Admin Can View Pain Points - Verified
 
 **User:** Admin (BehaviorIQ_Admin assigned)
 
@@ -608,19 +606,19 @@ This section tests the security boundaries between BehaviorIQ_Admin, BehaviorIQ_
 3. Query pain points via SOQL
 
 **Expected Results:**
-- [ ] Full access to Identified_Pain_Point__c records
+- [ ] Full access to `biq__Identified_Pain_Point__c` records
 - [ ] All fields visible
 - [ ] Create/Edit/Delete buttons available
 
 **Verification Query (run as Admin):**
 ```sql
-SELECT Id, Name, Unique_Key__c, Occurrences__c, Impact_Score__c, Status__c
-FROM Identified_Pain_Point__c
+SELECT Id, Name, biq__Unique_Key__c, biq__Occurrences__c, biq__Impact_Score__c, biq__Status__c
+FROM biq__Identified_Pain_Point__c
 ```
 
 ---
 
-### PS-1.2: Admin Can Execute Auto-Fix
+### PS-1.2: Admin Can Execute Auto-Fix- Verified
 
 **User:** Admin (BehaviorIQ_Admin assigned, PREMIUM license)
 
@@ -632,11 +630,11 @@ FROM Identified_Pain_Point__c
 **Expected Results:**
 - [ ] Fix executes successfully
 - [ ] Tasks created
-- [ ] Remediation_Log__c records created
+- [ ] `biq__Remediation_Log__c` records created
 
 ---
 
-### PS-1.3: Admin Can Access Pattern Rule Manager
+### PS-1.3: Admin Can Access Pattern Rule Manager - Verified
 
 **User:** Admin (BehaviorIQ_Admin assigned)
 
@@ -654,7 +652,7 @@ FROM Identified_Pain_Point__c
 
 ---
 
-### PS-1.4: Admin Can View Remediation Logs
+### PS-1.4: Admin Can View Remediation Logs - Verified
 
 **User:** Admin (BehaviorIQ_Admin assigned)
 
@@ -663,22 +661,22 @@ FROM Identified_Pain_Point__c
 2. Query remediation logs
 
 **Expected Results:**
-- [ ] Full access to Remediation_Log__c records
-- [ ] Can see all fields including Original_Value__c, New_Value__c, Snapshot_JSON__c
+- [ ] Full access to `biq__Remediation_Log__c` records
+- [ ] Can see all fields including `biq__Original_Value__c`, `biq__New_Value__c`, `biq__Snapshot_JSON__c`
 - [ ] Can filter and sort
 
 **Verification Query:**
 ```sql
-SELECT Id, Affected_Record_ID__c, Rule_Developer_Name__c, Action_Taken__c,
-       Original_Value__c, New_Value__c, Status__c, Error_Message__c
-FROM Remediation_Log__c
+SELECT Id, biq__Affected_Record_ID__c, biq__Rule_Developer_Name__c, biq__Action_Taken__c,
+       biq__Original_Value__c, biq__New_Value__c, biq__Status__c, biq__Error_Message__c
+FROM biq__Remediation_Log__c
 ORDER BY CreatedDate DESC
 LIMIT 50
 ```
 
 ---
 
-### PS-1.5: Admin Can Modify BehaviorIQ Configuration
+### PS-1.5: Admin Can Modify BehaviorIQ Configuration - Verified
 
 **User:** Admin (BehaviorIQ_Admin assigned)
 
@@ -694,7 +692,7 @@ LIMIT 50
 
 ---
 
-### PS-1.6: Admin Can View Behavior Logs
+### PS-1.6: Admin Can View Behavior Logs - Verified
 
 **User:** Admin (BehaviorIQ_Admin assigned)
 
@@ -703,12 +701,12 @@ LIMIT 50
 2. Query behavior logs
 
 **Expected Results:**
-- [ ] Full access to Behavior_Log__c records
-- [ ] All fields visible including Behavior_Data__c JSON
+- [ ] Full access to `biq__Behavior_Log__c` records
+- [ ] All fields visible including `biq__Behavior_Data__c` JSON
 
 ---
 
-### PS-1.7: Admin Can Dismiss Suggestions
+### PS-1.7: Admin Can Dismiss Suggestions - Verified
 
 **User:** Admin (BehaviorIQ_Admin assigned)
 
@@ -717,12 +715,12 @@ LIMIT 50
 2. Click "Dismiss" button
 
 **Expected Results:**
-- [ ] Suggestion_Dismissal__c record created
+- [ ] `biq__Suggestion_Dismissal__c` record created
 - [ ] Pain point status updated
 
 ---
 
-### PS-1.8: Admin Can View System Health Logs
+### PS-1.8: Admin Can View System Health Logs - Verified
 
 **User:** Admin (BehaviorIQ_Admin assigned)
 
@@ -731,12 +729,12 @@ LIMIT 50
 2. View batch job status
 
 **Expected Results:**
-- [ ] Full access to System_Health_Log__c records
+- [ ] Full access to `biq__System_Health_Log__c` records
 - [ ] Can see job status and error details
 
 ---
 
-### PS-1.9: Admin Can View Behavior Snapshots
+### PS-1.9: Admin Can View Behavior Snapshots - Verified
 
 **User:** Admin (BehaviorIQ_Admin assigned)
 
@@ -745,93 +743,14 @@ LIMIT 50
 2. Query snapshots
 
 **Expected Results:**
-- [ ] Full access to Behavior_Snapshot__c records
+- [ ] Full access to `biq__Behavior_Snapshot__c` records
 - [ ] Historical data accessible
 
 ---
 
-## PS-2: User Permission Set Tests (BehaviorIQ_User - No Access Expected)
+## PS-2: No Permission Set Tests
 
-> **Note:** BehaviorIQ_User is intentionally empty. It serves only as a tracking marker to identify which users should be monitored by BehaviorIQ.
-
-### PS-2.1: User Cannot View Pain Points
-
-**User:** Standard user (BehaviorIQ_User only)
-
-**Steps:**
-1. Log in as Standard user
-2. Attempt to navigate to Identified Pain Points tab
-3. Attempt SOQL query
-
-**Expected Results:**
-- [ ] Tab not visible (no tab visibility)
-- [ ] SOQL query returns empty or throws error
-- [ ] No object-level access
-
-**Verification Query (run as User):**
-```sql
-SELECT Id FROM Identified_Pain_Point__c LIMIT 1
-```
-Should return error: "sObject type 'Identified_Pain_Point__c' is not supported"
-
----
-
-### PS-2.2: User Cannot Execute Auto-Fix
-
-**User:** Standard user (BehaviorIQ_User only)
-
-**Steps:**
-1. Attempt to call PatternFixService directly
-2. Attempt to call PainPointController.dismissPainPoint()
-
-**Expected Results:**
-- [ ] No Apex class access
-- [ ] AuraHandledException if attempted via LWC
-
----
-
-### PS-2.3: User Cannot Access Pattern Rule Manager
-
-**User:** Standard user (BehaviorIQ_User only)
-
-**Steps:**
-1. Attempt to navigate to Pattern Rule Manager
-
-**Expected Results:**
-- [ ] Component not accessible
-- [ ] No PatternRuleManagerController access
-
----
-
-### PS-2.4: User Cannot View Remediation Logs
-
-**User:** Standard user (BehaviorIQ_User only)
-
-**Steps:**
-1. Attempt to query Remediation_Log__c
-
-**Expected Results:**
-- [ ] No object access
-- [ ] Query returns empty or error
-
----
-
-### PS-2.5: User Cannot Modify Configuration
-
-**User:** Standard user (BehaviorIQ_User only)
-
-**Steps:**
-1. Attempt to modify BehaviorIQ_Configuration__c
-
-**Expected Results:**
-- [ ] No create/edit access
-- [ ] DML operation blocked
-
----
-
-## PS-3: No Permission Set Tests
-
-### PS-3.1: Unprivileged User Dashboard Access
+### PS-2.1: Unprivileged User Dashboard Access - Verified
 
 **User:** Unprivileged (no BehaviorIQ permission sets)
 
@@ -846,7 +765,7 @@ Should return error: "sObject type 'Identified_Pain_Point__c' is not supported"
 
 ---
 
-### PS-3.2: Unprivileged User API Access
+### PS-2.2: Unprivileged User API Access
 
 **User:** Unprivileged (no BehaviorIQ permission sets)
 
@@ -860,19 +779,19 @@ Should return error: "sObject type 'Identified_Pain_Point__c' is not supported"
 
 ---
 
-## PS-4: Apex Class Access Tests
+## PS-3: Apex Class Access Tests
 
-| Apex Class | Test Admin | Test User | Test Unprivileged |
-|------------|-----------|-----------|-------------------|
-| BehaviorLogService | [ ] Access | [ ] Blocked | [ ] Blocked |
-| GenericBehaviorTriggerHandler | [ ] Access | [ ] Blocked | [ ] Blocked |
-| PainPointController | [ ] Access | [ ] Blocked | [ ] Blocked |
-| PatternAnalysisService | [ ] Access | [ ] Blocked | [ ] Blocked |
-| PatternFixService | [ ] Access | [ ] Blocked | [ ] Blocked |
-| UserLeaderboardController | [ ] Access | [ ] Blocked | [ ] Blocked |
-| LicenseService | [ ] Access | [ ] Blocked | [ ] Blocked |
-| SetupWizardController | [ ] Access | [ ] Blocked | [ ] Blocked |
-| BehaviorSettingsController | [ ] Access | [ ] Blocked | [ ] Blocked |
+| Apex Class | Test Admin | Test Unprivileged |
+|------------|-----------|-------------------|
+| biq.BehaviorLogService | [ ] Access | [ ] Blocked |
+| biq.GenericBehaviorTriggerHandler | [ ] Access | [ ] Blocked |
+| biq.PainPointController | [ ] Access | [ ] Blocked |
+| biq.PatternAnalysisService | [ ] Access | [ ] Blocked |
+| biq.PatternFixService | [ ] Access | [ ] Blocked |
+| biq.UserLeaderboardController | [ ] Access | [ ] Blocked |
+| biq.LicenseService | [ ] Access | [ ] Blocked |
+| biq.SetupWizardController | [ ] Access | [ ] Blocked |
+| biq.BehaviorSettingsController | [ ] Access | [ ] Blocked |
 
 ---
 
@@ -1043,7 +962,7 @@ This section attempts to bypass BehaviorIQ security controls.
 **Method:**
 ```apex
 // Run as unprivileged user
-List<Identified_Pain_Point__c> points = PainPointController.getOpenPainPoints();
+List<biq__Identified_Pain_Point__c> points = biq.PainPointController.getOpenPainPoints();
 ```
 
 **Expected Defense:**
@@ -1071,13 +990,13 @@ List<Identified_Pain_Point__c> points = PainPointController.getOpenPainPoints();
 
 ### SEC-1.3: License Bypass via Custom Setting
 
-**Attack Vector:** Directly modify BehaviorIQ_License__c
+**Attack Vector:** Directly modify `biq__BehaviorIQ_License__c`
 
 **Method:**
 ```apex
 // Run as standard user
-BehaviorIQ_License__c license = BehaviorIQ_License__c.getOrgDefaults();
-license.Status__c = 'Premium';
+biq__BehaviorIQ_License__c license = biq__BehaviorIQ_License__c.getOrgDefaults();
+license.biq__Status__c = 'Premium';
 upsert license;
 ```
 
@@ -1095,7 +1014,7 @@ upsert license;
 **Method:**
 ```apex
 // Run as user without field access
-SELECT Snapshot_JSON__c FROM Remediation_Log__c
+SELECT biq__Snapshot_JSON__c FROM biq__Remediation_Log__c
 ```
 
 **Expected Defense:**
@@ -1112,7 +1031,7 @@ SELECT Snapshot_JSON__c FROM Remediation_Log__c
 **Method:**
 ```apex
 // Run as user without ViewAllRecords
-SELECT Id FROM Identified_Pain_Point__c
+SELECT Id FROM biq__Identified_Pain_Point__c
 ```
 
 **Expected Defense:**
@@ -1128,7 +1047,7 @@ SELECT Id FROM Identified_Pain_Point__c
 
 **Method:** Create rule with non-existent or malicious class name
 ```
-Apex_Handler_Class__c = 'MaliciousPlugin'
+biq__Apex_Handler_Class__c = 'MaliciousPlugin'
 ```
 
 **Expected Defense:**
@@ -1145,7 +1064,7 @@ Apex_Handler_Class__c = 'MaliciousPlugin'
 **Method:**
 ```apex
 // Run as User A, try to view User B's logs
-SELECT Id, Executed_By__c FROM Remediation_Log__c WHERE Executed_By__c != :UserInfo.getUserId()
+SELECT Id, biq__Executed_By__c FROM biq__Remediation_Log__c WHERE biq__Executed_By__c != :UserInfo.getUserId()
 ```
 
 **Expected Defense:**
@@ -1175,7 +1094,7 @@ SELECT Id, Executed_By__c FROM Remediation_Log__c WHERE Executed_By__c != :UserI
 **Method:**
 ```apex
 // Run as Free tier user
-PatternFixService.executeFixForRecords('High_Value_Ghosting', recordIds);
+biq.PatternFixService.executeFixForRecords('High_Value_Ghosting', recordIds);
 ```
 
 **Expected Defense:**
@@ -1194,7 +1113,7 @@ This section validates CRUD operations on all BehaviorIQ custom objects.
 
 Test each operation for each user type.
 
-### Identified_Pain_Point__c
+### biq__Identified_Pain_Point__c
 
 | Operation | Admin | User | Unprivileged |
 |-----------|-------|------|--------------|
@@ -1203,7 +1122,7 @@ Test each operation for each user type.
 | Update | [ ] Yes | [ ] No | [ ] No |
 | Delete | [ ] Yes | [ ] No | [ ] No |
 
-### Remediation_Log__c
+### biq__Remediation_Log__c
 
 | Operation | Admin | User | Unprivileged |
 |-----------|-------|------|--------------|
@@ -1212,7 +1131,7 @@ Test each operation for each user type.
 | Update | [ ] Yes | [ ] No | [ ] No |
 | Delete | [ ] Yes | [ ] No | [ ] No |
 
-### BehaviorIQ_Configuration__c
+### biq__BehaviorIQ_Configuration__c
 
 | Operation | Admin | User | Unprivileged |
 |-----------|-------|------|--------------|
@@ -1221,7 +1140,7 @@ Test each operation for each user type.
 | Update | [ ] Yes | [ ] No | [ ] No |
 | Delete | [ ] Yes | [ ] No | [ ] No |
 
-### Behavior_Log__c
+### biq__Behavior_Log__c
 
 | Operation | Admin | User | Unprivileged |
 |-----------|-------|------|--------------|
@@ -1230,7 +1149,7 @@ Test each operation for each user type.
 | Update | [ ] Yes | [ ] No | [ ] No |
 | Delete | [ ] Yes | [ ] No | [ ] No |
 
-### Suggestion_Dismissal__c
+### biq__Suggestion_Dismissal__c
 
 | Operation | Admin | User | Unprivileged |
 |-----------|-------|------|--------------|
@@ -1239,7 +1158,7 @@ Test each operation for each user type.
 | Update | [ ] Yes | [ ] No | [ ] No |
 | Delete | [ ] Yes | [ ] No | [ ] No |
 
-### System_Health_Log__c
+### biq__System_Health_Log__c
 
 | Operation | Admin | User | Unprivileged |
 |-----------|-------|------|--------------|
@@ -1248,7 +1167,7 @@ Test each operation for each user type.
 | Update | [ ] Yes | [ ] No | [ ] No |
 | Delete | [ ] Yes | [ ] No | [ ] No |
 
-### BehaviorIQ_License__c (Custom Setting)
+### biq__BehaviorIQ_License__c (Custom Setting)
 
 | Operation | Admin | User | Unprivileged |
 |-----------|-------|------|--------------|
@@ -1257,7 +1176,7 @@ Test each operation for each user type.
 | Update | [ ] Yes | [ ] No | [ ] No |
 | Delete | [ ] Yes | [ ] No | [ ] No |
 
-### Behavior_Snapshot__c
+### biq__Behavior_Snapshot__c
 
 | Operation | Admin | User | Unprivileged |
 |-----------|-------|------|--------------|
@@ -1266,7 +1185,7 @@ Test each operation for each user type.
 | Update | [ ] Yes | [ ] No | [ ] No |
 | Delete | [ ] Yes | [ ] No | [ ] No |
 
-### Workflow_Log__c
+### biq__Workflow_Log__c
 
 | Operation | Admin | User | Unprivileged |
 |-----------|-------|------|--------------|
@@ -1409,17 +1328,15 @@ The `e2e_security_test_data.apex` script creates the following data:
 
 ## Permission Set Tests
 
-| Test Case | Admin | User | Unprivileged |
-|-----------|-------|------|--------------|
-| PS-1.1 View Pain Points | [ ] | N/A | N/A |
-| PS-1.2 Execute Auto-Fix | [ ] | N/A | N/A |
-| PS-1.3 Pattern Rule Manager | [ ] | N/A | N/A |
-| PS-1.4 Remediation Logs | [ ] | N/A | N/A |
-| PS-1.5 Configuration | [ ] | N/A | N/A |
-| PS-2.1 User Blocked | N/A | [ ] | N/A |
-| PS-2.2 User Fix Blocked | N/A | [ ] | N/A |
-| PS-3.1 Unprivileged Blocked | N/A | N/A | [ ] |
-| PS-3.2 API Access Blocked | N/A | N/A | [ ] |
+| Test Case | Admin | Unprivileged |
+|-----------|-------|--------------|
+| PS-1.1 View Pain Points | [ ] | N/A |
+| PS-1.2 Execute Auto-Fix | [ ] | N/A |
+| PS-1.3 Pattern Rule Manager | [ ] | N/A |
+| PS-1.4 Remediation Logs | [ ] | N/A |
+| PS-1.5 Configuration | [ ] | N/A |
+| PS-2.1 Unprivileged Blocked | N/A | [ ] |
+| PS-2.2 API Access Blocked | N/A | [ ] |
 
 ## Bulk Stress Tests
 
@@ -1495,24 +1412,24 @@ The `e2e_security_test_data.apex` script creates the following data:
 
 ## Check All Pain Points
 ```sql
-SELECT Id, Name, Unique_Key__c, Object_API_Name__c, Occurrences__c,
-       Impact_Score__c, Status__c, Last_Detected__c
-FROM Identified_Pain_Point__c
-ORDER BY Last_Detected__c DESC
+SELECT Id, Name, biq__Unique_Key__c, biq__Object_API_Name__c, biq__Occurrences__c,
+       biq__Impact_Score__c, biq__Status__c, biq__Last_Detected__c
+FROM biq__Identified_Pain_Point__c
+ORDER BY biq__Last_Detected__c DESC
 ```
 
 ## Check Remediation Logs
 ```sql
-SELECT Id, Affected_Record_ID__c, Rule_Developer_Name__c, Action_Taken__c,
-       Original_Value__c, New_Value__c, Status__c, CreatedDate
-FROM Remediation_Log__c
+SELECT Id, biq__Affected_Record_ID__c, biq__Rule_Developer_Name__c, biq__Action_Taken__c,
+       biq__Original_Value__c, biq__New_Value__c, biq__Status__c, CreatedDate
+FROM biq__Remediation_Log__c
 ORDER BY CreatedDate DESC
 LIMIT 50
 ```
 
 ## Check License Status
 ```sql
-SELECT Id, Status__c FROM BehaviorIQ_License__c
+SELECT Id, biq__Status__c FROM biq__BehaviorIQ_License__c
 ```
 
 ## Verify Mock Data Counts
@@ -1553,4 +1470,510 @@ SELECT COUNT() FROM Case WHERE IsEscalated = true AND Priority != 'High'
 
 ---
 
-Last Updated: January 2026
+# PART 8: DATA STORAGE OPTIMIZATION & CIRCUIT BREAKER TESTING
+
+This section validates the new data storage optimization (Behavior_Log_Summary__c counter-based logging) and circuit breaker resilience (Rule_Execution_Health__c) features.
+
+> **Namespace Note:** All SOQL queries below use the `biq__` namespace prefix for custom objects and custom fields, as required when running Anonymous Apex in a **subscriber org** where the managed package is installed. If running in the **packaging org**, remove the `biq__` prefixes.
+
+---
+
+## DSO: Data Storage Optimization Tests
+
+### DSO-1.1: Dual-Write Verification
+
+**Objective:** Verify that DML events create both a raw Behavior_Log__c AND upsert a Behavior_Log_Summary__c counter.
+
+**Immediately Testable:** Yes
+
+**Steps:**
+1. Create a Case to trigger BehaviorLogService:
+```apex
+Case c = new Case(Subject = 'E2E Dual-Write Test', Status = 'New');
+insert c;
+```
+2. Query raw logs:
+```sql
+SELECT Id, biq__User_ID__c, biq__Object_API_Name__c, biq__Action_Name__c
+FROM biq__Behavior_Log__c
+ORDER BY CreatedDate DESC
+LIMIT 5
+```
+3. Query summary counters:
+```sql
+SELECT biq__User__c, biq__Object_API_Name__c, biq__Action_Name__c,
+       biq__Event_Count__c, biq__Log_Date__c, biq__Composite_Key__c
+FROM biq__Behavior_Log_Summary__c
+WHERE biq__Log_Date__c = TODAY
+ORDER BY CreatedDate DESC
+LIMIT 10
+```
+
+**Expected Results:**
+- [ ] A raw `biq__Behavior_Log__c` record exists with `biq__Object_API_Name__c = 'Case'` and `biq__Action_Name__c = 'Record_Created'`
+- [ ] A `biq__Behavior_Log_Summary__c` record exists for the same user/object/action/date
+- [ ] `biq__Composite_Key__c` follows the format `{UserId}_{Object}_{Action}_{YYYY-MM-DD}`
+
+---
+
+### DSO-1.2: Counter Increment (Upsert, Not Insert)
+
+**Objective:** Verify that a second DML event increments the existing counter instead of creating a second summary row.
+
+**Immediately Testable:** Yes
+
+**Steps:**
+1. Create a second Case:
+```apex
+Case c2 = new Case(Subject = 'E2E Counter Increment Test', Status = 'New');
+insert c2;
+```
+2. Re-query the same summary:
+```sql
+SELECT biq__Event_Count__c, biq__Composite_Key__c
+FROM biq__Behavior_Log_Summary__c
+WHERE biq__Object_API_Name__c = 'Case'
+  AND biq__Action_Name__c = 'Record_Created'
+  AND biq__Log_Date__c = TODAY
+```
+
+**Expected Results:**
+- [ ] `biq__Event_Count__c = 2` (or incremented by 1 from before)
+- [ ] Only ONE summary row per user/object/action/date (upserted via `biq__Composite_Key__c`)
+- [ ] No duplicate summary rows
+
+---
+
+### DSO-1.3: Leaderboard Uses Summaries
+
+**Objective:** Verify the User Leaderboard queries from Behavior_Log_Summary__c (not raw logs).
+
+**Immediately Testable:** Yes
+
+**Steps:**
+1. Navigate to the BehaviorIQ dashboard in Lightning
+2. Open the **Leaderboard** tab
+3. Verify it shows activity counts for users
+
+**Verification Query:**
+```sql
+SELECT biq__User__c, SUM(biq__Event_Count__c) totalEvents
+FROM biq__Behavior_Log_Summary__c
+WHERE biq__User__c != null
+GROUP BY biq__User__c
+HAVING SUM(biq__Event_Count__c) > 0
+LIMIT 10
+```
+
+**Expected Results:**
+- [ ] Leaderboard displays user activity counts
+- [ ] Counts match the `SUM(biq__Event_Count__c)` from the verification query
+- [ ] No errors or empty state when summary data exists
+
+---
+
+### DSO-1.4: Workflow Analytics Uses Summaries
+
+**Objective:** Verify Workflow Analytics stats and top actions query from Behavior_Log_Summary__c.
+
+**Immediately Testable:** Yes
+
+**Steps:**
+1. Navigate to the BehaviorIQ dashboard
+2. Open the **Workflow Analytics** tab
+3. Verify stats (total events, unique users, active days) and top actions populate
+
+**Verification Queries:**
+```sql
+-- Stats aggregate
+SELECT COUNT(Id) totalSummaries,
+       SUM(biq__Event_Count__c) totalEvents,
+       COUNT_DISTINCT(biq__User__c) uniqueUsers,
+       COUNT_DISTINCT(biq__Log_Date__c) activeDays
+FROM biq__Behavior_Log_Summary__c
+
+-- Top actions
+SELECT biq__Action_Name__c, biq__Object_API_Name__c,
+       SUM(biq__Event_Count__c) totalEvents
+FROM biq__Behavior_Log_Summary__c
+GROUP BY biq__Action_Name__c, biq__Object_API_Name__c
+ORDER BY SUM(biq__Event_Count__c) DESC
+LIMIT 10
+```
+
+**Expected Results:**
+- [ ] Total events, unique users, and active days are shown
+- [ ] Top actions list populates with action name, object name, and event count
+- [ ] Values match the verification queries above
+
+---
+
+### DSO-1.5: Configurable Retention
+
+**Objective:** Verify raw log and summary retention settings are respected during cleanup.
+
+**Immediately Testable:** Conditional (requires aged data)
+
+**Steps:**
+1. Go to **BehaviorIQ Settings** in the app
+2. Set **Raw Log Retention Days** to 7
+3. Set **Summary Retention Days** to 365
+4. Save and verify no errors
+5. Run the pattern analysis batch (which calls `deleteOldLogs()`):
+```apex
+Database.executeBatch(new biq.PatternAnalysisBatch(), 200);
+```
+6. Query remaining records:
+```sql
+SELECT COUNT() FROM biq__Behavior_Log__c WHERE CreatedDate < LAST_N_DAYS:7
+
+SELECT COUNT() FROM biq__Behavior_Log_Summary__c WHERE biq__Log_Date__c < LAST_N_DAYS:365
+```
+
+**Expected Results:**
+- [ ] Settings save without error
+- [ ] Raw logs older than 7 days are purged after batch run
+- [ ] Summary records older than 365 days are purged after batch run
+- [ ] Recent raw logs and summaries are preserved
+
+---
+
+## CB: Circuit Breaker Resilience Tests
+
+### CB-1.1: Circuit Breaker State Inspection
+
+**Objective:** Verify Rule_Execution_Health__c records exist and track state per rule.
+
+**Immediately Testable:** Yes (after at least one batch run)
+
+**Steps:**
+1. Run the pattern analysis batch:
+```apex
+Database.executeBatch(new biq.PatternAnalysisBatch(), 200);
+```
+2. Query circuit breaker state:
+```sql
+SELECT biq__Rule_Developer_Name__c, biq__Circuit_State__c,
+       biq__Consecutive_Failures__c, biq__Last_Success_Time__c,
+       biq__Last_Error__c, biq__Cooldown_Until__c
+FROM biq__Rule_Execution_Health__c
+ORDER BY biq__Rule_Developer_Name__c
+```
+
+**Expected Results:**
+- [ ] One `biq__Rule_Execution_Health__c` record per executed rule
+- [ ] `biq__Circuit_State__c = 'Closed'` for healthy rules
+- [ ] `biq__Consecutive_Failures__c = 0` for rules that succeeded
+- [ ] `biq__Last_Success_Time__c` populated with a recent timestamp
+
+---
+
+### CB-1.2: Circuit Opens After 3 Consecutive Failures
+
+**Objective:** Verify the circuit breaker opens after 3 consecutive failures, automatically skipping the failing rule.
+
+**Immediately Testable:** Conditional (requires a rule that consistently fails)
+
+**Setup — Create a Deliberately Failing Rule:**
+To test this, create a custom pattern rule that references a non-existent plugin class:
+1. In Setup, navigate to Custom Metadata Types > Behavior Pattern Rule
+2. Create a new rule:
+   - Developer Name: `Test_Circuit_Breaker_Fail`
+   - Is Active: `true`
+   - Object API Name: `Case`
+   - Query Condition: `Status = 'New'`
+   - Fix Type: `Plugin`
+   - Apex Handler Class: `NonExistentPluginClass`
+   - License Tier: `Premium` (set license to Premium first)
+
+**Steps:**
+1. Run the batch 3 times (or wait for 3 scheduled runs):
+```apex
+Database.executeBatch(new biq.PatternAnalysisBatch(), 200);
+// Wait for completion, then repeat 2 more times
+```
+2. After 3 runs, query circuit state:
+```sql
+SELECT biq__Rule_Developer_Name__c, biq__Circuit_State__c,
+       biq__Consecutive_Failures__c, biq__Cooldown_Until__c, biq__Last_Error__c
+FROM biq__Rule_Execution_Health__c
+WHERE biq__Rule_Developer_Name__c = 'Test_Circuit_Breaker_Fail'
+```
+
+**Expected Results:**
+- [ ] `biq__Circuit_State__c = 'Open'`
+- [ ] `biq__Consecutive_Failures__c >= 3`
+- [ ] `biq__Cooldown_Until__c` is set to ~60 minutes from last failure
+- [ ] `biq__Last_Error__c` contains the plugin error message
+- [ ] Subsequent batch runs **skip** this rule (no further errors logged)
+
+---
+
+### CB-1.3: Half-Open Trial After Cooldown
+
+**Objective:** Verify the circuit transitions to Half_Open after cooldown expires, allowing one trial execution.
+
+**Immediately Testable:** No (requires 60-minute cooldown to expire, or manually adjust Cooldown_Until__c)
+
+**Workaround — Manually Expire Cooldown:**
+```apex
+biq__Rule_Execution_Health__c reh = [
+    SELECT Id, biq__Cooldown_Until__c
+    FROM biq__Rule_Execution_Health__c
+    WHERE biq__Rule_Developer_Name__c = 'Test_Circuit_Breaker_Fail'
+    LIMIT 1
+];
+reh.biq__Cooldown_Until__c = Datetime.now().addMinutes(-1);
+update reh;
+```
+
+**Steps:**
+1. Run the batch after cooldown expires:
+```apex
+Database.executeBatch(new biq.PatternAnalysisBatch(), 200);
+```
+2. Query circuit state:
+```sql
+SELECT biq__Circuit_State__c, biq__Consecutive_Failures__c
+FROM biq__Rule_Execution_Health__c
+WHERE biq__Rule_Developer_Name__c = 'Test_Circuit_Breaker_Fail'
+```
+
+**Expected Results:**
+- If the trial **fails** (expected for our fake plugin):
+  - [ ] `biq__Circuit_State__c = 'Open'` (re-opens)
+  - [ ] `biq__Cooldown_Until__c` reset to 60 minutes from now
+- If the trial **succeeds** (fix the plugin first):
+  - [ ] `biq__Circuit_State__c = 'Closed'`
+  - [ ] `biq__Consecutive_Failures__c = 0`
+
+---
+
+### CB-1.4: Admin Circuit Reset
+
+**Objective:** Verify an admin can manually reset a tripped circuit breaker.
+
+**Immediately Testable:** Yes (after CB-1.2)
+
+**Steps:**
+1. Reset the circuit via Anonymous Apex:
+```apex
+biq.CircuitBreakerService.resetCircuit('Test_Circuit_Breaker_Fail');
+```
+2. Query circuit state:
+```sql
+SELECT biq__Circuit_State__c, biq__Consecutive_Failures__c,
+       biq__Cooldown_Until__c
+FROM biq__Rule_Execution_Health__c
+WHERE biq__Rule_Developer_Name__c = 'Test_Circuit_Breaker_Fail'
+```
+3. Also test via the UI: Navigate to Pattern Rule Manager, find the rule, and click "Reset Circuit Breaker"
+
+**Expected Results:**
+- [ ] `biq__Circuit_State__c = 'Closed'`
+- [ ] `biq__Consecutive_Failures__c = 0`
+- [ ] `biq__Cooldown_Until__c = null`
+- [ ] Next batch run will attempt this rule again
+
+---
+
+### CB-1.5: Reset Circuit with Blank Name Validation
+
+**Objective:** Verify the resetCircuit method rejects blank/null rule names.
+
+**Immediately Testable:** Yes
+
+**Steps:**
+```apex
+try {
+    biq.CircuitBreakerService.resetCircuit('');
+    System.assert(false, 'Should have thrown IllegalArgumentException');
+} catch (IllegalArgumentException e) {
+    System.debug('Expected error: ' + e.getMessage());
+}
+
+try {
+    biq.CircuitBreakerService.resetCircuit(null);
+    System.assert(false, 'Should have thrown IllegalArgumentException');
+} catch (IllegalArgumentException e) {
+    System.debug('Expected error: ' + e.getMessage());
+}
+```
+
+**Expected Results:**
+- [ ] `IllegalArgumentException` thrown for blank input
+- [ ] `IllegalArgumentException` thrown for null input
+- [ ] Error message: "Rule developer name cannot be blank"
+
+---
+
+## TEL: Telemetry Enrichment Tests
+
+### TEL-1.1: Remediation Log Telemetry Fields
+
+**Objective:** Verify new telemetry fields are populated on Remediation_Log__c records after a fix execution.
+
+**Immediately Testable:** Yes (requires Premium license and a fixable pain point)
+
+**Steps:**
+1. Set license to Premium
+2. Execute a fix on a detected pain point (e.g., High_Value_Ghosting → Task_Creation)
+3. Query remediation logs:
+```sql
+SELECT biq__Action_Type__c, biq__Action_Index__c,
+       biq__Execution_Time_Ms__c, biq__Plugin_Class__c,
+       biq__Rule_Developer_Name__c, biq__Status__c
+FROM biq__Remediation_Log__c
+ORDER BY CreatedDate DESC
+LIMIT 10
+```
+
+**Expected Results:**
+- [ ] `biq__Action_Type__c` populated (e.g., `Task_Creation`, `Plugin`)
+- [ ] `biq__Action_Index__c` populated with 0-based action index
+- [ ] `biq__Execution_Time_Ms__c` populated with milliseconds > 0
+- [ ] `biq__Plugin_Class__c` populated for Plugin fix types (null for declarative)
+- [ ] `biq__Status__c = 'Success'`
+
+---
+
+### TEL-1.2: System Health Log CPU Tracking
+
+**Objective:** Verify new CPU tracking and rule name fields are populated on System_Health_Log__c.
+
+**Immediately Testable:** Yes (after a batch run)
+
+**Steps:**
+1. Run the pattern analysis batch:
+```apex
+Database.executeBatch(new biq.PatternAnalysisBatch(), 200);
+```
+2. Query system health logs:
+```sql
+SELECT biq__Status__c, biq__CPU_Time_Ms__c,
+       biq__Rule_Developer_Name__c, biq__Error_Message__c,
+       CreatedDate
+FROM biq__System_Health_Log__c
+ORDER BY CreatedDate DESC
+LIMIT 10
+```
+
+**Expected Results:**
+- [ ] `biq__CPU_Time_Ms__c` populated with a positive integer
+- [ ] `biq__Rule_Developer_Name__c` populated with the rule that was analyzed
+- [ ] `biq__Status__c` is `Success` or `Error`
+- [ ] For errors, `biq__Error_Message__c` contains the failure reason
+
+---
+
+## DSO/CB Integration Test
+
+### INT-1.1: Full End-to-End Flow
+
+**Objective:** Run a complete cycle: trigger events → verify summaries → run batch → verify circuit breaker → verify telemetry.
+
+**Steps:**
+1. **Generate activity:**
+```apex
+// Create 5 Cases to generate behavior logs + summaries
+List<Case> cases = new List<Case>();
+for (Integer i = 0; i < 5; i++) {
+    cases.add(new Case(Subject = 'Integration Test ' + i, Status = 'New'));
+}
+insert cases;
+```
+
+2. **Verify summaries created:**
+```sql
+SELECT biq__Object_API_Name__c, biq__Action_Name__c,
+       biq__Event_Count__c, biq__Log_Date__c
+FROM biq__Behavior_Log_Summary__c
+WHERE biq__Log_Date__c = TODAY
+  AND biq__Object_API_Name__c = 'Case'
+```
+
+3. **Run pattern analysis:**
+```apex
+Database.executeBatch(new biq.PatternAnalysisBatch(), 200);
+```
+
+4. **Verify circuit breaker health (all rules):**
+```sql
+SELECT biq__Rule_Developer_Name__c, biq__Circuit_State__c,
+       biq__Consecutive_Failures__c
+FROM biq__Rule_Execution_Health__c
+ORDER BY biq__Rule_Developer_Name__c
+```
+
+5. **Verify telemetry logged:**
+```sql
+SELECT biq__Status__c, biq__CPU_Time_Ms__c, biq__Rule_Developer_Name__c
+FROM biq__System_Health_Log__c
+ORDER BY CreatedDate DESC
+LIMIT 5
+```
+
+**Expected Results:**
+- [ ] Step 2: Summary row exists with `biq__Event_Count__c = 5` for Case/Record_Created
+- [ ] Step 4: All rules show `biq__Circuit_State__c = 'Closed'`
+- [ ] Step 5: Health logs show CPU time and rule names for each processed rule
+- [ ] No governor limit errors in debug logs
+
+---
+
+## Cleanup After Testing
+
+### Remove Test Circuit Breaker Rule
+If you created `Test_Circuit_Breaker_Fail` for CB testing, deactivate or delete it:
+1. Navigate to Setup > Custom Metadata Types > Behavior Pattern Rule
+2. Find `Test_Circuit_Breaker_Fail`
+3. Set `Is_Active__c = false` or delete the record
+
+### Verify No Open Circuits Left
+```sql
+SELECT biq__Rule_Developer_Name__c, biq__Circuit_State__c
+FROM biq__Rule_Execution_Health__c
+WHERE biq__Circuit_State__c != 'Closed'
+```
+Should return 0 records after cleanup.
+
+---
+
+# Test Execution Checklist — Data Storage & Circuit Breaker
+
+## Data Storage Optimization Tests
+
+| Test Case | Status | Notes |
+|-----------|--------|-------|
+| DSO-1.1 Dual-Write Verification | [ ] | Raw log + summary created |
+| DSO-1.2 Counter Increment | [ ] | Upsert, not insert |
+| DSO-1.3 Leaderboard Uses Summaries | [ ] | UI matches query |
+| DSO-1.4 Workflow Analytics Uses Summaries | [ ] | Stats + top actions |
+| DSO-1.5 Configurable Retention | [ ] | Requires aged data |
+
+## Circuit Breaker Tests
+
+| Test Case | Status | Notes |
+|-----------|--------|-------|
+| CB-1.1 State Inspection | [ ] | After first batch run |
+| CB-1.2 Circuit Opens After 3 Failures | [ ] | Need failing rule |
+| CB-1.3 Half-Open Trial After Cooldown | [ ] | 60-min cooldown or manual adjust |
+| CB-1.4 Admin Circuit Reset | [ ] | Via Apex or UI |
+| CB-1.5 Blank Name Validation | [ ] | IllegalArgumentException |
+
+## Telemetry Tests
+
+| Test Case | Status | Notes |
+|-----------|--------|-------|
+| TEL-1.1 Remediation Log Telemetry | [ ] | Requires fix execution |
+| TEL-1.2 System Health CPU Tracking | [ ] | After batch run |
+
+## Integration Test
+
+| Test Case | Status | Notes |
+|-----------|--------|-------|
+| INT-1.1 Full End-to-End Flow | [ ] | Complete cycle |
+
+---
+
+Last Updated: February 2026

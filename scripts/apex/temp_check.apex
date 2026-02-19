@@ -1,0 +1,1 @@
+List<Identified_Pain_Point__c> painPoints = [SELECT Name, Unique_Key__c, Status__c, Occurrences__c FROM Identified_Pain_Point__c ORDER BY Status__c, Name LIMIT 50]; for (Identified_Pain_Point__c pp : painPoints) { System.debug(pp.Status__c + ' | ' + pp.Occurrences__c + ' | ' + pp.Name + ' | ' + pp.Unique_Key__c); }

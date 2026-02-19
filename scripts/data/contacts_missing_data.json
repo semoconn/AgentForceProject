@@ -1,0 +1,51 @@
+{
+  "records": [
+    {
+      "attributes": {"type": "Contact", "referenceId": "ContactMissingEmail1"},
+      "FirstName": "John",
+      "LastName": "NoEmail1",
+      "Phone": "555-0101",
+      "AccountId": "001KY00000KcyUIYAZ"
+    },
+    {
+      "attributes": {"type": "Contact", "referenceId": "ContactMissingEmail2"},
+      "FirstName": "Jane",
+      "LastName": "NoEmail2",
+      "Phone": "555-0102",
+      "AccountId": "001KY00000KcyUIYAZ"
+    },
+    {
+      "attributes": {"type": "Contact", "referenceId": "ContactMissingEmail3"},
+      "FirstName": "Bob",
+      "LastName": "NoEmail3",
+      "Phone": "555-0103",
+      "AccountId": "001KY00000KcyUIYAZ"
+    },
+    {
+      "attributes": {"type": "Contact", "referenceId": "ContactMissingPhone1"},
+      "FirstName": "Alice",
+      "LastName": "NoPhone1",
+      "Email": "alice.nophone1@test.com",
+      "AccountId": "001KY00000Kd0dXYAR"
+    },
+    {
+      "attributes": {"type": "Contact", "referenceId": "ContactMissingPhone2"},
+      "FirstName": "Charlie",
+      "LastName": "NoPhone2",
+      "Email": "charlie.nophone2@test.com",
+      "AccountId": "001KY00000Kd0dXYAR"
+    },
+    {
+      "attributes": {"type": "Contact", "referenceId": "ContactMissingBoth1"},
+      "FirstName": "Dave",
+      "LastName": "NoBoth1",
+      "AccountId": "001KY00000KcyUIYAZ"
+    },
+    {
+      "attributes": {"type": "Contact", "referenceId": "ContactMissingBoth2"},
+      "FirstName": "Eve",
+      "LastName": "NoBoth2",
+      "AccountId": "001KY00000Kd0dXYAR"
+    }
+  ]
+}

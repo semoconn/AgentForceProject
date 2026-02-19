@@ -44,6 +44,24 @@ private with sharing class WorkflowAnalyticsControllerTest {
         }
         insert logs;
 
+        // 3b. Setup Behavior Log Summaries (analytics now query summaries)
+        String todayStr = String.valueOf(Date.today());
+        Id currentUserId = UserInfo.getUserId();
+        insert new List<Behavior_Log_Summary__c>{
+            new Behavior_Log_Summary__c(
+                User__c = currentUserId, Action_Name__c = 'Record_Created',
+                Object_API_Name__c = 'Contact', Log_Date__c = Date.today(),
+                Event_Count__c = 5, Composite_Key__c = currentUserId + '_Contact_Record_Created_' + todayStr,
+                Last_Event_Time__c = System.now()
+            ),
+            new Behavior_Log_Summary__c(
+                User__c = currentUserId, Action_Name__c = 'Record_Updated',
+                Object_API_Name__c = 'Account', Log_Date__c = Date.today(),
+                Event_Count__c = 3, Composite_Key__c = currentUserId + '_Account_Record_Updated_' + todayStr,
+                Last_Event_Time__c = System.now()
+            )
+        };
+
         // 4. Create System_Health_Log__c
         insert new System_Health_Log__c(Job_Name__c = 'Test Job', Status__c = 'Success');
 
@@ -88,10 +106,42 @@ private with sharing class WorkflowAnalyticsControllerTest {
 
     @isTest
     static void testRestoreSuggestion() {
-        // First dismiss the pain point
-        Identified_Pain_Point__c point = [SELECT Id FROM Identified_Pain_Point__c LIMIT 1];
+        // Dismiss the pain point and create the dismissal audit record
+        Identified_Pain_Point__c point = [SELECT Id, Unique_Key__c FROM Identified_Pain_Point__c LIMIT 1];
         point.Status__c = 'Dismissed';
         update point;
+
+        Suggestion_Dismissal__c dismissal = new Suggestion_Dismissal__c(
+            Dismissal_Key__c = point.Unique_Key__c,
+            Action_Name__c = 'Dismissed via Dashboard'
+        );
+        insert dismissal;
+
+        System.assertEquals(1, [SELECT COUNT() FROM Suggestion_Dismissal__c WHERE Dismissal_Key__c = :point.Unique_Key__c],
+            'Dismissal record should exist before restore');
+
+        Test.startTest();
+        String result = WorkflowAnalyticsController.restoreSuggestion(point.Id);
+        Test.stopTest();
+
+        System.assertEquals('Suggestion restored successfully.', result);
+
+        Identified_Pain_Point__c updatedPoint = [SELECT Status__c FROM Identified_Pain_Point__c WHERE Id = :point.Id];
+        System.assertEquals('New', updatedPoint.Status__c);
+
+        System.assertEquals(0, [SELECT COUNT() FROM Suggestion_Dismissal__c WHERE Dismissal_Key__c = :point.Unique_Key__c],
+            'Dismissal record should be deleted after restore');
+    }
+
+    @isTest
+    static void testRestoreSuggestion_NoDismissalRecord() {
+        // Dismiss pain point directly without creating a Suggestion_Dismissal__c
+        Identified_Pain_Point__c point = [SELECT Id, Unique_Key__c FROM Identified_Pain_Point__c LIMIT 1];
+        point.Status__c = 'Dismissed';
+        update point;
+
+        System.assertEquals(0, [SELECT COUNT() FROM Suggestion_Dismissal__c WHERE Dismissal_Key__c = :point.Unique_Key__c],
+            'No dismissal record should exist');
 
         Test.startTest();
         String result = WorkflowAnalyticsController.restoreSuggestion(point.Id);
@@ -1073,8 +1123,9 @@ private with sharing class WorkflowAnalyticsControllerTest {
 
     @isTest
     static void testGetWorkflowStats_NoLogs() {
-        // Test workflow stats with no behavior logs
+        // Test workflow stats with no behavior logs or summaries
         delete [SELECT Id FROM Behavior_Log__c];
+        delete [SELECT Id FROM Behavior_Log_Summary__c];
 
         Test.startTest();
         Map<String, Integer> stats = WorkflowAnalyticsController.getWorkflowStats();
@@ -1087,8 +1138,9 @@ private with sharing class WorkflowAnalyticsControllerTest {
 
     @isTest
     static void testGetTopActions_NoRecentLogs() {
-        // Test top actions with no logs in last 30 days
+        // Test top actions with no logs or summaries in last 30 days
         delete [SELECT Id FROM Behavior_Log__c];
+        delete [SELECT Id FROM Behavior_Log_Summary__c];
 
         Test.startTest();
         List<WorkflowAnalyticsController.TopAction> actions = WorkflowAnalyticsController.getTopActions();
@@ -1710,6 +1762,140 @@ private with sharing class WorkflowAnalyticsControllerTest {
         Identified_Pain_Point__c updated = [SELECT Status__c, Occurrences__c, Impact_Score__c FROM Identified_Pain_Point__c WHERE Id = :point.Id];
         System.assertEquals('New', updated.Status__c, 'Should remain New after partial fix');
         System.assertEquals(2, updated.Occurrences__c, 'Should have 2 remaining');
+        // Impact should be original $30K minus fixed $10K = $20K
+        System.assertEquals(20000, updated.Impact_Score__c, 'Impact should be original $30,000 minus fixed $10,000');
+
+        // Verify the resolved partial-fix record has the correct fixed impact
+        List<Identified_Pain_Point__c> resolved = [
+            SELECT Impact_Score__c, Occurrences__c FROM Identified_Pain_Point__c
+            WHERE Status__c = 'Resolved' AND Id != :point.Id
+        ];
+        System.assertEquals(1, resolved.size(), 'Should create 1 resolved record for partial fix');
+        System.assertEquals(10000, resolved[0].Impact_Score__c, 'Resolved record should show fixed amount of $10,000');
+        System.assertEquals(1, resolved[0].Occurrences__c, 'Resolved record should show 1 fixed');
+    }
+
+    @isTest
+    static void testMarkPainPointResolved_OpportunityPartialFix_MoreRecordsThanSamples() {
+        // BUG SCENARIO: Pain point has more records than samples in Example_Records__c.
+        // Impact_Score__c reflects ALL records' total Amount, but Example_Records__c
+        // only stores 5 sample IDs. Fixing 2 should subtract their amounts from the total,
+        // NOT re-query only the remaining 3 sample IDs.
+        delete [SELECT Id FROM Identified_Pain_Point__c];
+
+        Account acc = new Account(Name = 'Large Opp Test Acc');
+        insert acc;
+
+        // Create 10 Opportunities ($100K each = $1M total)
+        List<Opportunity> opps = new List<Opportunity>();
+        for (Integer i = 0; i < 10; i++) {
+            opps.add(new Opportunity(
+                Name = 'Ghosting Opp ' + i,
+                StageName = 'Prospecting',
+                CloseDate = Date.today().addDays(30),
+                AccountId = acc.Id,
+                Amount = 100000
+            ));
+        }
+        insert opps;
+
+        // Only store 5 sample IDs (simulating Math.min(count, 5) behavior at detection time)
+        List<String> sampleIds = new List<String>();
+        for (Integer i = 0; i < 5; i++) {
+            sampleIds.add(String.valueOf(opps[i].Id));
+        }
+
+        // Impact_Score__c = total of ALL 10 Opps = $1,000,000
+        Identified_Pain_Point__c point = new Identified_Pain_Point__c(
+            Name = 'High Value Ghosting',
+            Object_API_Name__c = 'Opportunity',
+            Status__c = 'New',
+            Impact_Score__c = 1000000,
+            Unique_Key__c = 'High_Value_Ghosting_Test',
+            Occurrences__c = 10,
+            Example_Records__c = JSON.serialize(sampleIds),
+            Cost_Per_Incident__c = 50000
+        );
+        insert point;
+
+        // Fix 2 of the sample records ($100K each = $200K fixed)
+        List<String> fixedIds = new List<String>{sampleIds[0], sampleIds[1]};
+
+        Test.startTest();
+        WorkflowAnalyticsController.markPainPointResolved(
+            String.valueOf(point.Id),
+            2,
+            10,
+            JSON.serialize(fixedIds)
+        );
+        Test.stopTest();
+
+        Identified_Pain_Point__c updated = [
+            SELECT Status__c, Occurrences__c, Impact_Score__c
+            FROM Identified_Pain_Point__c WHERE Id = :point.Id
+        ];
+        System.assertEquals('New', updated.Status__c, 'Should remain New after partial fix');
+        System.assertEquals(8, updated.Occurrences__c, 'Should have 8 remaining (10-2)');
+        // CRITICAL: Impact should be $1M - $200K = $800K (NOT ~$300K from 3 remaining samples)
+        System.assertEquals(800000, updated.Impact_Score__c,
+            'Impact should be original $1M minus fixed $200K = $800K');
+
+        // Verify the resolved partial-fix record
+        List<Identified_Pain_Point__c> resolved = [
+            SELECT Impact_Score__c, Occurrences__c
+            FROM Identified_Pain_Point__c WHERE Status__c = 'Resolved'
+        ];
+        System.assertEquals(1, resolved.size(), 'Should create 1 resolved record');
+        System.assertEquals(200000, resolved[0].Impact_Score__c, 'Resolved record should show $200K fixed');
+        System.assertEquals(2, resolved[0].Occurrences__c, 'Resolved record should show 2 fixed');
+    }
+
+    @isTest
+    static void testMarkPainPointResolved_OpportunityPartialFix_NullImpactScore() {
+        // Verify fallback when Impact_Score__c is null (uses count * costPerIncident)
+        delete [SELECT Id FROM Identified_Pain_Point__c];
+
+        Account acc = new Account(Name = 'Null Impact Acc');
+        insert acc;
+
+        Opportunity opp = new Opportunity(
+            Name = 'Null Impact Opp',
+            StageName = 'Prospecting',
+            CloseDate = Date.today().addDays(30),
+            AccountId = acc.Id,
+            Amount = 10000
+        );
+        insert opp;
+
+        Identified_Pain_Point__c point = new Identified_Pain_Point__c(
+            Name = 'Null Impact Test',
+            Object_API_Name__c = 'Opportunity',
+            Status__c = 'New',
+            Impact_Score__c = null,
+            Unique_Key__c = 'Null_Impact_Key',
+            Occurrences__c = 5,
+            Example_Records__c = JSON.serialize(new List<String>{String.valueOf(opp.Id)}),
+            Cost_Per_Incident__c = 1000
+        );
+        insert point;
+
+        Test.startTest();
+        WorkflowAnalyticsController.markPainPointResolved(
+            String.valueOf(point.Id),
+            1,
+            5,
+            String.valueOf(opp.Id)
+        );
+        Test.stopTest();
+
+        Identified_Pain_Point__c updated = [
+            SELECT Impact_Score__c, Occurrences__c
+            FROM Identified_Pain_Point__c WHERE Id = :point.Id
+        ];
+        System.assertEquals(4, updated.Occurrences__c, 'Should have 4 remaining');
+        // Fallback: actualRemainingCount * costPerIncident = 4 * 1000 = 4000
+        System.assertEquals(4000, updated.Impact_Score__c,
+            'Should use count-based fallback when original Impact_Score is null');
     }
 
     @isTest
@@ -2807,6 +2993,61 @@ private with sharing class WorkflowAnalyticsControllerTest {
         Test.stopTest();
 
         System.assertNotEquals(null, info, 'Should handle timestamped rule name');
+    }
+
+    /**
+     * @description Tests getPainPoints cost fallback: Cost_Per_Incident__c from pain point record.
+     * When no matching rule cost or cost override exists, uses the stored Cost_Per_Incident__c.
+     */
+    @isTest
+    static void testGetPainPoints_CostPerIncidentFallback() {
+        // Delete existing pain points and create one with a unique key that won't match any CMDT rule
+        delete [SELECT Id FROM Identified_Pain_Point__c];
+        insert new Identified_Pain_Point__c(
+            Name = 'Custom Pain Point',
+            Object_API_Name__c = 'Case',
+            Status__c = 'New',
+            Impact_Score__c = 0,
+            Unique_Key__c = 'Nonexistent_Rule_XYZ_999',
+            Occurrences__c = 5,
+            Cost_Per_Incident__c = 75
+        );
+
+        Test.startTest();
+        List<WorkflowAnalyticsController.PainPointWithROI> results = WorkflowAnalyticsController.getPainPoints();
+        Test.stopTest();
+
+        System.assertNotEquals(null, results, 'Results should not be null');
+        System.assertEquals(1, results.size(), 'Should return exactly 1 pain point');
+        System.assertEquals(75, results[0].CostPerIncident, 'Should fall back to Cost_Per_Incident__c from the record');
+    }
+
+    /**
+     * @description Tests getPainPoints with a timestamped unique key that falls back to original key lookup.
+     */
+    @isTest
+    static void testGetPainPoints_TimestampedKeyFallback() {
+        delete [SELECT Id FROM Identified_Pain_Point__c];
+        insert new Identified_Pain_Point__c(
+            Name = 'Timestamped Pain Point',
+            Object_API_Name__c = 'Lead',
+            Status__c = 'New',
+            Impact_Score__c = 0,
+            Unique_Key__c = 'Unknown_Rule_1767994173771',
+            Occurrences__c = 3,
+            Cost_Per_Incident__c = 120
+        );
+
+        Test.startTest();
+        List<WorkflowAnalyticsController.PainPointWithROI> results = WorkflowAnalyticsController.getPainPoints();
+        Test.stopTest();
+
+        System.assertNotEquals(null, results, 'Results should not be null');
+        System.assert(!results.isEmpty(), 'Should return the pain point');
+        // The base key extraction removes the timestamp suffix, but neither base nor original
+        // will match a rule cost, so it falls back to Cost_Per_Incident__c
+        System.assertEquals(120, results[0].CostPerIncident,
+            'Should use Cost_Per_Incident__c fallback for timestamped key');
     }
 
 }

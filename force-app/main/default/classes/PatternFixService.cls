@@ -60,6 +60,16 @@ public with sharing class PatternFixService {
     public void executeFix(List<Id> recordIds, String ruleDeveloperName) {
         if (recordIds == null || recordIds.isEmpty()) return;
 
+        // Circuit breaker check - block execution if rule is temporarily disabled
+        if (!CircuitBreakerService.canExecute(ruleDeveloperName)) {
+            String state = CircuitBreakerService.getCircuitState(ruleDeveloperName);
+            throw new AuraHandledException(
+                'Fix temporarily disabled for rule "' + ruleDeveloperName +
+                '". Circuit breaker state: ' + state +
+                '. The rule will automatically retry after the cooldown period, or an admin can reset it manually.'
+            );
+        }
+
         this.currentRuleName = ruleDeveloperName;
 
         // 1. Fetch Rule (use mock if available in test context)
@@ -95,23 +105,30 @@ public with sharing class PatternFixService {
         // 4. Route Execution based on Logic Type
         String logicType = String.isNotBlank(rule.Logic_Type__c) ? rule.Logic_Type__c : 'Standard';
 
-        switch on logicType {
-            when 'Apex_Plugin' {
-                // Invoke custom plugin for fix
-                executePluginFix(rule, recordIds, config);
+        try {
+            switch on logicType {
+                when 'Apex_Plugin' {
+                    // Invoke custom plugin for fix
+                    executePluginFix(rule, recordIds, config);
+                }
+                when 'Declarative' {
+                    // Execute declarative JSON-based actions
+                    executeDeclarativeFix(recordIds, rule.Fix_Config__c);
+                }
+                when else {
+                    // 'Standard' - use existing Fix_Type__c routing
+                    executeStandardFix(rule.Fix_Type__c, recordIds, config);
+                }
             }
-            when 'Declarative' {
-                // Execute declarative JSON-based actions
-                executeDeclarativeFix(recordIds, rule.Fix_Config__c);
-            }
-            when else {
-                // 'Standard' - use existing Fix_Type__c routing
-                executeStandardFix(rule.Fix_Type__c, recordIds, config);
-            }
-        }
 
-        // 5. Persist all audit logs
-        insertPendingLogs();
+            CircuitBreakerService.recordSuccess(ruleDeveloperName);
+        } catch (Exception e) {
+            CircuitBreakerService.recordFailure(ruleDeveloperName, e.getMessage());
+            throw e;
+        } finally {
+            // 5. Persist all audit logs - always runs even after circuit breaker recording
+            insertPendingLogs();
+        }
     }
 
     // --- LOGIC TYPE ROUTING ---
@@ -164,11 +181,17 @@ public with sharing class PatternFixService {
             throw new AuraHandledException('Rule has Logic_Type__c = Apex_Plugin but no Apex_Handler_Class__c specified.');
         }
 
+        Integer cpuBefore = Limits.getCpuTime();
+
         try {
             PatternPluginResult result = PluginInvoker.invokeFix(handlerClass, recordIds, config);
 
-            // Add plugin's audit logs to our pending logs
+            // Add plugin's audit logs to our pending logs with telemetry
             if (result.auditLogs != null && !result.auditLogs.isEmpty()) {
+                for (Remediation_Log__c auditLog : result.auditLogs) {
+                    auditLog.Plugin_Class__c = handlerClass;
+                    auditLog.Execution_Time_Ms__c = Limits.getCpuTime() - cpuBefore;
+                }
                 pendingLogs.addAll(result.auditLogs);
             }
 
@@ -182,9 +205,13 @@ public with sharing class PatternFixService {
             }
 
         } catch (PluginInvoker.PluginException pe) {
-            // Log failure for all records
+            // Log failure for all records with telemetry
             for (Id recId : recordIds) {
                 addLog(recId, 'Apex_Plugin', null, null, STATUS_FAILED, pe.getMessage());
+                // Set plugin telemetry on the last added log entry
+                Remediation_Log__c log = pendingLogs[pendingLogs.size() - 1];
+                log.Plugin_Class__c = handlerClass;
+                log.Execution_Time_Ms__c = Limits.getCpuTime() - cpuBefore;
             }
             throw new AuraHandledException('Plugin execution failed: ' + pe.getMessage());
         }
@@ -248,6 +275,9 @@ public with sharing class PatternFixService {
             tasks.add(t);
         }
 
+        // Query record names for audit logging
+        Map<Id, String> recordNames = queryRecordNames(recordIds);
+
         try {
             // Test hook for exception coverage
             if (Test.isRunningTest() && forceTaskCreationException) {
@@ -258,19 +288,21 @@ public with sharing class PatternFixService {
 
             // Log successful task creations
             for (Integer i = 0; i < recordIds.size(); i++) {
-                addLog(
+                addLogWithRecordName(
                     recordIds[i],
                     ACTION_TASK_CREATION,
                     null,
                     'Task Created: ' + (subject != null ? subject : 'Action Required'),
                     STATUS_SUCCESS,
-                    null
+                    null,
+                    null,
+                    recordNames.get(recordIds[i])
                 );
             }
         } catch (Exception e) {
             // Log failures
             for (Id recId : recordIds) {
-                addLog(recId, ACTION_TASK_CREATION, null, null, STATUS_FAILED, e.getMessage());
+                addLogWithRecordName(recId, ACTION_TASK_CREATION, null, null, STATUS_FAILED, e.getMessage(), null, recordNames.get(recId));
             }
             throw new AuraHandledException('Failed to create tasks: ' + e.getMessage());
         }
@@ -663,12 +695,16 @@ public with sharing class PatternFixService {
         Schema.SObjectType sType = recordIds[0].getSObjectType();
         String objectName = sType.getDescribe().getName();
 
-        // Build query to get recipient information
+        // Build query to get recipient information (include name field for audit logging)
+        String nameField = getNameFieldForObject(objectName);
         String queryFields = 'Id';
         if (objectName == 'Case') {
             queryFields = 'Id, CaseNumber, Subject, Account.Name, Account.OwnerId, OwnerId';
         } else {
             queryFields = 'Id, OwnerId';
+            if (String.isNotBlank(nameField) && nameField != 'Id') {
+                queryFields += ', ' + nameField;
+            }
         }
 
         String soql = 'SELECT ' + queryFields + ' FROM ' + String.escapeSingleQuotes(objectName) + ' WHERE Id IN :recordIds WITH USER_MODE';
@@ -689,6 +725,17 @@ public with sharing class PatternFixService {
                 addLog(recId, ACTION_EMAIL_NOTIFICATION, null, null, STATUS_FAILED, 'Query failed: ' + e.getMessage());
             }
             throw new AuraHandledException('Failed to query records for email notification: ' + e.getMessage());
+        }
+
+        // Build record names map from queried data for audit logging
+        Map<Id, String> recordNames = new Map<Id, String>();
+        if (String.isNotBlank(nameField)) {
+            for (SObject rec : records) {
+                Object nameValue = rec.get(nameField);
+                if (nameValue != null) {
+                    recordNames.put(rec.Id, String.valueOf(nameValue));
+                }
+            }
         }
 
         List<Messaging.SingleEmailMessage> emails = new List<Messaging.SingleEmailMessage>();
@@ -730,8 +777,8 @@ public with sharing class PatternFixService {
 
             // Skip users who have opted out
             if (optedOutUsers.contains(recipientId)) {
-                addLog(rec.Id, ACTION_EMAIL_NOTIFICATION, null, null, STATUS_FAILED,
-                       'Recipient has opted out of email notifications');
+                addLogWithRecordName(rec.Id, ACTION_EMAIL_NOTIFICATION, null, null, STATUS_FAILED,
+                       'Recipient has opted out of email notifications', null, recordNames.get(rec.Id));
                 continue;
             }
 
@@ -765,7 +812,7 @@ public with sharing class PatternFixService {
         // Test hook for no valid recipients coverage
         if (emails.isEmpty() || (Test.isRunningTest() && forceNoValidRecipients)) {
             for (Id recId : recordIds) {
-                addLog(recId, ACTION_EMAIL_NOTIFICATION, null, null, STATUS_FAILED, 'No valid recipients found');
+                addLogWithRecordName(recId, ACTION_EMAIL_NOTIFICATION, null, null, STATUS_FAILED, 'No valid recipients found', null, recordNames.get(recId));
             }
             return;
         }
@@ -781,21 +828,21 @@ public with sharing class PatternFixService {
             for (SObject rec : records) {
                 if (recordToRecipient.containsKey(rec.Id) && idx < results.size()) {
                     if (results[idx].isSuccess()) {
-                        addLog(rec.Id, ACTION_EMAIL_NOTIFICATION, null,
-                               'Email sent to: ' + recordToRecipient.get(rec.Id), STATUS_SUCCESS, null);
+                        addLogWithRecordName(rec.Id, ACTION_EMAIL_NOTIFICATION, null,
+                               'Email sent to: ' + recordToRecipient.get(rec.Id), STATUS_SUCCESS, null, null, recordNames.get(rec.Id));
                     } else {
                         String errorMsg = '';
                         for (Messaging.SendEmailError err : results[idx].getErrors()) {
                             errorMsg += err.getMessage() + '; ';
                         }
-                        addLog(rec.Id, ACTION_EMAIL_NOTIFICATION, null, null, STATUS_FAILED, errorMsg);
+                        addLogWithRecordName(rec.Id, ACTION_EMAIL_NOTIFICATION, null, null, STATUS_FAILED, errorMsg, null, recordNames.get(rec.Id));
                     }
                     idx++;
                 }
             }
         } catch (Exception e) {
             for (Id recId : recordIds) {
-                addLog(recId, ACTION_EMAIL_NOTIFICATION, null, null, STATUS_FAILED, e.getMessage());
+                addLogWithRecordName(recId, ACTION_EMAIL_NOTIFICATION, null, null, STATUS_FAILED, e.getMessage(), null, recordNames.get(recId));
             }
             throw new AuraHandledException('Failed to send email notifications: ' + e.getMessage());
         }
@@ -860,9 +907,12 @@ public with sharing class PatternFixService {
 
         List<Opportunity> opportunities = new List<Opportunity>();
         Map<Id, Contract> contractMap = new Map<Id, Contract>();
+        // Build record names map from queried contracts for audit logging
+        Map<Id, String> recordNames = new Map<Id, String>();
 
         for (Contract c : contracts) {
             contractMap.put(c.Id, c);
+            recordNames.put(c.Id, c.ContractNumber);
 
             // Build opportunity name from template
             String oppName = oppNameTemplate
@@ -907,25 +957,27 @@ public with sharing class PatternFixService {
                 Id contractId = contracts[i].Id;
 
                 if (results[i].isSuccess()) {
-                    addLog(
+                    addLogWithRecordName(
                         contractId,
                         ACTION_OPPORTUNITY_CREATION,
                         null,
                         'Opportunity Created: ' + results[i].getId(),
                         STATUS_SUCCESS,
-                        null
+                        null,
+                        null,
+                        recordNames.get(contractId)
                     );
                 } else {
                     String errorMsg = '';
                     for (Database.Error err : results[i].getErrors()) {
                         errorMsg += err.getMessage() + '; ';
                     }
-                    addLog(contractId, ACTION_OPPORTUNITY_CREATION, null, null, STATUS_FAILED, errorMsg);
+                    addLogWithRecordName(contractId, ACTION_OPPORTUNITY_CREATION, null, null, STATUS_FAILED, errorMsg, null, recordNames.get(contractId));
                 }
             }
         } catch (Exception e) {
             for (Id recId : recordIds) {
-                addLog(recId, ACTION_OPPORTUNITY_CREATION, null, null, STATUS_FAILED, e.getMessage());
+                addLogWithRecordName(recId, ACTION_OPPORTUNITY_CREATION, null, null, STATUS_FAILED, e.getMessage(), null, recordNames.get(recId));
             }
             throw new AuraHandledException('Failed to create renewal opportunities: ' + e.getMessage());
         }
@@ -1005,8 +1057,11 @@ public with sharing class PatternFixService {
             ? (String)config.get('message')
             : 'Expected pattern - no action required';
 
+        // Query record names for audit logging
+        Map<Id, String> recordNames = queryRecordNames(recordIds);
+
         for (Id recId : recordIds) {
-            addLog(recId, ACTION_NO_ACTION, null, message, STATUS_SUCCESS, null);
+            addLogWithRecordName(recId, ACTION_NO_ACTION, null, message, STATUS_SUCCESS, null, null, recordNames.get(recId));
         }
     }
 
@@ -1075,6 +1130,18 @@ public with sharing class PatternFixService {
 
     /**
      * @description Creates a remediation log entry with full record snapshot for undo capability.
+     * Delegates to addLogWithRecordName with no name override.
+     */
+    private void addLogWithSnapshot(Id affectedRecordId, String actionTaken, String originalValue,
+                        String newValue, String status, String errorMessage, String snapshotJson) {
+        addLogWithRecordName(affectedRecordId, actionTaken, originalValue, newValue, status, errorMessage, snapshotJson, null);
+    }
+
+    /**
+     * @description Creates a remediation log entry with optional snapshot and explicit record name.
+     * Core implementation for all audit logging. Record name resolution priority:
+     * 1. recordNameOverride (explicit name from bulk query)
+     * 2. Extracted from snapshotJson (for modification-type actions)
      * @param affectedRecordId The ID of the record that was modified
      * @param actionTaken The type of action performed
      * @param originalValue The original field value (truncated to 255 chars)
@@ -1082,9 +1149,10 @@ public with sharing class PatternFixService {
      * @param status Success or Failed
      * @param errorMessage Error details if failed
      * @param snapshotJson Full JSON snapshot of the record before modification
+     * @param recordNameOverride Explicit record name (bypasses snapshot extraction)
      */
-    private void addLogWithSnapshot(Id affectedRecordId, String actionTaken, String originalValue,
-                        String newValue, String status, String errorMessage, String snapshotJson) {
+    private void addLogWithRecordName(Id affectedRecordId, String actionTaken, String originalValue,
+                        String newValue, String status, String errorMessage, String snapshotJson, String recordNameOverride) {
         // Check create permission
         if (!Schema.sObjectType.Remediation_Log__c.isCreateable()) {
             return; // Silently skip logging if no permission
@@ -1098,8 +1166,12 @@ public with sharing class PatternFixService {
                 Schema.SObjectType sType = affectedRecordId.getSObjectType();
                 objectApiName = sType.getDescribe().getName();
 
-                // Extract record name from snapshot if available (avoids SOQL-in-loop)
-                if (String.isNotBlank(snapshotJson)) {
+                // Priority 1: Use explicit override if provided
+                if (String.isNotBlank(recordNameOverride)) {
+                    recordName = recordNameOverride;
+                }
+                // Priority 2: Extract record name from snapshot if available (avoids SOQL-in-loop)
+                else if (String.isNotBlank(snapshotJson)) {
                     try {
                         Map<String, Object> snapshotData = (Map<String, Object>) JSON.deserializeUntyped(snapshotJson);
                         String nameField = getNameFieldForObject(objectApiName);
@@ -1158,8 +1230,10 @@ public with sharing class PatternFixService {
             return;
         }
 
+        // Strip inaccessible fields before insert for FLS enforcement
+        SObjectAccessDecision decision = Security.stripInaccessible(AccessType.CREATABLE, pendingLogs);
         // Use allOrNone = false to not fail the main operation if logging fails
-        Database.SaveResult[] results = Database.insert(pendingLogs, false);
+        Database.SaveResult[] results = Database.insert(decision.getRecords(), false);
 
         // Log any failures for debugging
         for (Integer i = 0; i < results.size(); i++) {
@@ -1273,5 +1347,56 @@ public with sharing class PatternFixService {
             System.debug(LoggingLevel.WARN, 'Error getting snapshot fields for ' + objectApiName + ': ' + e.getMessage());
             return 'Id';
         }
+    }
+
+    /**
+     * @description Bulk-queries the Name field for a set of record IDs.
+     * Uses getNameFieldForObject() to determine the correct name field per object type.
+     * Field and object names are validated via Schema.describe (not string escaping)
+     * to satisfy AppExchange Security Review requirements for dynamic SOQL.
+     * @param recordIds List of record IDs to query names for
+     * @return Map of record ID to name string
+     */
+    private Map<Id, String> queryRecordNames(List<Id> recordIds) {
+        Map<Id, String> nameMap = new Map<Id, String>();
+        if (recordIds == null || recordIds.isEmpty()) {
+            return nameMap;
+        }
+
+        // Validate object via Schema describe (not string concatenation)
+        Schema.SObjectType sType = recordIds[0].getSObjectType();
+        Schema.DescribeSObjectResult describeResult = sType.getDescribe();
+        String objectName = describeResult.getName();
+        String nameField = getNameFieldForObject(objectName);
+
+        if (String.isBlank(nameField)) {
+            return nameMap;
+        }
+
+        // Validate field exists in object's field map (Schema-safe)
+        Map<String, Schema.SObjectField> fieldMap = describeResult.fields.getMap();
+        if (!fieldMap.containsKey(nameField.toLowerCase())) {
+            return nameMap;
+        }
+
+        try {
+            List<Id> idsToQuery = recordIds;
+            // Both objectName (from describe.getName()) and nameField (validated against fieldMap)
+            // are Schema-derived values, making this dynamic SOQL safe from injection.
+            String soql = 'SELECT Id, ' + nameField +
+                ' FROM ' + objectName +
+                ' WHERE Id IN :idsToQuery WITH USER_MODE';
+            List<SObject> records = Database.query(soql);  // NOPMD - dynamic SOQL safe: field/object from Schema describe
+            for (SObject rec : records) {
+                Object nameValue = rec.get(nameField);
+                if (nameValue != null) {
+                    nameMap.put(rec.Id, String.valueOf(nameValue));
+                }
+            }
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'Could not query record names for ' + objectName + ': ' + e.getMessage());
+        }
+
+        return nameMap;
     }
 }

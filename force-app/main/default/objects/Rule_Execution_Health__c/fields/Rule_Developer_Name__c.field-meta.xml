@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Rule_Developer_Name__c</fullName>
+    <caseSensitive>false</caseSensitive>
+    <description>Maps to Behavior_Pattern_Rule__mdt.DeveloperName. Used as the unique external ID for upsert operations.</description>
+    <externalId>true</externalId>
+    <label>Rule Developer Name</label>
+    <length>255</length>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>true</unique>
+</CustomField>

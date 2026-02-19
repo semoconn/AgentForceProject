@@ -1,0 +1,11 @@
+Subject,Status,Priority,Origin,Description,AccountId,CreatedDate,LastModifiedDate
+"Stale Case 14-Day BULK #1",New,Medium,Web,"For Stale_Case_14 pattern",001KY00000KcyUIYAZ,2026-01-10T10:00:00.000Z,2026-01-10T10:00:00.000Z
+"Stale Case 14-Day BULK #2",New,High,Email,"For Stale_Case_14 pattern",001KY00000KcyUIYAZ,2026-01-11T10:00:00.000Z,2026-01-11T10:00:00.000Z
+"Stale Case 14-Day BULK #3",Working,Medium,Phone,"For Stale_Case_14 pattern",001KY00000Kd0dXYAR,2026-01-12T10:00:00.000Z,2026-01-12T10:00:00.000Z
+"Stale Case 14-Day BULK #4",New,Low,Web,"For Stale_Case_14 pattern",001KY00000Kd0dXYAR,2026-01-13T10:00:00.000Z,2026-01-13T10:00:00.000Z
+"Stale Case 14-Day BULK #5",New,High,Email,"For Stale_Case_14 pattern",001KY00000KcyUIYAZ,2026-01-14T10:00:00.000Z,2026-01-14T10:00:00.000Z
+"Stale Case 30-Day BULK #1",New,Low,Email,"For Stale_Case_30 pattern",001KY00000KcyUIYAZ,2025-12-28T10:00:00.000Z,2025-12-28T10:00:00.000Z
+"Stale Case 30-Day BULK #2",New,Medium,Web,"For Stale_Case_30 pattern",001KY00000KcyUIYAZ,2025-12-25T10:00:00.000Z,2025-12-25T10:00:00.000Z
+"Stale Case 30-Day BULK #3",Working,Low,Phone,"For Stale_Case_30 pattern",001KY00000Kd0dXYAR,2025-12-20T10:00:00.000Z,2025-12-20T10:00:00.000Z
+"Stale Case 30-Day BULK #4",New,High,Email,"For Stale_Case_30 pattern",001KY00000Kd0dXYAR,2025-12-15T10:00:00.000Z,2025-12-15T10:00:00.000Z
+"Stale Case 30-Day BULK #5",New,Medium,Web,"For Stale_Case_30 pattern",001KY00000KcyUIYAZ,2025-12-10T10:00:00.000Z,2025-12-10T10:00:00.000Z

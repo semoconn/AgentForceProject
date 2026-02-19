@@ -35,7 +35,59 @@ private with sharing class SolutionGuideControllerTest {
         // Test Path 5: Not Found (Else block)
         Map<String, Object> result5 = SolutionGuideController.getSolutionGuide('A_KEY_THAT_DOES_NOT_EXIST');
         System.assertEquals('Solution Not Available', result5.get('title'), 'Should return default title for a non-existent key');
-        
+
         Test.stopTest();
+    }
+
+    @isTest
+    static void testGetSolutionGuide_MetadataPath() {
+        // Contact_Data_Gap has manualFixSteps in its Fix_Config__c metadata
+        Test.startTest();
+        Map<String, Object> result = SolutionGuideController.getSolutionGuide('Contact_Data_Gap');
+        Test.stopTest();
+
+        System.assertNotEquals(null, result, 'Should return a solution');
+        // Metadata path returns 'How to Fix: ...' title format
+        String title = (String)result.get('title');
+        System.assert(title != null && title.startsWith('How to Fix:'),
+            'Metadata solution should have "How to Fix:" title prefix. Got: ' + title);
+        System.assertEquals('metadata', result.get('source'), 'Should flag source as metadata');
+        List<String> steps = (List<String>)result.get('steps');
+        System.assert(steps != null && steps.size() > 0, 'Metadata solution should have steps');
+    }
+
+    @isTest
+    static void testGetSolutionGuide_NullKey() {
+        Test.startTest();
+        Map<String, Object> result = SolutionGuideController.getSolutionGuide(null);
+        Test.stopTest();
+
+        // Null key: getMetadataSolutionGuide returns null (blank check), falls through to else block
+        System.assertEquals('Solution Not Available', result.get('title'),
+            'Null key should fall through to default solution');
+    }
+
+    @isTest
+    static void testGetSolutionGuide_BlankKey() {
+        Test.startTest();
+        Map<String, Object> result = SolutionGuideController.getSolutionGuide('');
+        Test.stopTest();
+
+        System.assertEquals('Solution Not Available', result.get('title'),
+            'Blank key should fall through to default solution');
+    }
+
+    @isTest
+    static void testGetSolutionGuide_TimestampedMetadataKey() {
+        // Test extractBaseRuleName with a timestamped key that matches a real CMDT rule
+        Test.startTest();
+        Map<String, Object> result = SolutionGuideController.getSolutionGuide('Contact_Data_Gap_1767994173771');
+        Test.stopTest();
+
+        System.assertNotEquals(null, result, 'Should return a solution for timestamped key');
+        String title = (String)result.get('title');
+        // Should extract base name 'Contact_Data_Gap' and find metadata
+        System.assert(title != null && title.startsWith('How to Fix:'),
+            'Timestamped key should resolve via metadata. Got: ' + title);
     }
 }

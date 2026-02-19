@@ -681,28 +681,11 @@ public with sharing class WorkflowAnalyticsController {
             Decimal fixedImpactScore = fixedCount * costPerIncident;
 
             if (objName == 'opportunity') {
-                // Query remaining Opportunity records to sum actual Amount values
-                if (!remaining.isEmpty()) {
-                    try {
-                        List<Id> remainingIds = new List<Id>();
-                        for (String idStr : remaining) {
-                            String trimmed = idStr.trim();
-                            if (String.isNotBlank(trimmed)) {
-                                remainingIds.add(Id.valueOf(trimmed));
-                            }
-                        }
+                // For Opportunities, Impact_Score__c reflects the sum of ALL matching
+                // Opportunity Amounts (not just the ~5 samples in Example_Records__c).
+                // Use subtraction: remaining = current total minus fixed amounts.
 
-                        if (!remainingIds.isEmpty()) {
-                            // Use sharing-aware helper to ensure we only aggregate accessible records
-                            remainingImpactScore = getOpportunityAmountWithSharing(remainingIds);
-                        }
-                    } catch (Exception oppEx) {
-                        System.debug(LoggingLevel.WARN, 'Failed to query Opportunity amounts for remaining impact: ' + oppEx.getMessage());
-                        remainingImpactScore = actualRemainingCount * costPerIncident;
-                    }
-                }
-
-                // Query fixed Opportunity records to sum their Amount values
+                // Step 1: Query fixed Opportunity records to sum their actual Amount values
                 if (!fixedIdSet.isEmpty()) {
                     try {
                         List<Id> fixedIds = new List<Id>();
@@ -713,12 +696,23 @@ public with sharing class WorkflowAnalyticsController {
                         }
 
                         if (!fixedIds.isEmpty()) {
-                            // Use sharing-aware helper to ensure we only aggregate accessible records
                             fixedImpactScore = getOpportunityAmountWithSharing(fixedIds);
                         }
                     } catch (Exception fixedEx) {
                         System.debug(LoggingLevel.WARN, 'Failed to query fixed Opportunity amounts: ' + fixedEx.getMessage());
+                        // fixedImpactScore retains the fallback: fixedCount * costPerIncident
                     }
+                }
+
+                // Step 2: Remaining impact = current total minus what was just fixed
+                if (original.Impact_Score__c != null && original.Impact_Score__c > 0) {
+                    remainingImpactScore = original.Impact_Score__c - fixedImpactScore;
+                    if (remainingImpactScore < 0) {
+                        remainingImpactScore = 0;
+                    }
+                } else {
+                    // Fallback: if no existing impact score, use count-based calculation
+                    remainingImpactScore = actualRemainingCount * costPerIncident;
                 }
             } else {
                 remainingImpactScore = actualRemainingCount * costPerIncident;
@@ -764,18 +758,16 @@ public with sharing class WorkflowAnalyticsController {
             original.Fixed_Record_Ids__c = cumulativeFixedIds;
 
             // Calculate impact score for resolved records (for ROI reporting)
-            if (objName == 'opportunity' && String.isNotBlank(fixedRecordIds)) {
+            if (objName == 'opportunity' && !fixedIdSet.isEmpty()) {
                 try {
                     List<Id> resolvedIds = new List<Id>();
-                    for (String idStr : fixedRecordIds.split(',')) {
-                        String trimmed = idStr.trim();
-                        if (String.isNotBlank(trimmed)) {
-                            resolvedIds.add(Id.valueOf(trimmed));
+                    for (String idStr : fixedIdSet) {
+                        if (String.isNotBlank(idStr)) {
+                            resolvedIds.add(Id.valueOf(idStr.trim()));
                         }
                     }
 
                     if (!resolvedIds.isEmpty()) {
-                        // Use sharing-aware helper to ensure we only aggregate accessible records
                         Decimal resolvedAmount = getOpportunityAmountWithSharing(resolvedIds);
                         if (resolvedAmount > 0) {
                             original.Impact_Score__c = resolvedAmount;
@@ -987,17 +979,52 @@ public with sharing class WorkflowAnalyticsController {
         }
 
         try {
+            // Query the pain point to get its Unique_Key__c for dismissal lookup
+            List<Identified_Pain_Point__c> points = [
+                SELECT Id, Unique_Key__c
+                FROM Identified_Pain_Point__c
+                WHERE Id = :painPointId
+                WITH SECURITY_ENFORCED
+                LIMIT 1
+            ];
+
+            if (points.isEmpty()) {
+                throw new AuraHandledException('Pain Point not found.');
+            }
+
+            String uniqueKey = points[0].Unique_Key__c;
+
+            // Update the pain point status back to New
             Identified_Pain_Point__c point = new Identified_Pain_Point__c(
                 Id = painPointId,
                 Status__c = 'New'
             );
 
-            // Enforce Security on Update
             SObjectAccessDecision decision = Security.stripInaccessible(AccessType.UPDATABLE, new List<Identified_Pain_Point__c>{point});
             update decision.getRecords();
 
+            // Delete the matching Suggestion_Dismissal__c so the pattern is re-evaluated on next batch run
+            // Note: No WITH SECURITY_ENFORCED here because Dismissal_Key__c is a required field
+            // without explicit fieldPermissions (required fields cannot have them). The isDeletable()
+            // CRUD check above guards the operation.
+            if (String.isNotBlank(uniqueKey) && Schema.sObjectType.Suggestion_Dismissal__c.isDeletable()) {
+                List<Suggestion_Dismissal__c> dismissals = [
+                    SELECT Id
+                    FROM Suggestion_Dismissal__c
+                    WHERE Dismissal_Key__c = :uniqueKey
+                    LIMIT 1
+                ];
+
+                if (!dismissals.isEmpty()) {
+                    delete dismissals;
+                }
+            }
+
             return 'Suggestion restored successfully.';
+        } catch (AuraHandledException ahe) {
+            throw ahe;
         } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'Error restoring suggestion: ' + e.getMessage() + ' | Stack: ' + e.getStackTraceString());
             throw new AuraHandledException('Error restoring suggestion.');
         }
     }
@@ -1104,32 +1131,32 @@ public with sharing class WorkflowAnalyticsController {
         Map<String, Integer> stats = new Map<String, Integer>();
 
         try {
-            // Query with USER_MODE to respect sharing rules, then aggregate in Apex
-            // This prevents information disclosure where aggregate counts include inaccessible records
-            List<Behavior_Log__c> accessibleLogs = [
-                SELECT Id, User__c, Object_API_Name__c
-                FROM Behavior_Log__c
-                WITH USER_MODE
-                LIMIT 50000
-            ];
+            // Query pre-aggregated summaries instead of scanning 50K raw logs
+            if (Schema.sObjectType.Behavior_Log_Summary__c.isAccessible()) {
+                List<AggregateResult> summaryAgg = [
+                    SELECT COUNT_DISTINCT(User__c) uniqueUsers,
+                           COUNT_DISTINCT(Object_API_Name__c) uniqueObjects,
+                           SUM(Event_Count__c) totalEvents
+                    FROM Behavior_Log_Summary__c
+                    WITH USER_MODE
+                ];
 
-            // Count total accessible logs
-            stats.put('totalLogs', accessibleLogs.size());
-
-            // Count unique users from accessible logs
-            Set<Id> uniqueUsers = new Set<Id>();
-            Set<String> uniqueObjects = new Set<String>();
-            for (Behavior_Log__c log : accessibleLogs) {
-                if (log.User__c != null) {
-                    uniqueUsers.add(log.User__c);
+                if (!summaryAgg.isEmpty()) {
+                    AggregateResult ar = summaryAgg[0];
+                    Decimal totalEvents = (Decimal) ar.get('totalEvents');
+                    stats.put('totalLogs', totalEvents != null ? totalEvents.intValue() : 0);
+                    stats.put('uniqueUsers', (Integer) ar.get('uniqueUsers'));
+                    stats.put('objectsTracked', (Integer) ar.get('uniqueObjects'));
+                } else {
+                    stats.put('totalLogs', 0);
+                    stats.put('uniqueUsers', 0);
+                    stats.put('objectsTracked', 0);
                 }
-                if (String.isNotBlank(log.Object_API_Name__c)) {
-                    uniqueObjects.add(log.Object_API_Name__c);
-                }
+            } else {
+                stats.put('totalLogs', 0);
+                stats.put('uniqueUsers', 0);
+                stats.put('objectsTracked', 0);
             }
-
-            stats.put('uniqueUsers', uniqueUsers.size());
-            stats.put('objectsTracked', uniqueObjects.size());
         } catch (Exception e) {
             throw new AuraHandledException('Unable to calculate stats.');
         }
@@ -1142,39 +1169,28 @@ public with sharing class WorkflowAnalyticsController {
         List<TopAction> actions = new List<TopAction>();
 
         try {
-            // Query with USER_MODE to respect sharing rules, then aggregate in Apex
-            // This prevents information disclosure where aggregate counts include inaccessible records
-            List<Behavior_Log__c> accessibleLogs = [
-                SELECT Id, Action_Name__c, Object_API_Name__c
-                FROM Behavior_Log__c
-                WHERE CreatedDate = LAST_N_DAYS:30
-                WITH USER_MODE
-                LIMIT 50000
-            ];
+            // Query pre-aggregated summaries grouped by action and object
+            if (Schema.sObjectType.Behavior_Log_Summary__c.isAccessible()) {
+                List<AggregateResult> actionAgg = [
+                    SELECT Action_Name__c, Object_API_Name__c, SUM(Event_Count__c) total
+                    FROM Behavior_Log_Summary__c
+                    WHERE Log_Date__c = LAST_N_DAYS:30
+                    WITH USER_MODE
+                    GROUP BY Action_Name__c, Object_API_Name__c
+                    ORDER BY SUM(Event_Count__c) DESC
+                    LIMIT 10
+                ];
 
-            // Aggregate counts by action+object combination in Apex
-            Map<String, TopAction> actionMap = new Map<String, TopAction>();
-            for (Behavior_Log__c log : accessibleLogs) {
-                String key = (log.Action_Name__c != null ? log.Action_Name__c : '') +
-                             (log.Object_API_Name__c != null ? log.Object_API_Name__c : '');
-
-                if (!actionMap.containsKey(key)) {
+                for (AggregateResult ar : actionAgg) {
                     TopAction ta = new TopAction();
-                    ta.actionName = log.Action_Name__c;
-                    ta.objectName = log.Object_API_Name__c;
-                    ta.count = 0;
-                    ta.id = key;
-                    actionMap.put(key, ta);
+                    ta.actionName = (String) ar.get(String.valueOf(Behavior_Log_Summary__c.Action_Name__c));
+                    ta.objectName = (String) ar.get(String.valueOf(Behavior_Log_Summary__c.Object_API_Name__c));
+                    Decimal total = (Decimal) ar.get('total');
+                    ta.count = total != null ? total.intValue() : 0;
+                    ta.id = (ta.actionName != null ? ta.actionName : '') +
+                            (ta.objectName != null ? ta.objectName : '');
+                    actions.add(ta);
                 }
-                actionMap.get(key).count++;
-            }
-
-            // Sort by count descending and take top 10
-            List<TopAction> allActions = actionMap.values();
-            allActions.sort(new TopActionComparator());
-
-            for (Integer i = 0; i < Math.min(10, allActions.size()); i++) {
-                actions.add(allActions[i]);
             }
         } catch (Exception e) {
             throw new AuraHandledException('Error fetching top actions.');
