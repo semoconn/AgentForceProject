@@ -130,9 +130,8 @@ export default class QueryConditionBuilder extends LightningElement {
     _hasLoadedFields = false;
 
     connectedCallback() {
-        if (this.initialCondition) {
-            this.parseInitialCondition();
-        }
+        // Parsing is deferred to after loadFields() completes
+        // so field labels and types are available for the parser
     }
 
     renderedCallback() {
@@ -182,6 +181,11 @@ export default class QueryConditionBuilder extends LightningElement {
         }
 
         this.isLoadingFields = false;
+
+        // Parse initial condition now that fields are available
+        if (this.initialCondition && this.conditions.length === 0) {
+            this.parseInitialCondition();
+        }
     }
 
     // Computed properties
@@ -615,22 +619,286 @@ export default class QueryConditionBuilder extends LightningElement {
         }).join(' ');
     }
 
-    // Set conditions from a query string (for editing)
+    // Parse a SOQL condition string back into individual visual condition rows
     parseInitialCondition() {
-        // For simplicity, we'll just display the raw condition
-        // A full parser would be complex; users can clear and rebuild
-        if (this.initialCondition) {
-            this.conditions = [{
-                id: Date.now(),
-                field: 'Custom',
-                fieldLabel: 'Custom Condition',
-                operator: '',
-                operatorLabel: '',
-                value: '',
-                logic: '',
-                conditionString: this.initialCondition
-            }];
+        if (!this.initialCondition) return;
+
+        const rawCondition = this.initialCondition.trim();
+
+        // Split into individual condition fragments on top-level AND/OR
+        const fragments = this._splitConditionFragments(rawCondition);
+
+        const parsedConditions = [];
+        let hasFailure = false;
+
+        for (const fragment of fragments) {
+            try {
+                const parsed = this._parseSingleCondition(fragment.condition);
+                if (parsed) {
+                    parsed.logic = fragment.logic;
+                    parsed.id = Date.now() + parsedConditions.length;
+                    parsedConditions.push(parsed);
+                } else {
+                    hasFailure = true;
+                    break;
+                }
+            } catch (e) {
+                hasFailure = true;
+                break;
+            }
         }
+
+        // All-or-nothing: if any fragment fails, fall back to raw display
+        if (hasFailure || parsedConditions.length === 0) {
+            this._fallbackToRawCondition(rawCondition);
+        } else {
+            this.conditions = parsedConditions;
+        }
+    }
+
+    // Split a condition string on top-level AND/OR (not inside parens or quotes)
+    _splitConditionFragments(conditionStr) {
+        const fragments = [];
+        let depth = 0;
+        let inQuote = false;
+        let current = '';
+        let logic = '';
+
+        for (let i = 0; i < conditionStr.length; i++) {
+            const c = conditionStr[i];
+
+            if (c === "'" && !inQuote) { inQuote = true; current += c; continue; }
+            if (c === "'" && inQuote) { inQuote = false; current += c; continue; }
+            if (inQuote) { current += c; continue; }
+
+            if (c === '(') { depth++; current += c; continue; }
+            if (c === ')') { depth--; current += c; continue; }
+
+            // Only split at depth 0
+            if (depth === 0) {
+                const remaining = conditionStr.substring(i);
+                const andMatch = remaining.match(/^(\s+AND\s+)/i);
+                const orMatch = remaining.match(/^(\s+OR\s+)/i);
+
+                if (andMatch) {
+                    if (current.trim()) {
+                        fragments.push({ logic, condition: current.trim() });
+                    }
+                    logic = 'AND';
+                    current = '';
+                    i += andMatch[1].length - 1;
+                    continue;
+                }
+                if (orMatch) {
+                    if (current.trim()) {
+                        fragments.push({ logic, condition: current.trim() });
+                    }
+                    logic = 'OR';
+                    current = '';
+                    i += orMatch[1].length - 1;
+                    continue;
+                }
+            }
+
+            current += c;
+        }
+
+        if (current.trim()) {
+            fragments.push({ logic, condition: current.trim() });
+        }
+
+        return fragments;
+    }
+
+    // Parse a single SOQL condition fragment into a condition object
+    _parseSingleCondition(fragment) {
+        let condition = fragment.trim();
+
+        // Strip simple wrapping parens if they don't contain top-level logic
+        while (condition.startsWith('(') && condition.endsWith(')') &&
+               !this._containsTopLevelLogic(condition.slice(1, -1))) {
+            condition = condition.slice(1, -1).trim();
+        }
+
+        // If it still contains parens with logic inside, we can't parse it
+        if (this._containsTopLevelLogic(condition)) {
+            return null;
+        }
+
+        // If it contains SOQL functions like DAY_IN_WEEK(), we can't parse it
+        if (/\w+\(/.test(condition) && !/LIKE|IN|NOT/.test(condition.split('(')[0].trim().split(/\s+/).pop())) {
+            return null;
+        }
+
+        let match;
+
+        // Pattern 1: field = null
+        match = condition.match(/^(\S+)\s*=\s*null$/i);
+        if (match) {
+            return this._buildConditionObj(match[1], 'IS_NULL', null, 'null');
+        }
+
+        // Pattern 2: field != null
+        match = condition.match(/^(\S+)\s*!=\s*null$/i);
+        if (match) {
+            return this._buildConditionObj(match[1], 'IS_NOT_NULL', null, 'not null');
+        }
+
+        // Pattern 3: field LIKE '%value%' (contains)
+        match = condition.match(/^(\S+)\s+LIKE\s+'%(.+)%'$/i);
+        if (match) {
+            return this._buildConditionObj(match[1], 'LIKE', match[2], match[2]);
+        }
+
+        // Pattern 4: field LIKE 'value%' (starts with) — must not start with %
+        match = condition.match(/^(\S+)\s+LIKE\s+'([^%].*)%'$/i);
+        if (match) {
+            return this._buildConditionObj(match[1], 'STARTS', match[2], match[2]);
+        }
+
+        // Pattern 5: field NOT IN ('value1','value2')
+        match = condition.match(/^(\S+)\s+NOT\s+IN\s+\('(.+)'\)$/i);
+        if (match) {
+            return this._buildConditionObj(match[1], 'NOT_IN', match[2], match[2]);
+        }
+
+        // Pattern 6: field IN ('value1','value2')
+        match = condition.match(/^(\S+)\s+IN\s+\('(.+)'\)$/i);
+        if (match) {
+            return this._buildConditionObj(match[1], 'IN', match[2], match[2]);
+        }
+
+        // Pattern 7: field op 'string value' (quoted)
+        match = condition.match(/^(\S+)\s*(=|!=|>=?|<=?)\s+'(.+)'$/);
+        if (match) {
+            return this._buildConditionObj(match[1], match[2], match[3], match[3]);
+        }
+
+        // Pattern 8: field op DATE_LITERAL:N (e.g., LAST_N_DAYS:30)
+        match = condition.match(/^(\S+)\s*(=|!=|>=?|<=?)\s+(LAST_N_DAYS|NEXT_N_DAYS|LAST_N_MONTHS|NEXT_N_MONTHS|LAST_N_WEEKS|NEXT_N_WEEKS):(\d+)$/i);
+        if (match) {
+            const dateLiteral = match[3].toUpperCase();
+            const dateN = match[4];
+            const displayValue = `${dateLiteral}:${dateN}`;
+            return this._buildConditionObj(match[1], match[2], displayValue, displayValue, dateLiteral, dateN);
+        }
+
+        // Pattern 9: field op DATE_LITERAL (e.g., TODAY, LAST_MONTH)
+        const simpleDateLiterals = [
+            'TODAY', 'YESTERDAY', 'TOMORROW',
+            'THIS_WEEK', 'LAST_WEEK', 'NEXT_WEEK',
+            'THIS_MONTH', 'LAST_MONTH', 'NEXT_MONTH',
+            'THIS_QUARTER', 'LAST_QUARTER',
+            'THIS_YEAR', 'LAST_YEAR'
+        ];
+        const dateRegex = new RegExp(
+            `^(\\S+)\\s*(=|!=|>=?|<=?)\\s+(${simpleDateLiterals.join('|')})$`, 'i'
+        );
+        match = condition.match(dateRegex);
+        if (match) {
+            const literal = match[3].toUpperCase();
+            return this._buildConditionObj(match[1], match[2], literal, literal, literal, '');
+        }
+
+        // Pattern 10: field op unquoted value (number/boolean)
+        match = condition.match(/^(\S+)\s*(=|!=|>=?|<=?)\s+(\S+)$/);
+        if (match) {
+            return this._buildConditionObj(match[1], match[2], match[3], match[3]);
+        }
+
+        // No pattern matched
+        return null;
+    }
+
+    // Build a structured condition object from parsed parts
+    _buildConditionObj(fieldApiName, operator, value, displayValue, dateLiteral, dateN) {
+        const field = this.fields.find(f => f.value.toLowerCase() === fieldApiName.toLowerCase());
+        const fieldLabel = field ? field.label : fieldApiName;
+        const fieldType = field ? this.normalizeFieldType(field.dataType) : 'STRING';
+
+        // Look up operator label
+        const operatorSet = OPERATORS[fieldType] || OPERATORS.STRING;
+        const opEntry = operatorSet.find(o => o.value === operator);
+        const operatorLabel = opEntry ? opEntry.label : operator;
+
+        // Reconstruct conditionString as buildConditionString would produce
+        const conditionString = this._reconstructConditionString(
+            field ? field.value : fieldApiName, operator, value, fieldType, dateLiteral, dateN
+        );
+
+        // Display value for booleans
+        let finalDisplayValue = displayValue || '';
+        if (fieldType === 'BOOLEAN' && (value === 'true' || value === 'false')) {
+            finalDisplayValue = value === 'true' ? 'True' : 'False';
+        }
+
+        return {
+            id: 0,
+            field: field ? field.value : fieldApiName,
+            fieldLabel,
+            operator,
+            operatorLabel,
+            value: finalDisplayValue,
+            logic: '',
+            conditionString
+        };
+    }
+
+    // Reconstruct a SOQL condition string from parsed parts (mirrors buildConditionString)
+    _reconstructConditionString(field, op, value, fieldType, dateLiteral, dateN) {
+        if (op === 'IS_NULL') return `${field} = null`;
+        if (op === 'IS_NOT_NULL') return `${field} != null`;
+        if (op === 'LIKE') return `${field} LIKE '%${value}%'`;
+        if (op === 'STARTS') return `${field} LIKE '${value}%'`;
+        if (op === 'IN') return `${field} IN ('${value}')`;
+        if (op === 'NOT_IN') return `${field} NOT IN ('${value}')`;
+
+        if (dateLiteral) {
+            const dateValue = dateN ? `${dateLiteral}:${dateN}` : dateLiteral;
+            return `${field} ${op} ${dateValue}`;
+        }
+
+        if (fieldType === 'STRING' || fieldType === 'ID' || fieldType === 'REFERENCE') {
+            return `${field} ${op} '${value}'`;
+        }
+
+        return `${field} ${op} ${value}`;
+    }
+
+    // Check if a string contains top-level AND/OR (not inside parens or quotes)
+    _containsTopLevelLogic(str) {
+        let depth = 0;
+        let inQuote = false;
+        for (let i = 0; i < str.length; i++) {
+            const c = str[i];
+            if (c === "'" && !inQuote) { inQuote = true; continue; }
+            if (c === "'" && inQuote) { inQuote = false; continue; }
+            if (inQuote) continue;
+            if (c === '(') { depth++; continue; }
+            if (c === ')') { depth--; continue; }
+            if (depth === 0) {
+                const remaining = str.substring(i);
+                if (/^\s+AND\s+/i.test(remaining) || /^\s+OR\s+/i.test(remaining)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    // Fallback: show raw SOQL text when parsing fails
+    _fallbackToRawCondition(rawCondition) {
+        this.conditions = [{
+            id: Date.now(),
+            field: 'Custom',
+            fieldLabel: 'Raw SOQL',
+            operator: '',
+            operatorLabel: '',
+            value: '',
+            logic: '',
+            conditionString: rawCondition,
+            isRawFallback: true
+        }];
     }
 
     // Fire change event to parent

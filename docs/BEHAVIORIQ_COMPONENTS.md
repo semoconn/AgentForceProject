@@ -307,9 +307,6 @@ Preview component shown before executing a fix action. Displays which records wi
 ### BehaviorIQ_Admin
 Full administrative access to all BehaviorIQ objects, fields, Apex classes, custom metadata types, and tabs. Grants create/read/update/delete/viewAll/modifyAll on all custom objects. Intended for Salesforce administrators managing the BehaviorIQ application.
 
-### BehaviorIQ_User
-Standard user-level access to BehaviorIQ. Provides read access to pain points, behavior logs, and dashboard data. Does not grant configuration or remediation permissions.
-
 ---
 
 ## Custom Permissions

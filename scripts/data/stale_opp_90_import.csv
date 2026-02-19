@@ -1,0 +1,9 @@
+Name,StageName,CloseDate,Amount,LastStageChangeDate,Description
+BIQ Test - Stale Opp 90 Days 1,Prospecting,2026-06-30,75000,2025-10-01T10:00:00.000Z,Stale opportunity stuck in Prospecting for 90+ days - test data for Stale_Opp_90 pattern
+BIQ Test - Stale Opp 90 Days 2,Qualification,2026-06-30,125000,2025-09-15T14:30:00.000Z,Stale opportunity stuck in Qualification for 90+ days - test data for Stale_Opp_90 pattern
+BIQ Test - Stale Opp 90 Days 3,Needs Analysis,2026-07-15,250000,2025-10-10T09:15:00.000Z,Stale opportunity stuck in Needs Analysis for 90+ days - test data for Stale_Opp_90 pattern
+BIQ Test - Stale Opp 90 Days 4,Value Proposition,2026-07-31,180000,2025-09-20T11:45:00.000Z,Stale opportunity stuck in Value Proposition for 90+ days - test data for Stale_Opp_90 pattern
+BIQ Test - Stale Opp 90 Days 5,Prospecting,2026-08-15,95000,2025-10-05T08:00:00.000Z,Stale opportunity stuck in Prospecting for 90+ days - test data for Stale_Opp_90 pattern
+BIQ Test - Stale Opp 90 Days 6,Qualification,2026-08-31,320000,2025-09-25T16:20:00.000Z,Stale opportunity stuck in Qualification for 90+ days - test data for Stale_Opp_90 pattern
+BIQ Test - Stale Opp 90 Days 7,Needs Analysis,2026-06-15,145000,2025-10-15T13:00:00.000Z,Stale opportunity stuck in Needs Analysis for 90+ days - test data for Stale_Opp_90 pattern
+BIQ Test - Stale Opp 90 Days 8,Prospecting,2026-09-30,210000,2025-09-30T15:30:00.000Z,Stale opportunity stuck in Prospecting for 90+ days - test data for Stale_Opp_90 pattern

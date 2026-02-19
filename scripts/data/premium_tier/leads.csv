@@ -1,0 +1,8 @@
+FirstName,LastName,Company,Status,Email,Phone,CreatedDate,OwnerId
+"Hoarded","Lead1","Hoarding Corp","Open - Not Contacted","hoarded1@test.com","555-1001",2026-01-20T10:00:00.000Z,005KY000003L4zXYAS
+"Hoarded","Lead2","Hoarding Inc","Open - Not Contacted","hoarded2@test.com","555-1002",2026-01-19T10:00:00.000Z,005KY000003L4zXYAS
+"Hoarded","Lead3","Hoarding LLC","Open - Not Contacted","hoarded3@test.com","555-1003",2026-01-18T10:00:00.000Z,005KY000003L4zXYAS
+"Hoarded","Lead4","Hoarding Co","Open - Not Contacted","hoarded4@test.com","555-1004",2026-01-17T10:00:00.000Z,005KY000003L4zXYAS
+"Hoarded","Lead5","Hoarding Enterprises","Open - Not Contacted","hoarded5@test.com","555-1005",2026-01-16T10:00:00.000Z,005KY000003L4zXYAS
+"Recent","Lead1","Fresh Company","Open - Not Contacted","recent1@test.com","555-2001",2026-01-29T10:00:00.000Z,005KY000003L4zXYAS
+"Recent","Lead2","Fresh Inc","Open - Not Contacted","recent2@test.com","555-2002",2026-01-29T14:00:00.000Z,005KY000003L4zXYAS

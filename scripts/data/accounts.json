@@ -1,0 +1,16 @@
+{
+  "records": [
+    {
+      "attributes": {"type": "Account", "referenceId": "TestAccount1"},
+      "Name": "Test Enterprise Corp",
+      "Industry": "Technology",
+      "Type": "Customer - Direct"
+    },
+    {
+      "attributes": {"type": "Account", "referenceId": "TestAccount2"},
+      "Name": "Test SMB Company",
+      "Industry": "Financial Services",
+      "Type": "Customer - Channel"
+    }
+  ]
+}

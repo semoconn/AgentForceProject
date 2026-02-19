@@ -1,0 +1,58 @@
+{
+  "records": [
+    {
+      "attributes": {"type": "Case", "referenceId": "WeekendSunday1"},
+      "Subject": "Weekend Case - Sunday Jan 18 Morning",
+      "Status": "New",
+      "Priority": "High",
+      "Origin": "Web",
+      "Description": "Test case for Weekend_Case_Spike pattern - Sunday in LAST_WEEK",
+      "CreatedDate": "2026-01-18T08:00:00.000Z"
+    },
+    {
+      "attributes": {"type": "Case", "referenceId": "WeekendSunday2"},
+      "Subject": "Weekend Case - Sunday Jan 18 Afternoon",
+      "Status": "New",
+      "Priority": "High",
+      "Origin": "Phone",
+      "Description": "Test case for Weekend_Case_Spike pattern - Sunday in LAST_WEEK",
+      "CreatedDate": "2026-01-18T15:00:00.000Z"
+    },
+    {
+      "attributes": {"type": "Case", "referenceId": "WeekendSunday3"},
+      "Subject": "Weekend Case - Sunday Jan 18 Evening",
+      "Status": "Working",
+      "Priority": "Medium",
+      "Origin": "Email",
+      "Description": "Test case for Weekend_Case_Spike pattern - Sunday in LAST_WEEK",
+      "CreatedDate": "2026-01-18T22:00:00.000Z"
+    },
+    {
+      "attributes": {"type": "Case", "referenceId": "WeekendSaturday1"},
+      "Subject": "Weekend Case - Saturday Jan 24 Morning",
+      "Status": "New",
+      "Priority": "High",
+      "Origin": "Web",
+      "Description": "Test case for Weekend_Case_Spike pattern - Saturday in LAST_WEEK",
+      "CreatedDate": "2026-01-24T09:00:00.000Z"
+    },
+    {
+      "attributes": {"type": "Case", "referenceId": "WeekendSaturday2"},
+      "Subject": "Weekend Case - Saturday Jan 24 Afternoon",
+      "Status": "New",
+      "Priority": "Medium",
+      "Origin": "Phone",
+      "Description": "Test case for Weekend_Case_Spike pattern - Saturday in LAST_WEEK",
+      "CreatedDate": "2026-01-24T15:00:00.000Z"
+    },
+    {
+      "attributes": {"type": "Case", "referenceId": "WeekendSaturday3"},
+      "Subject": "Weekend Case - Saturday Jan 24 Night",
+      "Status": "Escalated",
+      "Priority": "High",
+      "Origin": "Web",
+      "Description": "Test case for Weekend_Case_Spike pattern - Saturday in LAST_WEEK",
+      "CreatedDate": "2026-01-24T23:00:00.000Z"
+    }
+  ]
+}

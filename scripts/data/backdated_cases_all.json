@@ -1,0 +1,164 @@
+{
+  "records": [
+    {
+      "attributes": {"type": "Case", "referenceId": "Stale14_1"},
+      "Subject": "Stale Case 14-Day #1",
+      "Status": "New",
+      "Priority": "Medium",
+      "Origin": "Web",
+      "Description": "For Stale_Case_14 pattern - 15 days old",
+      "AccountId": "001KY00000KcyUIYAZ",
+      "CreatedDate": "2026-01-14T10:00:00.000Z"
+    },
+    {
+      "attributes": {"type": "Case", "referenceId": "Stale14_2"},
+      "Subject": "Stale Case 14-Day #2",
+      "Status": "New",
+      "Priority": "High",
+      "Origin": "Email",
+      "Description": "For Stale_Case_14 pattern - 16 days old",
+      "AccountId": "001KY00000KcyUIYAZ",
+      "CreatedDate": "2026-01-13T10:00:00.000Z"
+    },
+    {
+      "attributes": {"type": "Case", "referenceId": "Stale14_3"},
+      "Subject": "Stale Case 14-Day #3",
+      "Status": "Working",
+      "Priority": "Medium",
+      "Origin": "Phone",
+      "Description": "For Stale_Case_14 pattern - 17 days old",
+      "AccountId": "001KY00000Kd0dXYAR",
+      "CreatedDate": "2026-01-12T10:00:00.000Z"
+    },
+    {
+      "attributes": {"type": "Case", "referenceId": "Stale14_4"},
+      "Subject": "Stale Case 14-Day #4",
+      "Status": "New",
+      "Priority": "Low",
+      "Origin": "Web",
+      "Description": "For Stale_Case_14 pattern - 18 days old",
+      "AccountId": "001KY00000Kd0dXYAR",
+      "CreatedDate": "2026-01-11T10:00:00.000Z"
+    },
+    {
+      "attributes": {"type": "Case", "referenceId": "Stale14_5"},
+      "Subject": "Stale Case 14-Day #5",
+      "Status": "New",
+      "Priority": "High",
+      "Origin": "Email",
+      "Description": "For Stale_Case_14 pattern - 19 days old",
+      "AccountId": "001KY00000KcyUIYAZ",
+      "CreatedDate": "2026-01-10T10:00:00.000Z"
+    },
+    {
+      "attributes": {"type": "Case", "referenceId": "Stale30_1"},
+      "Subject": "Stale Case 30-Day #1",
+      "Status": "New",
+      "Priority": "Low",
+      "Origin": "Email",
+      "Description": "For Stale_Case_30 pattern - 32 days old",
+      "AccountId": "001KY00000KcyUIYAZ",
+      "CreatedDate": "2025-12-28T10:00:00.000Z"
+    },
+    {
+      "attributes": {"type": "Case", "referenceId": "Stale30_2"},
+      "Subject": "Stale Case 30-Day #2",
+      "Status": "New",
+      "Priority": "Medium",
+      "Origin": "Web",
+      "Description": "For Stale_Case_30 pattern - 35 days old",
+      "AccountId": "001KY00000KcyUIYAZ",
+      "CreatedDate": "2025-12-25T10:00:00.000Z"
+    },
+    {
+      "attributes": {"type": "Case", "referenceId": "Stale30_3"},
+      "Subject": "Stale Case 30-Day #3",
+      "Status": "Working",
+      "Priority": "Low",
+      "Origin": "Phone",
+      "Description": "For Stale_Case_30 pattern - 40 days old",
+      "AccountId": "001KY00000Kd0dXYAR",
+      "CreatedDate": "2025-12-20T10:00:00.000Z"
+    },
+    {
+      "attributes": {"type": "Case", "referenceId": "Stale30_4"},
+      "Subject": "Stale Case 30-Day #4",
+      "Status": "New",
+      "Priority": "High",
+      "Origin": "Email",
+      "Description": "For Stale_Case_30 pattern - 45 days old",
+      "AccountId": "001KY00000Kd0dXYAR",
+      "CreatedDate": "2025-12-15T10:00:00.000Z"
+    },
+    {
+      "attributes": {"type": "Case", "referenceId": "Stale30_5"},
+      "Subject": "Stale Case 30-Day #5",
+      "Status": "New",
+      "Priority": "Medium",
+      "Origin": "Web",
+      "Description": "For Stale_Case_30 pattern - 50 days old",
+      "AccountId": "001KY00000KcyUIYAZ",
+      "CreatedDate": "2025-12-10T10:00:00.000Z"
+    },
+    {
+      "attributes": {"type": "Case", "referenceId": "WeekendSun1"},
+      "Subject": "Weekend Case - Sunday Jan 18 #1",
+      "Status": "New",
+      "Priority": "High",
+      "Origin": "Web",
+      "Description": "For Weekend_Case_Spike pattern - Sunday in LAST_WEEK",
+      "AccountId": "001KY00000KcyUIYAZ",
+      "CreatedDate": "2026-01-18T08:00:00.000Z"
+    },
+    {
+      "attributes": {"type": "Case", "referenceId": "WeekendSun2"},
+      "Subject": "Weekend Case - Sunday Jan 18 #2",
+      "Status": "New",
+      "Priority": "High",
+      "Origin": "Phone",
+      "Description": "For Weekend_Case_Spike pattern - Sunday in LAST_WEEK",
+      "AccountId": "001KY00000KcyUIYAZ",
+      "CreatedDate": "2026-01-18T15:00:00.000Z"
+    },
+    {
+      "attributes": {"type": "Case", "referenceId": "WeekendSun3"},
+      "Subject": "Weekend Case - Sunday Jan 18 #3",
+      "Status": "Working",
+      "Priority": "Medium",
+      "Origin": "Email",
+      "Description": "For Weekend_Case_Spike pattern - Sunday in LAST_WEEK",
+      "AccountId": "001KY00000Kd0dXYAR",
+      "CreatedDate": "2026-01-18T22:00:00.000Z"
+    },
+    {
+      "attributes": {"type": "Case", "referenceId": "WeekendSat1"},
+      "Subject": "Weekend Case - Saturday Jan 24 #1",
+      "Status": "New",
+      "Priority": "High",
+      "Origin": "Web",
+      "Description": "For Weekend_Case_Spike pattern - Saturday in LAST_WEEK",
+      "AccountId": "001KY00000Kd0dXYAR",
+      "CreatedDate": "2026-01-24T09:00:00.000Z"
+    },
+    {
+      "attributes": {"type": "Case", "referenceId": "WeekendSat2"},
+      "Subject": "Weekend Case - Saturday Jan 24 #2",
+      "Status": "New",
+      "Priority": "Medium",
+      "Origin": "Phone",
+      "Description": "For Weekend_Case_Spike pattern - Saturday in LAST_WEEK",
+      "AccountId": "001KY00000KcyUIYAZ",
+      "CreatedDate": "2026-01-24T15:00:00.000Z"
+    },
+    {
+      "attributes": {"type": "Case", "referenceId": "WeekendSat3"},
+      "Subject": "Weekend Case - Saturday Jan 24 #3",
+      "Status": "New",
+      "Priority": "High",
+      "Origin": "Web",
+      "Description": "For Weekend_Case_Spike pattern - Saturday in LAST_WEEK",
+      "AccountId": "001KY00000Kd0dXYAR",
+      "CreatedDate": "2026-01-24T23:00:00.000Z"
+    }
+  ]
+}

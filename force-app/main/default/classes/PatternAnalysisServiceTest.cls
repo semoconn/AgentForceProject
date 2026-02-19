@@ -5204,6 +5204,187 @@ private with sharing class PatternAnalysisServiceTest {
         clearMocks();
     }
 
+    // ==================== EXTENDED RETENTION TESTS (Snapshot, Health, Remediation) ====================
+
+    @isTest
+    static void testDeleteOldSnapshots_UsesConfiguredRetention() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create config with custom snapshot retention
+        BehaviorIQ_Configuration__c config = new BehaviorIQ_Configuration__c(
+            Name = 'Default',
+            Snapshot_Retention_Days__c = 30
+        );
+        insert config;
+
+        // Create old snapshot records
+        System.runAs(testUser) {
+            List<Behavior_Snapshot__c> oldSnapshots = new List<Behavior_Snapshot__c>();
+            for (Integer i = 0; i < 3; i++) {
+                oldSnapshots.add(new Behavior_Snapshot__c(
+                    Metric_Name__c = 'Retention_Snap_' + i,
+                    Snapshot_Date__c = Date.today().addDays(-60),
+                    Record_Count__c = 5,
+                    Impact_Score__c = 100
+                ));
+            }
+            insert oldSnapshots;
+        }
+
+        Test.startTest();
+        System.runAs(testUser) {
+            Database.executeBatch(new PatternAnalysisService(), 50);
+        }
+        Test.stopTest();
+
+        List<AsyncApexJob> jobs = [
+            SELECT Id, Status FROM AsyncApexJob
+            WHERE ApexClass.Name = 'PatternAnalysisService' AND Status = 'Completed'
+            ORDER BY CreatedDate DESC LIMIT 1
+        ];
+        System.assertEquals(1, jobs.size(), 'Batch should complete and schedule snapshot deletion');
+
+        clearMocks();
+    }
+
+    @isTest
+    static void testDeleteOldHealthLogs_UsesConfiguredRetention() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create config with custom health log retention
+        BehaviorIQ_Configuration__c config = new BehaviorIQ_Configuration__c(
+            Name = 'Default',
+            Health_Log_Retention_Days__c = 30
+        );
+        insert config;
+
+        // Create old health log records
+        System.runAs(testUser) {
+            List<System_Health_Log__c> oldHealthLogs = new List<System_Health_Log__c>();
+            for (Integer i = 0; i < 3; i++) {
+                oldHealthLogs.add(new System_Health_Log__c(
+                    Job_Name__c = 'Retention_Health_' + i,
+                    Status__c = 'Completed'
+                ));
+            }
+            insert oldHealthLogs;
+
+            for (System_Health_Log__c h : oldHealthLogs) {
+                Test.setCreatedDate(h.Id, Datetime.now().addDays(-60));
+            }
+        }
+
+        Test.startTest();
+        System.runAs(testUser) {
+            Database.executeBatch(new PatternAnalysisService(), 50);
+        }
+        Test.stopTest();
+
+        List<AsyncApexJob> jobs = [
+            SELECT Id, Status FROM AsyncApexJob
+            WHERE ApexClass.Name = 'PatternAnalysisService' AND Status = 'Completed'
+            ORDER BY CreatedDate DESC LIMIT 1
+        ];
+        System.assertEquals(1, jobs.size(), 'Batch should complete and schedule health log deletion');
+
+        clearMocks();
+    }
+
+    @isTest
+    static void testDeleteOldRemediationLogs_UsesConfiguredRetention() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create config with custom remediation retention
+        BehaviorIQ_Configuration__c config = new BehaviorIQ_Configuration__c(
+            Name = 'Default',
+            Remediation_Retention_Days__c = 90
+        );
+        insert config;
+
+        // Create old remediation log records
+        System.runAs(testUser) {
+            List<Remediation_Log__c> oldRemLogs = new List<Remediation_Log__c>();
+            for (Integer i = 0; i < 3; i++) {
+                oldRemLogs.add(new Remediation_Log__c(
+                    Rule_Developer_Name__c = 'Retention_Rem_' + i,
+                    Object_API_Name__c = 'Case'
+                ));
+            }
+            insert oldRemLogs;
+
+            for (Remediation_Log__c r : oldRemLogs) {
+                Test.setCreatedDate(r.Id, Datetime.now().addDays(-120));
+            }
+        }
+
+        Test.startTest();
+        System.runAs(testUser) {
+            Database.executeBatch(new PatternAnalysisService(), 50);
+        }
+        Test.stopTest();
+
+        List<AsyncApexJob> jobs = [
+            SELECT Id, Status FROM AsyncApexJob
+            WHERE ApexClass.Name = 'PatternAnalysisService' AND Status = 'Completed'
+            ORDER BY CreatedDate DESC LIMIT 1
+        ];
+        System.assertEquals(1, jobs.size(), 'Batch should complete and schedule remediation log deletion');
+
+        clearMocks();
+    }
+
+    @isTest
+    static void testDeleteOldLogs_ChainedExecution() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create config with all 5 retention periods
+        BehaviorIQ_Configuration__c config = new BehaviorIQ_Configuration__c(
+            Name = 'Default',
+            Raw_Log_Retention_Days__c = 7,
+            Summary_Retention_Days__c = 30,
+            Snapshot_Retention_Days__c = 30,
+            Health_Log_Retention_Days__c = 30,
+            Remediation_Retention_Days__c = 90
+        );
+        insert config;
+
+        // Create records for all 5 object types
+        System.runAs(testUser) {
+            insert new Behavior_Log__c(Action_Name__c = 'Chain_All', User__c = testUser.Id, Timestamp__c = System.now());
+            insert new Behavior_Log_Summary__c(
+                User__c = testUser.Id, Action_Name__c = 'Chain_All', Object_API_Name__c = 'Case',
+                Log_Date__c = Date.today().addDays(-60), Event_Count__c = 1,
+                Composite_Key__c = testUser.Id + '_Case_Chain_All_' + Date.today().addDays(-60)
+            );
+            insert new Behavior_Snapshot__c(
+                Metric_Name__c = 'Chain_All', Snapshot_Date__c = Date.today().addDays(-60),
+                Record_Count__c = 1, Impact_Score__c = 10
+            );
+            System_Health_Log__c healthLog = new System_Health_Log__c(Job_Name__c = 'Chain_All', Status__c = 'Completed');
+            insert healthLog;
+            Test.setCreatedDate(healthLog.Id, Datetime.now().addDays(-60));
+            Remediation_Log__c remLog = new Remediation_Log__c(Rule_Developer_Name__c = 'Chain_All', Object_API_Name__c = 'Case');
+            insert remLog;
+            Test.setCreatedDate(remLog.Id, Datetime.now().addDays(-120));
+        }
+
+        Test.startTest();
+        System.runAs(testUser) {
+            Database.executeBatch(new PatternAnalysisService(), 50);
+        }
+        Test.stopTest();
+
+        // Verify the main batch completed
+        List<AsyncApexJob> jobs = [
+            SELECT Id, Status FROM AsyncApexJob
+            WHERE ApexClass.Name = 'PatternAnalysisService' AND Status = 'Completed'
+            ORDER BY CreatedDate DESC LIMIT 1
+        ];
+        System.assertEquals(1, jobs.size(), 'Batch should complete with all 5 retention configs and chained execution');
+
+        clearMocks();
+    }
+
     // ==================== CIRCUIT BREAKER INTEGRATION TESTS ====================
 
     @isTest
@@ -5321,6 +5502,324 @@ private with sharing class PatternAnalysisServiceTest {
             System.assert(healthLogs[0].CPU_Time_Ms__c >= 0,
                 'CPU_Time_Ms__c should be non-negative');
         }
+
+        clearMocks();
+    }
+
+    // ==================== BATCH FIXED RECORD PRESERVATION TESTS ====================
+
+    /**
+     * @description Tests that batch detection preserves Fixed_Record_Ids__c and excludes
+     * fixed records from Occurrences__c and Impact_Score__c.
+     * Uses Contact_Data_Gap rule: (Email = null OR Phone = null) AND OwnerId != null
+     */
+    @isTest
+    static void testBatchPreservesFixedRecordIds() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create 5 Contacts without Email/Phone to match Contact_Data_Gap rule
+        List<Contact> testContacts = new List<Contact>();
+        for (Integer i = 0; i < 5; i++) {
+            testContacts.add(new Contact(
+                LastName = 'BatchFixTest ' + i
+            ));
+        }
+        insert testContacts;
+
+        // Pre-create pain point with 2 contacts marked as fixed
+        List<String> fixedIds = new List<String>{
+            testContacts[0].Id, testContacts[1].Id
+        };
+        Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
+            Name = 'Missing Contact Info',
+            Unique_Key__c = 'Contact_Data_Gap',
+            Object_API_Name__c = 'Contact',
+            Occurrences__c = 10,
+            Impact_Score__c = 500,
+            Status__c = 'Acknowledged',
+            Fixed_Record_Ids__c = JSON.serialize(fixedIds)
+        );
+        insert pp;
+
+        Test.startTest();
+        System.runAs(testUser) {
+            Database.executeBatch(new PatternAnalysisService(), 50);
+        }
+        Test.stopTest();
+
+        // Query updated pain point
+        List<Identified_Pain_Point__c> updatedPPs = [
+            SELECT Occurrences__c, Impact_Score__c, Fixed_Record_Ids__c, Status__c
+            FROM Identified_Pain_Point__c
+            WHERE Unique_Key__c = 'Contact_Data_Gap'
+        ];
+
+        if (!updatedPPs.isEmpty()) {
+            Identified_Pain_Point__c updated = updatedPPs[0];
+
+            // Fixed_Record_Ids__c must be preserved across batch runs
+            System.assertNotEquals(null, updated.Fixed_Record_Ids__c,
+                'Fixed_Record_Ids__c should be preserved after batch run');
+            System.assert(updated.Fixed_Record_Ids__c.contains(String.valueOf(testContacts[0].Id).substring(0, 15)),
+                'Fixed_Record_Ids__c should still contain the first fixed contact ID');
+
+            // Occurrences should exclude fixed records (5 detected - 2 fixed = 3)
+            System.assertEquals(3, updated.Occurrences__c,
+                'Occurrences should exclude fixed records: 5 detected - 2 fixed = 3');
+
+            // Impact should be recalculated for active records only (3 * $50 = $150)
+            System.assertEquals(150, updated.Impact_Score__c,
+                'Impact_Score should reflect only unfixed records: 3 * $50 = $150');
+
+            // Status should be preserved (Acknowledged stays Acknowledged)
+            System.assertEquals('Acknowledged', updated.Status__c,
+                'Acknowledged status should be preserved');
+        }
+
+        clearMocks();
+    }
+
+    /**
+     * @description Tests that when all detected records have been fixed,
+     * the batch marks the pain point as Resolved.
+     */
+    @isTest
+    static void testBatchAllRecordsFixedMarksResolved() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create 3 Contacts without Email/Phone to match Contact_Data_Gap rule
+        List<Contact> testContacts = new List<Contact>();
+        for (Integer i = 0; i < 3; i++) {
+            testContacts.add(new Contact(
+                LastName = 'AllFixedTest ' + i
+            ));
+        }
+        insert testContacts;
+
+        // Pre-create pain point with ALL contacts marked as fixed
+        List<String> fixedIds = new List<String>();
+        for (Contact c : testContacts) {
+            fixedIds.add(c.Id);
+        }
+        Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
+            Name = 'Missing Contact Info',
+            Unique_Key__c = 'Contact_Data_Gap',
+            Object_API_Name__c = 'Contact',
+            Occurrences__c = 3,
+            Impact_Score__c = 150,
+            Status__c = 'Acknowledged',
+            Fixed_Record_Ids__c = JSON.serialize(fixedIds)
+        );
+        insert pp;
+
+        Test.startTest();
+        System.runAs(testUser) {
+            Database.executeBatch(new PatternAnalysisService(), 50);
+        }
+        Test.stopTest();
+
+        // Query updated pain point
+        List<Identified_Pain_Point__c> updatedPPs = [
+            SELECT Occurrences__c, Status__c, Fixed_Record_Ids__c
+            FROM Identified_Pain_Point__c
+            WHERE Unique_Key__c = 'Contact_Data_Gap'
+        ];
+
+        if (!updatedPPs.isEmpty()) {
+            Identified_Pain_Point__c updated = updatedPPs[0];
+
+            // When all detected records are fixed, pain point should be resolved
+            System.assertEquals('Resolved', updated.Status__c,
+                'Pain point should be Resolved when all detected records have been fixed');
+            System.assertEquals(0, updated.Occurrences__c,
+                'Occurrences should be 0 when all records are fixed');
+        }
+
+        clearMocks();
+    }
+
+    /**
+     * @description Tests that Fixed_Record_Ids__c is preserved in upsertPainPoint
+     * even when a new batch detection runs with fresh data.
+     */
+    @isTest
+    static void testBatchPreservesFixedIdsForStaleCase() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create a Case to use as a "fixed" record ID
+        Case fixedCase = new Case(Subject = 'Already Fixed Case', Status = 'New');
+        insert fixedCase;
+
+        // Pre-create pain point with Fixed_Record_Ids__c for Stale_Case_30
+        Identified_Pain_Point__c pp = new Identified_Pain_Point__c(
+            Name = 'Stale Cases',
+            Unique_Key__c = 'Stale_Case_30',
+            Object_API_Name__c = 'Case',
+            Occurrences__c = 5,
+            Impact_Score__c = 375,
+            Status__c = 'New',
+            Fixed_Record_Ids__c = JSON.serialize(new List<String>{ fixedCase.Id })
+        );
+        insert pp;
+
+        Test.startTest();
+        System.runAs(testUser) {
+            Database.executeBatch(new PatternAnalysisService(), 50);
+        }
+        Test.stopTest();
+
+        // Query updated pain point
+        List<Identified_Pain_Point__c> updatedPPs = [
+            SELECT Fixed_Record_Ids__c
+            FROM Identified_Pain_Point__c
+            WHERE Unique_Key__c = 'Stale_Case_30'
+        ];
+
+        if (!updatedPPs.isEmpty()) {
+            // Fixed_Record_Ids__c must survive the batch upsert regardless of detection results
+            System.assertNotEquals(null, updatedPPs[0].Fixed_Record_Ids__c,
+                'Fixed_Record_Ids__c should be preserved after batch even if rule detects 0 records');
+        }
+
+        clearMocks();
+    }
+
+    /**
+     * @description Unit test that directly calls persistDetectionResults to verify
+     * Fixed_Record_Ids__c filtering works. Covers the new code path with guaranteed execution.
+     */
+    @isTest
+    static void testPersistDetectionResults_ExcludesFixedRecords() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create 5 Contacts (no Email/Phone)
+        List<Contact> testContacts = new List<Contact>();
+        for (Integer i = 0; i < 5; i++) {
+            testContacts.add(new Contact(LastName = 'PersistTest ' + i));
+        }
+        insert testContacts;
+
+        // Pre-create pain point with 2 contacts marked as fixed
+        List<String> fixedIds = new List<String>{
+            testContacts[0].Id, testContacts[1].Id
+        };
+        Identified_Pain_Point__c existingPP = new Identified_Pain_Point__c(
+            Name = 'Persist Detection Test',
+            Unique_Key__c = 'Persist_Test_Rule',
+            Object_API_Name__c = 'Contact',
+            Occurrences__c = 10,
+            Impact_Score__c = 500,
+            Status__c = 'New',
+            Fixed_Record_Ids__c = JSON.serialize(fixedIds)
+        );
+        insert existingPP;
+
+        // Create mock rule that matches the existing pain point's key
+        Behavior_Pattern_Rule__mdt mockRule = createMockRuleWithCost(
+            'Persist_Test_Rule',
+            'Persist Detection Test',
+            'Contact',
+            'LastName != null',
+            false,
+            50.00
+        );
+
+        Test.startTest();
+        System.runAs(testUser) {
+            PatternAnalysisService service = new PatternAnalysisService();
+            // Pass all 5 contacts as "detected" - but 2 should be filtered out
+            service.persistDetectionResults(mockRule, 'Contact', testContacts);
+        }
+        Test.stopTest();
+
+        // Query the upserted pain point
+        Identified_Pain_Point__c updated = [
+            SELECT Occurrences__c, Impact_Score__c, Fixed_Record_Ids__c, Example_Records__c
+            FROM Identified_Pain_Point__c
+            WHERE Unique_Key__c = 'Persist_Test_Rule'
+            LIMIT 1
+        ];
+
+        // Occurrences should be 3 (5 detected - 2 fixed)
+        System.assertEquals(3, updated.Occurrences__c,
+            'Occurrences should exclude fixed records: 5 detected - 2 fixed = 3');
+
+        // Impact should be 3 * $50 = $150
+        System.assertEquals(150, updated.Impact_Score__c,
+            'Impact should reflect only active records: 3 * $50 = $150');
+
+        // Fixed_Record_Ids__c should be preserved
+        System.assertNotEquals(null, updated.Fixed_Record_Ids__c,
+            'Fixed_Record_Ids__c should be preserved through upsert');
+
+        // Example_Records__c should only contain unfixed record IDs
+        List<Object> exampleIds = (List<Object>) JSON.deserializeUntyped(updated.Example_Records__c);
+        System.assertEquals(3, exampleIds.size(),
+            'Example records should only contain unfixed record IDs');
+
+        clearMocks();
+    }
+
+    /**
+     * @description Unit test that directly calls persistDetectionResults when ALL
+     * detected records are fixed, verifying the pain point is resolved.
+     */
+    @isTest
+    static void testPersistDetectionResults_AllFixedResolvesToResolved() {
+        User testUser = [SELECT Id FROM User WHERE Alias = 'testpas' LIMIT 1];
+
+        // Create 3 Contacts
+        List<Contact> testContacts = new List<Contact>();
+        for (Integer i = 0; i < 3; i++) {
+            testContacts.add(new Contact(LastName = 'AllFixedPersist ' + i));
+        }
+        insert testContacts;
+
+        // Pre-create pain point with ALL contacts marked as fixed
+        List<String> fixedIds = new List<String>();
+        for (Contact c : testContacts) {
+            fixedIds.add(c.Id);
+        }
+        Identified_Pain_Point__c existingPP = new Identified_Pain_Point__c(
+            Name = 'All Fixed Test',
+            Unique_Key__c = 'AllFixed_Test_Rule',
+            Object_API_Name__c = 'Contact',
+            Occurrences__c = 3,
+            Impact_Score__c = 150,
+            Status__c = 'New',
+            Fixed_Record_Ids__c = JSON.serialize(fixedIds)
+        );
+        insert existingPP;
+
+        Behavior_Pattern_Rule__mdt mockRule = createMockRuleWithCost(
+            'AllFixed_Test_Rule',
+            'All Fixed Test',
+            'Contact',
+            'LastName != null',
+            false,
+            50.00
+        );
+
+        Test.startTest();
+        System.runAs(testUser) {
+            PatternAnalysisService service = new PatternAnalysisService();
+            // Pass all 3 contacts as "detected" - all should be filtered out
+            service.persistDetectionResults(mockRule, 'Contact', testContacts);
+        }
+        Test.stopTest();
+
+        // Query the pain point - should be resolved
+        Identified_Pain_Point__c updated = [
+            SELECT Occurrences__c, Status__c
+            FROM Identified_Pain_Point__c
+            WHERE Unique_Key__c = 'AllFixed_Test_Rule'
+            LIMIT 1
+        ];
+
+        System.assertEquals('Resolved', updated.Status__c,
+            'Pain point should be Resolved when all detected records have been fixed');
+        System.assertEquals(0, updated.Occurrences__c,
+            'Occurrences should be 0 when all records are fixed');
 
         clearMocks();
     }

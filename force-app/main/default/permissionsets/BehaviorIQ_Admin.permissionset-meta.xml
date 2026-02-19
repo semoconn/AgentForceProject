@@ -119,6 +119,21 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
+        <field>BehaviorIQ_Configuration__c.Snapshot_Retention_Days__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>BehaviorIQ_Configuration__c.Health_Log_Retention_Days__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>BehaviorIQ_Configuration__c.Remediation_Retention_Days__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
         <field>Behavior_Log_Summary__c.Last_Event_Time__c</field>
         <readable>true</readable>
     </fieldPermissions>

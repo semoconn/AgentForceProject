@@ -1,0 +1,19 @@
+Subject,Status,Priority,Origin,Description,AccountId,CreatedDate,LastModifiedDate
+"Stale Case 14-Day #1",New,Medium,Web,"Support request stale 14+ days",001KY00000Kd0jSYAR,2026-01-10T10:00:00.000Z,2026-01-10T10:00:00.000Z
+"Stale Case 14-Day #2",New,High,Email,"Support request stale 14+ days",001KY00000Kd0jSYAR,2026-01-11T10:00:00.000Z,2026-01-11T10:00:00.000Z
+"Stale Case 14-Day #3",Working,Medium,Phone,"Support request stale 14+ days",001KY00000Kd0jVYAR,2026-01-12T10:00:00.000Z,2026-01-12T10:00:00.000Z
+"Stale Case 14-Day #4",New,Low,Web,"Support request stale 14+ days",001KY00000Kd0jTYAR,2026-01-13T10:00:00.000Z,2026-01-13T10:00:00.000Z
+"Stale Case 14-Day #5",New,High,Email,"Support request stale 14+ days",001KY00000Kd0jWYAR,2026-01-14T10:00:00.000Z,2026-01-14T10:00:00.000Z
+"Stale Case 30-Day #1",New,Low,Email,"Very old support request 30+ days",001KY00000Kd0jSYAR,2025-12-28T10:00:00.000Z,2025-12-28T10:00:00.000Z
+"Stale Case 30-Day #2",New,Medium,Web,"Very old support request 30+ days",001KY00000Kd0jVYAR,2025-12-25T10:00:00.000Z,2025-12-25T10:00:00.000Z
+"Stale Case 30-Day #3",Working,Low,Phone,"Very old support request 30+ days",001KY00000Kd0jTYAR,2025-12-20T10:00:00.000Z,2025-12-20T10:00:00.000Z
+"Stale Case 30-Day #4",New,High,Email,"Very old support request 30+ days",001KY00000Kd0jWYAR,2025-12-15T10:00:00.000Z,2025-12-15T10:00:00.000Z
+"Stale Case 30-Day #5",New,Medium,Web,"Very old support request 30+ days",001KY00000Kd0jUYAR,2025-12-10T10:00:00.000Z,2025-12-10T10:00:00.000Z
+"Weekend Case Sunday #1",New,High,Web,"Case from Sunday in LAST_WEEK",001KY00000Kd0jSYAR,2026-01-18T08:00:00.000Z,2026-01-18T08:00:00.000Z
+"Weekend Case Sunday #2",New,High,Phone,"Case from Sunday in LAST_WEEK",001KY00000Kd0jVYAR,2026-01-18T12:00:00.000Z,2026-01-18T12:00:00.000Z
+"Weekend Case Sunday #3",Working,Medium,Email,"Case from Sunday in LAST_WEEK",001KY00000Kd0jTYAR,2026-01-18T18:00:00.000Z,2026-01-18T18:00:00.000Z
+"Weekend Case Saturday #1",New,High,Web,"Case from Saturday in LAST_WEEK",001KY00000Kd0jSYAR,2026-01-24T09:00:00.000Z,2026-01-24T09:00:00.000Z
+"Weekend Case Saturday #2",New,Medium,Phone,"Case from Saturday in LAST_WEEK",001KY00000Kd0jWYAR,2026-01-24T14:00:00.000Z,2026-01-24T14:00:00.000Z
+"Weekend Case Saturday #3",New,High,Web,"Case from Saturday in LAST_WEEK",001KY00000Kd0jUYAR,2026-01-24T20:00:00.000Z,2026-01-24T20:00:00.000Z
+"Recent Case #1",New,Medium,Web,"Recent case - not stale",001KY00000Kd0jSYAR,2026-01-28T10:00:00.000Z,2026-01-28T10:00:00.000Z
+"Recent Case #2",New,Low,Email,"Recent case - not stale",001KY00000Kd0jVYAR,2026-01-28T14:00:00.000Z,2026-01-28T14:00:00.000Z

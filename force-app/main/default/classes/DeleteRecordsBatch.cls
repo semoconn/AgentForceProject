@@ -55,9 +55,23 @@ public virtual inherited sharing class DeleteRecordsBatch implements Database.Ba
         // object-level isDeletable() is the Salesforce-prescribed check for delete DML.
         if (!scope.isEmpty() && scope[0].getSObjectType().getDescribe().isDeletable()) {
              try {
-                delete scope;
-                System.debug('[DeleteRecordsBatch.execute] Successfully deleted ' + scope.size() + ' records.');
-            } catch (DmlException e) {
+                // Use partial delete so one bad record doesn't stop the entire batch chain
+                Database.DeleteResult[] results = Database.delete(scope, false);
+                Integer successCount = 0;
+                Integer failCount = 0;
+                for (Database.DeleteResult dr : results) {
+                    if (dr.isSuccess()) {
+                        successCount++;
+                    } else {
+                        failCount++;
+                        for (Database.Error err : dr.getErrors()) {
+                            System.debug(LoggingLevel.ERROR, '[DeleteRecordsBatch.execute] Delete failed for ' +
+                                dr.getId() + ': ' + err.getMessage());
+                        }
+                    }
+                }
+                System.debug('[DeleteRecordsBatch.execute] Deleted ' + successCount + ' records, ' + failCount + ' failures.');
+            } catch (Exception e) {
                 System.debug(LoggingLevel.ERROR, '[DeleteRecordsBatch.execute] Error deleting records in batch: ' + e.getMessage());
             }
         } else {
@@ -65,7 +79,7 @@ public virtual inherited sharing class DeleteRecordsBatch implements Database.Ba
         }
     }
 
-    public void finish(Database.BatchableContext bc) {
+    public virtual void finish(Database.BatchableContext bc) {
         System.debug('[DeleteRecordsBatch.finish] Batch finished. Job ID: ' + bc.getJobId());
     }
 }

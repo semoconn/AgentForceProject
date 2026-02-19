@@ -146,6 +146,67 @@ private with sharing class PatternFixServiceTest {
         clearMockRule();
     }
 
+    @isTest
+    static void testTaskCreation_RecordNamePopulated() {
+        // Setup - use Opportunity to verify Name field extraction
+        Opportunity opp = new Opportunity(
+            Name = 'High Value Ghost Deal',
+            StageName = 'Prospecting',
+            CloseDate = Date.today().addDays(30)
+        );
+        insert opp;
+
+        PatternFixService.mockRule = createMockRule('Task_Creation', false, '{"subject":"Follow up on ghost deal"}');
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(new List<Id>{opp.Id}, 'Test_Rule');
+        Test.stopTest();
+
+        // Verify Record_Name__c is populated with Opportunity Name
+        List<Remediation_Log__c> logs = [
+            SELECT Record_Name__c, Object_API_Name__c, Action_Taken__c, Status__c
+            FROM Remediation_Log__c
+            WHERE Affected_Record_ID__c = :String.valueOf(opp.Id)
+        ];
+        System.assertEquals(1, logs.size(), 'Expected exactly 1 remediation log');
+        System.assertEquals('High Value Ghost Deal', logs[0].Record_Name__c, 'Record_Name__c should contain Opportunity Name');
+        System.assertEquals('Opportunity', logs[0].Object_API_Name__c, 'Object_API_Name__c should be Opportunity');
+        System.assertEquals('Task_Creation', logs[0].Action_Taken__c, 'Action should be Task_Creation');
+        System.assertEquals('Success', logs[0].Status__c, 'Status should be Success');
+
+        clearMockRule();
+    }
+
+    @isTest
+    static void testTaskCreation_RecordNamePopulated_Case() {
+        // Setup - verify CaseNumber extraction for Case objects
+        Case c = new Case(Subject = 'Test Case Name', Status = 'New');
+        insert c;
+
+        // Get the auto-generated CaseNumber
+        String caseNumber = [SELECT CaseNumber FROM Case WHERE Id = :c.Id].CaseNumber;
+
+        PatternFixService.mockRule = createMockRule('Task_Creation', false, '{"subject":"Follow up"}');
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(new List<Id>{c.Id}, 'Test_Rule');
+        Test.stopTest();
+
+        // Verify Record_Name__c is populated with CaseNumber
+        List<Remediation_Log__c> logs = [
+            SELECT Record_Name__c, Object_API_Name__c
+            FROM Remediation_Log__c
+            WHERE Affected_Record_ID__c = :String.valueOf(c.Id)
+        ];
+        System.assertEquals(1, logs.size(), 'Expected exactly 1 remediation log');
+        System.assertEquals(caseNumber, logs[0].Record_Name__c, 'Record_Name__c should contain CaseNumber');
+        System.assertEquals('Case', logs[0].Object_API_Name__c, 'Object_API_Name__c should be Case');
+
+        clearMockRule();
+    }
+
     // ==================== OWNER ASSIGNMENT TESTS ====================
 
     @isTest
@@ -449,6 +510,36 @@ private with sharing class PatternFixServiceTest {
         // No log should be created since method returned early
         List<Remediation_Log__c> logs = [SELECT Id FROM Remediation_Log__c WHERE Affected_Record_ID__c = :String.valueOf(opp.Id)];
         System.assertEquals(0, logs.size(), 'No remediation log should be created for empty field config');
+
+        clearMockRule();
+    }
+
+    @isTest
+    static void testFieldUpdate_RecordNameFromSnapshot() {
+        // Regression test: Record_Name__c should still be extracted from snapshot for Field_Update
+        Opportunity opp = new Opportunity(
+            Name = 'Snapshot Name Test',
+            StageName = 'Prospecting',
+            CloseDate = Date.today().addDays(30)
+        );
+        insert opp;
+
+        PatternFixService.mockRule = createMockRule('Field_Update', false, '{"field":"StageName","value":"Qualification"}');
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(new List<Id>{opp.Id}, 'Test_Rule');
+        Test.stopTest();
+
+        List<Remediation_Log__c> logs = [
+            SELECT Record_Name__c, Object_API_Name__c, Snapshot_JSON__c
+            FROM Remediation_Log__c
+            WHERE Affected_Record_ID__c = :String.valueOf(opp.Id)
+        ];
+        System.assertEquals(1, logs.size(), 'Expected exactly 1 remediation log');
+        System.assertEquals('Snapshot Name Test', logs[0].Record_Name__c, 'Record_Name__c should be extracted from snapshot');
+        System.assertEquals('Opportunity', logs[0].Object_API_Name__c, 'Object_API_Name__c should be Opportunity');
+        System.assertNotEquals(null, logs[0].Snapshot_JSON__c, 'Snapshot_JSON__c should be populated for Field_Update');
 
         clearMockRule();
     }
@@ -2042,6 +2133,36 @@ private with sharing class PatternFixServiceTest {
         System.assertEquals(1, logs.size(), 'Expected exactly 1 remediation log');
         System.assertEquals('No_Action', logs[0].Action_Taken__c, 'Action should be No_Action');
         System.assertEquals('Success', logs[0].Status__c, 'Status should be Success');
+
+        clearMockRule();
+    }
+
+    @isTest
+    static void testNoAction_RecordNamePopulated() {
+        // Verify Record_Name__c is populated for No_Action with Opportunity
+        Opportunity opp = new Opportunity(
+            Name = 'Seasonal Pattern Opp',
+            StageName = 'Prospecting',
+            CloseDate = Date.today().addDays(30)
+        );
+        insert opp;
+
+        String config = '{"message":"Expected pattern"}';
+        PatternFixService.mockRule = createMockRule('No_Action', false, config);
+
+        Test.startTest();
+        PatternFixService service = new PatternFixService();
+        service.executeFix(new List<Id>{opp.Id}, 'Test_Rule');
+        Test.stopTest();
+
+        List<Remediation_Log__c> logs = [
+            SELECT Record_Name__c, Object_API_Name__c
+            FROM Remediation_Log__c
+            WHERE Affected_Record_ID__c = :String.valueOf(opp.Id)
+        ];
+        System.assertEquals(1, logs.size(), 'Expected exactly 1 remediation log');
+        System.assertEquals('Seasonal Pattern Opp', logs[0].Record_Name__c, 'Record_Name__c should contain Opportunity Name');
+        System.assertEquals('Opportunity', logs[0].Object_API_Name__c, 'Object_API_Name__c should be Opportunity');
 
         clearMockRule();
     }

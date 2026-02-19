@@ -1,0 +1,49 @@
+{
+  "records": [
+    {
+      "attributes": {"type": "Case", "referenceId": "Stale14Case1"},
+      "Subject": "Stale Case 14-Day Test 1",
+      "Status": "New",
+      "Priority": "Medium",
+      "Origin": "Web",
+      "Description": "Test case for Stale_Case_14 pattern detection",
+      "CreatedDate": "2026-01-14T10:00:00.000Z"
+    },
+    {
+      "attributes": {"type": "Case", "referenceId": "Stale14Case2"},
+      "Subject": "Stale Case 14-Day Test 2",
+      "Status": "New",
+      "Priority": "Medium",
+      "Origin": "Web",
+      "Description": "Test case for Stale_Case_14 pattern detection",
+      "CreatedDate": "2026-01-13T10:00:00.000Z"
+    },
+    {
+      "attributes": {"type": "Case", "referenceId": "Stale14Case3"},
+      "Subject": "Stale Case 14-Day Test 3",
+      "Status": "Working",
+      "Priority": "High",
+      "Origin": "Email",
+      "Description": "Test case for Stale_Case_14 pattern detection",
+      "CreatedDate": "2026-01-12T10:00:00.000Z"
+    },
+    {
+      "attributes": {"type": "Case", "referenceId": "Stale14Case4"},
+      "Subject": "Stale Case 14-Day Test 4",
+      "Status": "New",
+      "Priority": "Low",
+      "Origin": "Phone",
+      "Description": "Test case for Stale_Case_14 pattern detection",
+      "CreatedDate": "2026-01-11T10:00:00.000Z"
+    },
+    {
+      "attributes": {"type": "Case", "referenceId": "Stale14Case5"},
+      "Subject": "Stale Case 14-Day Test 5",
+      "Status": "Escalated",
+      "Priority": "High",
+      "Origin": "Web",
+      "Description": "Test case for Stale_Case_14 pattern detection",
+      "CreatedDate": "2026-01-10T10:00:00.000Z"
+    }
+  ]
+}

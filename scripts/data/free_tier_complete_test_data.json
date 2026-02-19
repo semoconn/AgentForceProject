@@ -1,0 +1,71 @@
+{
+  "records": [
+    {
+      "attributes": {"type": "Account", "referenceId": "TestAccount1"},
+      "Name": "Test Enterprise Corp",
+      "Industry": "Technology",
+      "Type": "Customer - Direct"
+    },
+    {
+      "attributes": {"type": "Account", "referenceId": "TestAccount2"},
+      "Name": "Test SMB Company",
+      "Industry": "Financial Services",
+      "Type": "Customer - Channel"
+    },
+    {
+      "attributes": {"type": "Contact", "referenceId": "ContactMissingEmail1"},
+      "FirstName": "John",
+      "LastName": "NoEmail1",
+      "Phone": "555-0101",
+      "Account": {"referenceId": "TestAccount1"}
+    },
+    {
+      "attributes": {"type": "Contact", "referenceId": "ContactMissingEmail2"},
+      "FirstName": "Jane",
+      "LastName": "NoEmail2",
+      "Phone": "555-0102",
+      "Account": {"referenceId": "TestAccount1"}
+    },
+    {
+      "attributes": {"type": "Contact", "referenceId": "ContactMissingEmail3"},
+      "FirstName": "Bob",
+      "LastName": "NoEmail3",
+      "Phone": "555-0103",
+      "Account": {"referenceId": "TestAccount1"}
+    },
+    {
+      "attributes": {"type": "Contact", "referenceId": "ContactMissingPhone1"},
+      "FirstName": "Alice",
+      "LastName": "NoPhone1",
+      "Email": "alice.nophone1@test.com",
+      "Account": {"referenceId": "TestAccount2"}
+    },
+    {
+      "attributes": {"type": "Contact", "referenceId": "ContactMissingPhone2"},
+      "FirstName": "Charlie",
+      "LastName": "NoPhone2",
+      "Email": "charlie.nophone2@test.com",
+      "Account": {"referenceId": "TestAccount2"}
+    },
+    {
+      "attributes": {"type": "Contact", "referenceId": "ContactMissingBoth1"},
+      "FirstName": "Dave",
+      "LastName": "NoBoth1",
+      "Account": {"referenceId": "TestAccount1"}
+    },
+    {
+      "attributes": {"type": "Contact", "referenceId": "ContactMissingBoth2"},
+      "FirstName": "Eve",
+      "LastName": "NoBoth2",
+      "Account": {"referenceId": "TestAccount2"}
+    },
+    {
+      "attributes": {"type": "Contact", "referenceId": "ContactComplete1"},
+      "FirstName": "Complete",
+      "LastName": "Contact1",
+      "Email": "complete1@test.com",
+      "Phone": "555-9999",
+      "Account": {"referenceId": "TestAccount1"}
+    }
+  ]
+}

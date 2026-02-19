@@ -1,0 +1,12 @@
+Name,StageName,CloseDate,Amount,AccountId
+"High Value Ghosted Opp 1","Prospecting",2026-03-15,75000,001KY00000Kd0jSYAR
+"High Value Ghosted Opp 2","Qualification",2026-03-20,100000,001KY00000Kd0jVYAR
+"High Value Ghosted Opp 3","Needs Analysis",2026-04-01,60000,001KY00000Kd0jTYAR
+"High Value Ghosted Opp 4","Prospecting",2026-04-15,85000,001KY00000Kd0jWYAR
+"High Value Ghosted Opp 5","Value Proposition",2026-05-01,120000,001KY00000Kd0jUYAR
+"Orphan Opportunity 1","Prospecting",2026-03-30,25000,
+"Orphan Opportunity 2","Qualification",2026-04-15,35000,
+"Orphan Opportunity 3","Needs Analysis",2026-05-01,45000,
+"Orphan Opportunity 4","Prospecting",2026-05-15,15000,
+"Orphan Opportunity 5","Value Proposition",2026-06-01,55000,
+"Normal Opp with Account","Prospecting",2026-04-30,30000,001KY00000Kd0jSYAR

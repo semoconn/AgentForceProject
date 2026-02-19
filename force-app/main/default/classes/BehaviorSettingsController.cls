@@ -20,6 +20,9 @@ public with sharing class BehaviorSettingsController {
     // Default retention values for Data Retention
     public static final Integer DEFAULT_RAW_LOG_RETENTION_DAYS = 14;
     public static final Integer DEFAULT_SUMMARY_RETENTION_DAYS = 365;
+    public static final Integer DEFAULT_SNAPSHOT_RETENTION_DAYS = 90;
+    public static final Integer DEFAULT_HEALTH_LOG_RETENTION_DAYS = 90;
+    public static final Integer DEFAULT_REMEDIATION_RETENTION_DAYS = 365;
 
     /**
      * @description Retrieves all detection threshold settings from BehaviorIQ_Configuration__c.
@@ -44,7 +47,10 @@ public with sharing class BehaviorSettingsController {
                        High_Value_Amount_Threshold__c,
                        Contract_Expiry_Days__c,
                        Raw_Log_Retention_Days__c,
-                       Summary_Retention_Days__c
+                       Summary_Retention_Days__c,
+                       Snapshot_Retention_Days__c,
+                       Health_Log_Retention_Days__c,
+                       Remediation_Retention_Days__c
                 FROM BehaviorIQ_Configuration__c
                 WITH USER_MODE
                 LIMIT 1
@@ -72,6 +78,9 @@ public with sharing class BehaviorSettingsController {
                 wrapper.contractExpiryDays = getIntegerValue(config.Contract_Expiry_Days__c, removedFields, 'Contract_Expiry_Days__c', DEFAULT_CONTRACT_EXPIRY_DAYS);
                 wrapper.rawLogRetentionDays = getIntegerValue(config.Raw_Log_Retention_Days__c, removedFields, 'Raw_Log_Retention_Days__c', DEFAULT_RAW_LOG_RETENTION_DAYS);
                 wrapper.summaryRetentionDays = getIntegerValue(config.Summary_Retention_Days__c, removedFields, 'Summary_Retention_Days__c', DEFAULT_SUMMARY_RETENTION_DAYS);
+                wrapper.snapshotRetentionDays = getIntegerValue(config.Snapshot_Retention_Days__c, removedFields, 'Snapshot_Retention_Days__c', DEFAULT_SNAPSHOT_RETENTION_DAYS);
+                wrapper.healthLogRetentionDays = getIntegerValue(config.Health_Log_Retention_Days__c, removedFields, 'Health_Log_Retention_Days__c', DEFAULT_HEALTH_LOG_RETENTION_DAYS);
+                wrapper.remediationRetentionDays = getIntegerValue(config.Remediation_Retention_Days__c, removedFields, 'Remediation_Retention_Days__c', DEFAULT_REMEDIATION_RETENTION_DAYS);
                 wrapper.recordId = config.Id;
             } else {
                 // Return defaults if no record exists
@@ -84,6 +93,9 @@ public with sharing class BehaviorSettingsController {
                 wrapper.contractExpiryDays = DEFAULT_CONTRACT_EXPIRY_DAYS;
                 wrapper.rawLogRetentionDays = DEFAULT_RAW_LOG_RETENTION_DAYS;
                 wrapper.summaryRetentionDays = DEFAULT_SUMMARY_RETENTION_DAYS;
+                wrapper.snapshotRetentionDays = DEFAULT_SNAPSHOT_RETENTION_DAYS;
+                wrapper.healthLogRetentionDays = DEFAULT_HEALTH_LOG_RETENTION_DAYS;
+                wrapper.remediationRetentionDays = DEFAULT_REMEDIATION_RETENTION_DAYS;
                 wrapper.recordId = null;
             }
 
@@ -140,7 +152,10 @@ public with sharing class BehaviorSettingsController {
         Decimal highValueAmountThreshold,
         Integer contractExpiryDays,
         Integer rawLogRetentionDays,
-        Integer summaryRetentionDays
+        Integer summaryRetentionDays,
+        Integer snapshotRetentionDays,
+        Integer healthLogRetentionDays,
+        Integer remediationRetentionDays
     ) {
         try {
             // Validate inputs
@@ -152,6 +167,9 @@ public with sharing class BehaviorSettingsController {
             validateThreshold(contractExpiryDays, 'Contract Expiry Days', 1, 999);
             validateThreshold(rawLogRetentionDays, 'Raw Log Retention Days', 7, 90);
             validateThreshold(summaryRetentionDays, 'Summary Retention Days', 30, 730);
+            validateThreshold(snapshotRetentionDays, 'Snapshot Retention Days', 30, 365);
+            validateThreshold(healthLogRetentionDays, 'Health Log Retention Days', 30, 365);
+            validateThreshold(remediationRetentionDays, 'Remediation Log Retention Days', 90, 730);
 
             if (highValueAmountThreshold == null || highValueAmountThreshold < 1 || highValueAmountThreshold > 999999999) {
                 throw new AuraHandledException('High-Value Amount Threshold must be between 1 and 999,999,999.');
@@ -192,6 +210,9 @@ public with sharing class BehaviorSettingsController {
             configToSave.Contract_Expiry_Days__c = contractExpiryDays;
             configToSave.Raw_Log_Retention_Days__c = rawLogRetentionDays;
             configToSave.Summary_Retention_Days__c = summaryRetentionDays;
+            configToSave.Snapshot_Retention_Days__c = snapshotRetentionDays;
+            configToSave.Health_Log_Retention_Days__c = healthLogRetentionDays;
+            configToSave.Remediation_Retention_Days__c = remediationRetentionDays;
 
             // Use Security.stripInaccessible for field-level security
             SObjectAccessDecision securityDecision = Security.stripInaccessible(
@@ -232,6 +253,9 @@ public with sharing class BehaviorSettingsController {
         @AuraEnabled public Integer contractExpiryDays;
         @AuraEnabled public Integer rawLogRetentionDays;
         @AuraEnabled public Integer summaryRetentionDays;
+        @AuraEnabled public Integer snapshotRetentionDays;
+        @AuraEnabled public Integer healthLogRetentionDays;
+        @AuraEnabled public Integer remediationRetentionDays;
         @AuraEnabled public Id recordId;
     }
 

@@ -12,7 +12,6 @@
  *
  * TEST USERS REQUIRED:
  * - Admin User: BehaviorIQ_Admin permission set assigned
- * - Standard User: BehaviorIQ_User permission set assigned (tracking only)
  * - Unprivileged User: No BehaviorIQ permission sets
  */
 
@@ -402,6 +401,5 @@ System.debug('  docs/E2E_TEST_CASES_PATTERN_BEHAVIOR.md');
 System.debug('');
 System.debug('EXPECTED RESULTS BY USER TYPE:');
 System.debug('  Admin (BehaviorIQ_Admin): All queries should succeed');
-System.debug('  User (BehaviorIQ_User): All object queries should FAIL');
 System.debug('  Unprivileged: All BehaviorIQ queries should FAIL');
 System.debug('');

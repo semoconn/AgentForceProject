@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
-    <description>Assign to users whose activity should be monitored by BehaviorIQ. Grants no special permissions.</description>
-    <hasActivationRequired>false</hasActivationRequired>
-    <label>BehaviorIQ User</label>
-</PermissionSet>

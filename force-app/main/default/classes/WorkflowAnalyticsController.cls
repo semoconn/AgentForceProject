@@ -681,28 +681,11 @@ public with sharing class WorkflowAnalyticsController {
             Decimal fixedImpactScore = fixedCount * costPerIncident;
 
             if (objName == 'opportunity') {
-                // Query remaining Opportunity records to sum actual Amount values
-                if (!remaining.isEmpty()) {
-                    try {
-                        List<Id> remainingIds = new List<Id>();
-                        for (String idStr : remaining) {
-                            String trimmed = idStr.trim();
-                            if (String.isNotBlank(trimmed)) {
-                                remainingIds.add(Id.valueOf(trimmed));
-                            }
-                        }
+                // For Opportunities, Impact_Score__c reflects the sum of ALL matching
+                // Opportunity Amounts (not just the ~5 samples in Example_Records__c).
+                // Use subtraction: remaining = current total minus fixed amounts.
 
-                        if (!remainingIds.isEmpty()) {
-                            // Use sharing-aware helper to ensure we only aggregate accessible records
-                            remainingImpactScore = getOpportunityAmountWithSharing(remainingIds);
-                        }
-                    } catch (Exception oppEx) {
-                        System.debug(LoggingLevel.WARN, 'Failed to query Opportunity amounts for remaining impact: ' + oppEx.getMessage());
-                        remainingImpactScore = actualRemainingCount * costPerIncident;
-                    }
-                }
-
-                // Query fixed Opportunity records to sum their Amount values
+                // Step 1: Query fixed Opportunity records to sum their actual Amount values
                 if (!fixedIdSet.isEmpty()) {
                     try {
                         List<Id> fixedIds = new List<Id>();
@@ -713,12 +696,23 @@ public with sharing class WorkflowAnalyticsController {
                         }
 
                         if (!fixedIds.isEmpty()) {
-                            // Use sharing-aware helper to ensure we only aggregate accessible records
                             fixedImpactScore = getOpportunityAmountWithSharing(fixedIds);
                         }
                     } catch (Exception fixedEx) {
                         System.debug(LoggingLevel.WARN, 'Failed to query fixed Opportunity amounts: ' + fixedEx.getMessage());
+                        // fixedImpactScore retains the fallback: fixedCount * costPerIncident
                     }
+                }
+
+                // Step 2: Remaining impact = current total minus what was just fixed
+                if (original.Impact_Score__c != null && original.Impact_Score__c > 0) {
+                    remainingImpactScore = original.Impact_Score__c - fixedImpactScore;
+                    if (remainingImpactScore < 0) {
+                        remainingImpactScore = 0;
+                    }
+                } else {
+                    // Fallback: if no existing impact score, use count-based calculation
+                    remainingImpactScore = actualRemainingCount * costPerIncident;
                 }
             } else {
                 remainingImpactScore = actualRemainingCount * costPerIncident;
@@ -764,18 +758,16 @@ public with sharing class WorkflowAnalyticsController {
             original.Fixed_Record_Ids__c = cumulativeFixedIds;
 
             // Calculate impact score for resolved records (for ROI reporting)
-            if (objName == 'opportunity' && String.isNotBlank(fixedRecordIds)) {
+            if (objName == 'opportunity' && !fixedIdSet.isEmpty()) {
                 try {
                     List<Id> resolvedIds = new List<Id>();
-                    for (String idStr : fixedRecordIds.split(',')) {
-                        String trimmed = idStr.trim();
-                        if (String.isNotBlank(trimmed)) {
-                            resolvedIds.add(Id.valueOf(trimmed));
+                    for (String idStr : fixedIdSet) {
+                        if (String.isNotBlank(idStr)) {
+                            resolvedIds.add(Id.valueOf(idStr.trim()));
                         }
                     }
 
                     if (!resolvedIds.isEmpty()) {
-                        // Use sharing-aware helper to ensure we only aggregate accessible records
                         Decimal resolvedAmount = getOpportunityAmountWithSharing(resolvedIds);
                         if (resolvedAmount > 0) {
                             original.Impact_Score__c = resolvedAmount;
@@ -987,17 +979,52 @@ public with sharing class WorkflowAnalyticsController {
         }
 
         try {
+            // Query the pain point to get its Unique_Key__c for dismissal lookup
+            List<Identified_Pain_Point__c> points = [
+                SELECT Id, Unique_Key__c
+                FROM Identified_Pain_Point__c
+                WHERE Id = :painPointId
+                WITH SECURITY_ENFORCED
+                LIMIT 1
+            ];
+
+            if (points.isEmpty()) {
+                throw new AuraHandledException('Pain Point not found.');
+            }
+
+            String uniqueKey = points[0].Unique_Key__c;
+
+            // Update the pain point status back to New
             Identified_Pain_Point__c point = new Identified_Pain_Point__c(
                 Id = painPointId,
                 Status__c = 'New'
             );
 
-            // Enforce Security on Update
             SObjectAccessDecision decision = Security.stripInaccessible(AccessType.UPDATABLE, new List<Identified_Pain_Point__c>{point});
             update decision.getRecords();
 
+            // Delete the matching Suggestion_Dismissal__c so the pattern is re-evaluated on next batch run
+            // Note: No WITH SECURITY_ENFORCED here because Dismissal_Key__c is a required field
+            // without explicit fieldPermissions (required fields cannot have them). The isDeletable()
+            // CRUD check above guards the operation.
+            if (String.isNotBlank(uniqueKey) && Schema.sObjectType.Suggestion_Dismissal__c.isDeletable()) {
+                List<Suggestion_Dismissal__c> dismissals = [
+                    SELECT Id
+                    FROM Suggestion_Dismissal__c
+                    WHERE Dismissal_Key__c = :uniqueKey
+                    LIMIT 1
+                ];
+
+                if (!dismissals.isEmpty()) {
+                    delete dismissals;
+                }
+            }
+
             return 'Suggestion restored successfully.';
+        } catch (AuraHandledException ahe) {
+            throw ahe;
         } catch (Exception e) {
+            System.debug(LoggingLevel.ERROR, 'Error restoring suggestion: ' + e.getMessage() + ' | Stack: ' + e.getStackTraceString());
             throw new AuraHandledException('Error restoring suggestion.');
         }
     }
